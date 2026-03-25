@@ -1,0 +1,27 @@
+source:
+  name: pagamentos
+  type: csv
+  path: data/sample/pagamentos.csv
+  encoding: utf-8
+  delimiter: ";"
+  has_header: true
+schema:
+  - {name: cod_pagamento, type: bigint, nullable: false}
+  - {name: cod_fatura, type: bigint, nullable: false}
+  - {name: cod_uc, type: bigint, nullable: false}
+  - {name: valor_fatura, type: decimal(12,2), nullable: false}
+  - {name: valor_pago, type: decimal(12,2), nullable: true}
+  - {name: data_vencimento, type: date, nullable: false, format: dd/MM/yyyy}
+  - {name: data_pagamento, type: date, nullable: true, format: dd/MM/yyyy}
+  - {name: forma_pagamento, type: string, nullable: true}
+  - {name: data_processamento, type: timestamp, nullable: false, format: dd/MM/yyyy HH:mm:ss}
+ingestion:
+  strategy: incremental
+  watermark_column: data_processamento
+  partition_by: data_vencimento
+  dedup_key: [cod_pagamento]
+  dedup_order: data_processamento
+quality:
+  min_rows: 100
+  max_null_pct: 0.2
+  critical_columns: [cod_pagamento, cod_fatura, valor_fatura]

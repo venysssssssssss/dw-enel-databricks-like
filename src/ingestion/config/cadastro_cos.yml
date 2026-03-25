@@ -1,0 +1,14 @@
+source:
+  name: cadastro_cos
+  type: csv
+  path: data/sample/cadastro_cos.csv
+schema:
+  - {name: cod_co, type: int, nullable: false}
+  - {name: cod_ut, type: int, nullable: false}
+  - {name: nome_co, type: string, nullable: false}
+ingestion:
+  strategy: snapshot
+quality:
+  min_rows: 16
+  max_null_pct: 0.0
+  critical_columns: [cod_co, cod_ut]

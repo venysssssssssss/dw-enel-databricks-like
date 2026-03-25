@@ -1,0 +1,20 @@
+source:
+  name: metas_operacionais
+  type: csv
+  path: data/sample/metas_operacionais.csv
+schema:
+  - {name: cod_distribuidora, type: int, nullable: false}
+  - {name: cod_ut, type: int, nullable: false}
+  - {name: cod_co, type: int, nullable: false}
+  - {name: cod_base, type: int, nullable: false}
+  - {name: indicador, type: string, nullable: false}
+  - {name: mes_referencia, type: string, nullable: false}
+  - {name: valor_meta, type: double, nullable: false}
+  - {name: valor_realizado, type: double, nullable: false}
+ingestion:
+  strategy: snapshot
+  partition_by: mes_referencia
+quality:
+  min_rows: 12
+  max_null_pct: 0.0
+  critical_columns: [mes_referencia, valor_meta, valor_realizado]

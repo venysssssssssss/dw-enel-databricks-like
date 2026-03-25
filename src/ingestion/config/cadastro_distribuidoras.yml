@@ -1,0 +1,14 @@
+source:
+  name: cadastro_distribuidoras
+  type: csv
+  path: data/sample/cadastro_distribuidoras.csv
+schema:
+  - {name: cod_distribuidora, type: int, nullable: false}
+  - {name: nome_distribuidora, type: string, nullable: false}
+  - {name: uf, type: string, nullable: false}
+ingestion:
+  strategy: snapshot
+quality:
+  min_rows: 4
+  max_null_pct: 0.0
+  critical_columns: [cod_distribuidora, nome_distribuidora]

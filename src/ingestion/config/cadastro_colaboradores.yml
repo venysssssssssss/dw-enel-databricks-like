@@ -1,0 +1,15 @@
+source:
+  name: cadastro_colaboradores
+  type: csv
+  path: data/sample/cadastro_colaboradores.csv
+schema:
+  - {name: cod_colaborador, type: int, nullable: false}
+  - {name: nome_colaborador, type: string, nullable: false}
+  - {name: equipe, type: string, nullable: false}
+  - {name: funcao, type: string, nullable: false}
+ingestion:
+  strategy: snapshot
+quality:
+  min_rows: 10
+  max_null_pct: 0.0
+  critical_columns: [cod_colaborador, nome_colaborador]

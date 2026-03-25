@@ -1,0 +1,16 @@
+source:
+  name: cadastro_ucs
+  type: csv
+  path: data/sample/cadastro_ucs.csv
+schema:
+  - {name: cod_uc, type: bigint, nullable: false}
+  - {name: cod_base, type: int, nullable: false}
+  - {name: classe_consumo, type: string, nullable: false}
+  - {name: tipo_ligacao, type: string, nullable: false}
+  - {name: status_uc, type: string, nullable: false}
+ingestion:
+  strategy: snapshot
+quality:
+  min_rows: 100
+  max_null_pct: 0.02
+  critical_columns: [cod_uc, cod_base]

@@ -1,0 +1,15 @@
+source:
+  name: cadastro_instalacoes
+  type: csv
+  path: data/sample/cadastro_instalacoes.csv
+schema:
+  - {name: cod_instalacao, type: bigint, nullable: false}
+  - {name: cod_uc, type: bigint, nullable: false}
+  - {name: endereco, type: string, nullable: false}
+  - {name: tipo_instalacao, type: string, nullable: false}
+ingestion:
+  strategy: snapshot
+quality:
+  min_rows: 100
+  max_null_pct: 0.02
+  critical_columns: [cod_instalacao, cod_uc]

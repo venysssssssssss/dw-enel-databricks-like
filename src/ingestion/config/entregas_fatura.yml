@@ -1,0 +1,31 @@
+source:
+  name: entregas_fatura
+  type: csv
+  path: data/sample/entregas_fatura.csv
+  encoding: utf-8
+  delimiter: ";"
+  has_header: true
+schema:
+  - {name: cod_entrega, type: bigint, nullable: false}
+  - {name: cod_fatura, type: bigint, nullable: false}
+  - {name: cod_uc, type: bigint, nullable: false}
+  - {name: cod_distribuidora, type: int, nullable: false}
+  - {name: data_emissao, type: date, nullable: false, format: dd/MM/yyyy}
+  - {name: data_vencimento, type: date, nullable: false, format: dd/MM/yyyy}
+  - {name: data_entrega, type: date, nullable: true, format: dd/MM/yyyy}
+  - {name: lat_entrega, type: double, nullable: true}
+  - {name: lon_entrega, type: double, nullable: true}
+  - {name: lat_uc, type: double, nullable: true}
+  - {name: lon_uc, type: double, nullable: true}
+  - {name: flag_entregue, type: boolean, nullable: false}
+  - {name: data_registro, type: timestamp, nullable: false, format: dd/MM/yyyy HH:mm:ss}
+ingestion:
+  strategy: incremental
+  watermark_column: data_registro
+  partition_by: data_emissao
+  dedup_key: [cod_entrega]
+  dedup_order: data_registro
+quality:
+  min_rows: 100
+  max_null_pct: 0.1
+  critical_columns: [cod_entrega, cod_fatura, cod_uc]

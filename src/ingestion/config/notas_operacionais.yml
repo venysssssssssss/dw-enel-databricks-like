@@ -1,0 +1,91 @@
+source:
+  name: notas_operacionais
+  type: csv
+  path: data/sample/notas_operacionais.csv
+  encoding: utf-8
+  delimiter: ";"
+  has_header: true
+schema:
+  - name: cod_nota
+    type: bigint
+    nullable: false
+  - name: cod_uc
+    type: bigint
+    nullable: false
+  - name: cod_instalacao
+    type: bigint
+    nullable: false
+  - name: cod_distribuidora
+    type: int
+    nullable: false
+  - name: cod_ut
+    type: int
+    nullable: false
+  - name: cod_co
+    type: int
+    nullable: false
+  - name: cod_base
+    type: int
+    nullable: false
+  - name: cod_lote
+    type: int
+    nullable: true
+  - name: tipo_servico
+    type: string
+    nullable: false
+  - name: flag_impacto_faturamento
+    type: boolean
+    nullable: false
+  - name: area_classificada_risco
+    type: boolean
+    nullable: false
+  - name: historico_incidentes_12m
+    type: int
+    nullable: false
+  - name: tipo_instalacao
+    type: string
+    nullable: false
+  - name: horario_agendado
+    type: string
+    nullable: false
+  - name: flag_risco_manual
+    type: boolean
+    nullable: false
+  - name: data_criacao
+    type: date
+    nullable: false
+    format: dd/MM/yyyy
+  - name: data_prevista
+    type: date
+    nullable: true
+    format: dd/MM/yyyy
+  - name: data_execucao
+    type: date
+    nullable: true
+    format: dd/MM/yyyy
+  - name: data_alteracao
+    type: timestamp
+    nullable: false
+    format: dd/MM/yyyy HH:mm:ss
+  - name: status
+    type: string
+    nullable: false
+  - name: cod_colaborador
+    type: int
+    nullable: true
+  - name: latitude
+    type: double
+    nullable: true
+  - name: longitude
+    type: double
+    nullable: true
+ingestion:
+  strategy: incremental
+  watermark_column: data_alteracao
+  partition_by: data_criacao
+  dedup_key: [cod_nota]
+  dedup_order: data_alteracao
+quality:
+  min_rows: 100
+  max_null_pct: 0.05
+  critical_columns: [cod_nota, cod_uc, status, data_alteracao]

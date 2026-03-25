@@ -1,0 +1,15 @@
+source:
+  name: cadastro_bases
+  type: csv
+  path: data/sample/cadastro_bases.csv
+schema:
+  - {name: cod_base, type: int, nullable: false}
+  - {name: cod_co, type: int, nullable: false}
+  - {name: nome_base, type: string, nullable: false}
+  - {name: tipo_base, type: string, nullable: false}
+ingestion:
+  strategy: snapshot
+quality:
+  min_rows: 24
+  max_null_pct: 0.0
+  critical_columns: [cod_base, cod_co]
