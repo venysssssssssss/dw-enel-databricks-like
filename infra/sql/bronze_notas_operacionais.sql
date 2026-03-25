@@ -1,0 +1,32 @@
+CREATE TABLE IF NOT EXISTS nessie.bronze.notas_operacionais (
+    cod_nota STRING,
+    cod_uc STRING,
+    cod_instalacao STRING,
+    cod_distribuidora STRING,
+    cod_ut STRING,
+    cod_co STRING,
+    cod_base STRING,
+    cod_lote STRING,
+    tipo_servico STRING,
+    flag_impacto_faturamento STRING,
+    area_classificada_risco STRING,
+    historico_incidentes_12m STRING,
+    tipo_instalacao STRING,
+    horario_agendado STRING,
+    flag_risco_manual STRING,
+    data_criacao STRING,
+    data_prevista STRING,
+    data_execucao STRING,
+    data_alteracao STRING,
+    status STRING,
+    cod_colaborador STRING,
+    latitude STRING,
+    longitude STRING,
+    _run_id STRING,
+    _ingested_at TIMESTAMP,
+    _source_file STRING,
+    _source_hash STRING,
+    _partition_date DATE
+)
+USING iceberg
+PARTITIONED BY (_partition_date);
