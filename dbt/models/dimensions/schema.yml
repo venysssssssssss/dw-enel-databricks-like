@@ -1,0 +1,34 @@
+version: 2
+
+models:
+  - name: dim_distribuidora
+    columns:
+      - name: sk_distribuidora
+        tests: [unique, not_null]
+      - name: cod_distribuidora
+        tests: [unique, not_null]
+  - name: dim_ut
+    columns:
+      - name: sk_ut
+        tests: [unique, not_null]
+      - name: cod_distribuidora
+        tests:
+          - relationships:
+              to: ref('dim_distribuidora')
+              field: cod_distribuidora
+  - name: dim_co
+    columns:
+      - name: sk_co
+        tests: [unique, not_null]
+  - name: dim_base
+    columns:
+      - name: sk_base
+        tests: [unique, not_null]
+  - name: dim_uc
+    columns:
+      - name: sk_uc
+        tests: [unique, not_null]
+  - name: dim_colaborador
+    columns:
+      - name: sk_colaborador
+        tests: [unique, not_null]

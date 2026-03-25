@@ -1,0 +1,32 @@
+version: 2
+
+models:
+  - name: fato_notas_operacionais
+    columns:
+      - name: cod_nota
+        tests: [unique, not_null]
+      - name: sk_tempo
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_tempo')
+              field: sk_tempo
+      - name: dias_atraso
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 365
+  - name: fato_entrega_fatura
+    columns:
+      - name: cod_entrega
+        tests: [unique, not_null]
+  - name: fato_pagamento
+    columns:
+      - name: cod_pagamento
+        tests: [unique, not_null]
+  - name: fato_metas
+    columns:
+      - name: status_meta
+        tests:
+          - accepted_values:
+              values: ['ATINGIDA', 'EM_RISCO', 'CRITICA', 'NAO_ATINGIDA']

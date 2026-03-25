@@ -1,0 +1,12 @@
+enel_trino:
+  target: dev
+  outputs:
+    dev:
+      type: trino
+      method: none
+      host: localhost
+      port: 8443
+      user: enel
+      catalog: iceberg
+      schema: gold
+      threads: 2

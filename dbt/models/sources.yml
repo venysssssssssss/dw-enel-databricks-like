@@ -1,0 +1,17 @@
+version: 2
+
+sources:
+  - name: silver
+    schema: silver
+    tables:
+      - name: notas_operacionais
+      - name: entregas_fatura
+      - name: pagamentos
+      - name: cadastro_distribuidoras
+      - name: cadastro_uts
+      - name: cadastro_cos
+      - name: cadastro_bases
+      - name: cadastro_ucs
+      - name: cadastro_instalacoes
+      - name: cadastro_colaboradores
+      - name: metas_operacionais
