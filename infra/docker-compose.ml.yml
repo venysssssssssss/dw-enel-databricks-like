@@ -1,0 +1,82 @@
+include:
+  - docker-compose.yml
+  - docker-compose.dev.yml
+
+services:
+  mlflow:
+    profiles: ["ml"]
+    image: ghcr.io/mlflow/mlflow:v2.15.1
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://enel:enel123@postgres:5432/mlflow
+      --default-artifact-root s3://ml-artifacts/
+      --host 0.0.0.0
+      --port 5000
+    environment:
+      AWS_ACCESS_KEY_ID: ${ENEL_MINIO_ACCESS_KEY:-minio}
+      AWS_SECRET_ACCESS_KEY: ${ENEL_MINIO_SECRET_KEY:-minio123}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  api:
+    profiles: ["ml"]
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      ENEL_TRINO_HOST: trino
+      ENEL_TRINO_PORT: 8080
+      ENEL_TRINO_SCHEMA: gold
+      ENEL_MINIO_ENDPOINT: minio:9000
+      ENEL_SECRET_KEY: ${ENEL_SECRET_KEY:-replace-me}
+    depends_on:
+      trino:
+        condition: service_started
+      minio:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  prometheus:
+    profiles: ["ml"]
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      api:
+        condition: service_started
+
+  grafana:
+    profiles: ["ml"]
+    image: grafana/grafana:11.2.2
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_started
