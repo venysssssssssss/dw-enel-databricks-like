@@ -1,0 +1,100 @@
+include:
+  - docker-compose.yml
+
+services:
+  trino:
+    profiles: ["dev", "full", "ml"]
+    image: trinodb/trino:440
+    ports:
+      - "8443:8080"
+    environment:
+      MINIO_ACCESS_KEY: ${ENEL_MINIO_ACCESS_KEY:-minio}
+      MINIO_SECRET_KEY: ${ENEL_MINIO_SECRET_KEY:-minio123}
+    volumes:
+      - ./config/trino/catalog/iceberg.properties:/etc/trino/catalog/iceberg.properties:ro
+      - ./config/trino/config.properties:/etc/trino/config.properties:ro
+      - ./config/trino/jvm.config:/etc/trino/jvm.config:ro
+      - ./config/trino/node.properties:/etc/trino/node.properties:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+      nessie:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  airflow-init:
+    profiles: ["dev"]
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.airflow
+    entrypoint: /bin/bash
+    command:
+      - -lc
+      - airflow db migrate
+    environment:
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://enel:enel123@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  airflow-webserver:
+    profiles: ["dev"]
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.airflow
+    command: webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://enel:enel123@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-replace-me}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__PARALLELISM: 4
+      AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: 2
+      AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: 1
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    ports:
+      - "8085:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  airflow-scheduler:
+    profiles: ["dev"]
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.airflow
+    command: scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://enel:enel123@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-replace-me}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__PARALLELISM: 4
+      AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: 2
+      AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: 1
+    depends_on:
+      airflow-webserver:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  ge-datadocs:
+    profiles: ["dev"]
+    image: nginx:alpine
+    ports:
+      - "8095:80"
+    volumes:
+      - ../src/quality/great_expectations/uncommitted/data_docs/local_site:/usr/share/nginx/html:ro
