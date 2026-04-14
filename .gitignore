@@ -1,33 +1,85 @@
-.venv/
+# --- Python ---
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+.ipynb_checkpoints/
+dist/
+build/
+
+# --- Virtual envs / tooling caches ---
+.venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# --- IDE / OS ---
 .DS_Store
-.env
 .idea/
 .vscode/
-*.pyc
-*.pyo
-*.pyd
+.codex
+.codex/
+
+# --- Environment ---
+.env
+.env.*
+!.env.example
+
+# --- Logs ---
 *.log
-.ipynb_checkpoints/
-dist/
-build/
-*.egg-info/
-.eggs/
-data/generated/
-data/sample/*.csv
-!data/sample/.gitkeep
-data/model_registry/
-data/lakehouse/
-*.joblib
 airflow/logs/
 airflow/plugins/__pycache__/
-src/quality/great_expectations/uncommitted/
+
+# --- Data: NEVER commit raw data, training data or model artifacts ---
+# Ingestion sources (planilhas brutas, dumps)
+DESCRICOES_ENEL/
+*.xlsx
+*.xls
+*.xlsm
+
+# Tabular / colunar data formats
+*.csv
+*.tsv
 *.parquet
+*.feather
+*.orc
+*.avro
+*.arrow
+*.jsonl
+*.ndjson
 *.duckdb
+*.db
+*.sqlite
+*.sqlite3
+
+# Lakehouse / warehouse runtime state
+data/
+!data/.gitkeep
 metastore_db/
 spark-warehouse/
+
+# ML artifacts (modelos serializados, checkpoints, embeddings)
+*.joblib
+*.pkl
+*.pickle
+*.onnx
+*.h5
+*.pt
+*.pth
+*.bin
+*.safetensors
+mlruns/
+mlartifacts/
+
+# --- Quality / dbt ---
+src/quality/great_expectations/uncommitted/
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# --- Infra runtime state (volumes gerados por Caddy/Cloudflared) ---
+infra/config/caddy/*.json
