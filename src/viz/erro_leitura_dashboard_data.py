@@ -10,8 +10,10 @@ import pandas as pd
 
 from src.ml.models.erro_leitura_classifier import (
     KEYWORD_TAXONOMY,
+    TAXONOMY,
     KeywordErroLeituraClassifier,
     canonical_label,
+    taxonomy_metadata,
 )
 from src.ml.models.erro_leitura_topic_model import _taxonomy_example
 
@@ -213,6 +215,173 @@ def refaturamento_by_cause(frame: pd.DataFrame, *, limit: int = 10) -> pd.DataFr
     )
 
 
+def radar_causes_by_region(frame: pd.DataFrame, *, top_n: int = 10) -> pd.DataFrame:
+    """Formato long adequado a um radar chart (Plotly line_polar).
+
+    Para cada regiao, retorna a share percentual de cada causa (top_n globais)
+    sobre o total da regiao — permite comparar perfis CE vs SP em um unico grafico
+    teia de aranha.
+    """
+    if frame.empty:
+        return pd.DataFrame(columns=["regiao", "causa_canonica", "percentual", "qtd_erros"])
+
+    counts = (
+        frame.groupby(["regiao", "causa_canonica"], as_index=False)
+        .agg(qtd_erros=("ordem", "nunique"))
+    )
+    top_causes = (
+        counts.groupby("causa_canonica", as_index=False)["qtd_erros"]
+        .sum()
+        .sort_values("qtd_erros", ascending=False)
+        .head(top_n)["causa_canonica"]
+        .tolist()
+    )
+    if not top_causes:
+        return pd.DataFrame(columns=["regiao", "causa_canonica", "percentual", "qtd_erros"])
+
+    regioes = sorted(frame["regiao"].dropna().unique().tolist())
+    grid = pd.MultiIndex.from_product(
+        [regioes, top_causes], names=["regiao", "causa_canonica"]
+    ).to_frame(index=False)
+    merged = grid.merge(counts, on=["regiao", "causa_canonica"], how="left")
+    merged["qtd_erros"] = merged["qtd_erros"].fillna(0).astype(int)
+    totals = merged.groupby("regiao")["qtd_erros"].transform("sum").replace(0, 1)
+    merged["percentual"] = merged["qtd_erros"] / totals
+    return merged.sort_values(["regiao", "causa_canonica"]).reset_index(drop=True)
+
+
+def category_breakdown(frame: pd.DataFrame) -> pd.DataFrame:
+    """Agrupa causas pela `categoria` da taxonomia (processo, cadastro, etc)."""
+    if frame.empty:
+        return pd.DataFrame(columns=["categoria", "regiao", "qtd_erros", "percentual"])
+    meta = taxonomy_metadata()[["classe", "categoria", "severidade"]]
+    merged = frame.merge(meta, left_on="causa_canonica", right_on="classe", how="left")
+    merged["categoria"] = merged["categoria"].fillna("nao_classificada")
+    grouped = (
+        merged.groupby(["categoria", "regiao"], as_index=False)
+        .agg(qtd_erros=("ordem", "nunique"))
+    )
+    totals = grouped.groupby("regiao")["qtd_erros"].transform("sum").replace(0, 1)
+    grouped["percentual"] = grouped["qtd_erros"] / totals
+    return grouped.sort_values(["regiao", "qtd_erros"], ascending=[True, False])
+
+
+def severity_heatmap(frame: pd.DataFrame) -> pd.DataFrame:
+    """Matriz regiao x severidade com volume e taxa de refaturamento."""
+    if frame.empty:
+        return pd.DataFrame(columns=["regiao", "severidade", "qtd_erros", "taxa_refaturamento"])
+    meta = taxonomy_metadata()[["classe", "severidade"]]
+    merged = frame.merge(meta, left_on="causa_canonica", right_on="classe", how="left")
+    merged["severidade"] = pd.Categorical(
+        merged["severidade"].fillna("low"),
+        categories=["critical", "high", "medium", "low"],
+        ordered=True,
+    )
+    return (
+        merged.groupby(["regiao", "severidade"], as_index=False, observed=True)
+        .agg(
+            qtd_erros=("ordem", "nunique"),
+            taxa_refaturamento=("flag_resolvido_com_refaturamento", "mean"),
+        )
+        .sort_values(["regiao", "severidade"])
+    )
+
+
+def mis_executive_summary(frame: pd.DataFrame) -> pd.DataFrame:
+    """One-line-per-region summary para o MIS executivo (BI-ready)."""
+    if frame.empty:
+        return pd.DataFrame()
+    meta = taxonomy_metadata()[["classe", "severidade", "peso_severidade"]]
+    merged = frame.merge(meta, left_on="causa_canonica", right_on="classe", how="left")
+    merged["peso_severidade"] = merged["peso_severidade"].fillna(1.0)
+
+    def _aggregate(group: pd.DataFrame) -> pd.Series:
+        total = int(group["ordem"].nunique())
+        refat = float(group["flag_resolvido_com_refaturamento"].mean()) if total else 0.0
+        label_cov = float(group["has_causa_raiz_label"].mean()) if total else 0.0
+        top_cause = (
+            group.groupby("causa_canonica")["ordem"].nunique().sort_values(ascending=False)
+        )
+        top1 = top_cause.index[0] if len(top_cause) else "n/d"
+        top1_share = float(top_cause.iloc[0] / total) if total and len(top_cause) else 0.0
+        reincidentes = (
+            group.loc[group["instalacao_hash"].ne("")]
+            .groupby("instalacao_hash")["ordem"]
+            .nunique()
+            .gt(1)
+            .sum()
+        )
+        severity_score = float(group["peso_severidade"].mean()) if total else 0.0
+        critical_share = float(group["severidade"].eq("critical").mean()) if total else 0.0
+        return pd.Series(
+            {
+                "volume_total": total,
+                "taxa_refaturamento": refat,
+                "cobertura_rotulo": label_cov,
+                "instalacoes_reincidentes": int(reincidentes),
+                "causa_dominante": top1,
+                "share_causa_dominante": top1_share,
+                "severidade_media": round(severity_score, 2),
+                "share_critico": critical_share,
+            }
+        )
+
+    grouped = merged.groupby("regiao", group_keys=False).apply(_aggregate, include_groups=False)
+    return grouped.reset_index() if isinstance(grouped, pd.DataFrame) else grouped.to_frame().T
+
+
+def mis_monthly_mis(frame: pd.DataFrame) -> pd.DataFrame:
+    """Serie mensal com MoM (% de variacao mes-a-mes) por regiao — alimenta o MIS."""
+    if frame.empty:
+        return pd.DataFrame(columns=["mes_ingresso", "regiao", "qtd_erros", "mom"])
+    monthly = (
+        frame.dropna(subset=["mes_ingresso"])
+        .groupby(["mes_ingresso", "regiao"], as_index=False)
+        .agg(qtd_erros=("ordem", "nunique"))
+        .sort_values(["regiao", "mes_ingresso"])
+    )
+    monthly["mom"] = monthly.groupby("regiao")["qtd_erros"].pct_change().fillna(0.0)
+    monthly["media_movel_3m"] = (
+        monthly.groupby("regiao")["qtd_erros"]
+        .transform(lambda series: series.rolling(3, min_periods=1).mean())
+    )
+    return monthly
+
+
+def reincidence_matrix(frame: pd.DataFrame) -> pd.DataFrame:
+    """Perfil de reincidencia por regiao: quantas instalacoes caem em 1, 2, 3+ ordens."""
+    if frame.empty:
+        return pd.DataFrame(columns=["regiao", "faixa", "qtd_instalacoes"])
+    df = frame.loc[frame["instalacao_hash"].ne("")]
+    counts = df.groupby(["regiao", "instalacao_hash"], as_index=False).agg(
+        qtd_ordens=("ordem", "nunique")
+    )
+    bins = [0, 1, 2, 4, 10, float("inf")]
+    labels = ["1", "2", "3-4", "5-9", "10+"]
+    counts["faixa"] = pd.cut(counts["qtd_ordens"], bins=bins, labels=labels, right=True)
+    return (
+        counts.groupby(["regiao", "faixa"], as_index=False, observed=True)
+        .agg(qtd_instalacoes=("instalacao_hash", "nunique"))
+        .sort_values(["regiao", "faixa"])
+    )
+
+
+def taxonomy_reference() -> pd.DataFrame:
+    """Expoe a taxonomia v2 para a aba MIS (classes + descricoes + severidade)."""
+    meta = taxonomy_metadata()
+    meta = meta.rename(
+        columns={
+            "classe": "Causa canonica",
+            "categoria": "Categoria",
+            "severidade": "Severidade",
+            "descricao": "Descricao",
+            "n_keywords": "Nº termos",
+            "peso_severidade": "Peso",
+        }
+    )
+    return meta[["Causa canonica", "Categoria", "Severidade", "Peso", "Nº termos", "Descricao"]]
+
+
 def safe_topic_taxonomy_for_display(topic_taxonomy: pd.DataFrame) -> pd.DataFrame:
     taxonomy = _safe_topic_taxonomy(topic_taxonomy)
     if "examples" in topic_taxonomy.columns:
@@ -227,16 +396,16 @@ def _canonical_causes(frame: pd.DataFrame) -> pd.Series:
     if missing.any():
         classifier = KeywordErroLeituraClassifier()
         texts = frame.get("texto_completo", pd.Series("", index=frame.index)).fillna("").astype(str)
-        fallback = texts.map(lambda text: _keyword_label_or_outros(classifier, text))
+        fallback = texts.map(lambda text: _keyword_label_or_indefinido(classifier, text))
         canonical.loc[missing] = fallback.loc[missing]
-    return canonical.fillna("outros").astype(str)
+    return canonical.fillna("indefinido").astype(str)
 
 
-def _keyword_label_or_outros(classifier: KeywordErroLeituraClassifier, text: str) -> str:
+def _keyword_label_or_indefinido(classifier: KeywordErroLeituraClassifier, text: str) -> str:
+    """Usa classificador v2 (com threshold e ambiguidade). Retorna `indefinido`
+    apenas quando o texto realmente nao tem sinal — reduz drasticamente o bucket
+    generico em SP que antes caia em `outros`."""
     result = classifier.classify(text)
-    minimum_signal = (1.0 / max(len(KEYWORD_TAXONOMY), 1)) + 0.001
-    if float(result["probabilidade"]) <= minimum_signal:
-        return "outros"
     return str(result["classe"])
 
 

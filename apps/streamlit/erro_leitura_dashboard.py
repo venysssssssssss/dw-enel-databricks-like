@@ -37,13 +37,20 @@ from src.viz.erro_leitura_dashboard_data import (  # noqa: E402
     DEFAULT_SILVER_PATH,
     DEFAULT_TOPIC_ASSIGNMENTS_PATH,
     DEFAULT_TOPIC_TAXONOMY_PATH,
+    category_breakdown,
     compute_kpis,
     load_dashboard_frame,
+    mis_executive_summary,
+    mis_monthly_mis,
     monthly_volume,
+    radar_causes_by_region,
     refaturamento_by_cause,
     region_cause_matrix,
+    reincidence_matrix,
     root_cause_distribution,
     safe_topic_taxonomy_for_display,
+    severity_heatmap,
+    taxonomy_reference,
     topic_distribution,
 )
 
@@ -104,8 +111,17 @@ def main() -> None:
 
     _hero(filtered, total_available=len(frame))
 
-    tab_overview, tab_patterns, tab_impact, tab_taxonomy, tab_gov, tab_edu = st.tabs(
+    (
+        tab_mis,
+        tab_overview,
+        tab_patterns,
+        tab_impact,
+        tab_taxonomy,
+        tab_gov,
+        tab_edu,
+    ) = st.tabs(
         [
+            "🧭 BI MIS Executivo",
             "📈 Ritmo Operacional",
             "🗺 Padroes & Concentracoes",
             "💰 Impacto de Refaturamento",
@@ -115,6 +131,8 @@ def main() -> None:
         ]
     )
 
+    with tab_mis:
+        _mis_layer(filtered)
     with tab_overview:
         _executive_layer(filtered)
     with tab_patterns:
@@ -278,6 +296,258 @@ def _hero(frame: pd.DataFrame, *, total_available: int) -> None:
             """,
             unsafe_allow_html=True,
         )
+
+
+def _mis_layer(frame: pd.DataFrame) -> None:
+    """BI MIS (Management Information System) — visao 360 para tomada de decisao.
+
+    Combina:
+      - Summary executivo por regiao (volume, severidade, causa dominante, reincidencia)
+      - Radar / teia de aranha: perfil de causa por regiao (top-10 causas)
+      - Breakdown por categoria da taxonomia (processo, cadastro, equipamento...)
+      - Matriz regiao x severidade (volume + taxa de refaturamento)
+      - Serie temporal com MoM e media movel 3M
+      - Perfil de reincidencia (1, 2, 3-4, 5-9, 10+ ordens por instalacao)
+      - Tabela de referencia da taxonomia v2
+    """
+    st.markdown("### 🧭 MIS Executivo — Erros de Leitura")
+    st.caption(
+        "Visao gerencial 360 para decisao. "
+        "Cada painel responde uma pergunta critica: *onde, quanto, quao grave, reincidente?*"
+    )
+
+    # --- Linha 1: Summary por regiao ---
+    summary = mis_executive_summary(frame)
+    if summary.empty:
+        st.info("Sem dados para resumo executivo.")
+        return
+
+    st.markdown("#### 📋 Resumo executivo por regiao")
+    st.caption("Snapshot gerencial: causa dominante, severidade media e reincidencia.")
+    display_summary = summary.copy()
+    display_summary["taxa_refaturamento"] = display_summary["taxa_refaturamento"].map(
+        lambda value: f"{value:.1%}"
+    )
+    display_summary["cobertura_rotulo"] = display_summary["cobertura_rotulo"].map(
+        lambda value: f"{value:.1%}"
+    )
+    display_summary["share_causa_dominante"] = display_summary["share_causa_dominante"].map(
+        lambda value: f"{value:.1%}"
+    )
+    display_summary["share_critico"] = display_summary["share_critico"].map(
+        lambda value: f"{value:.1%}"
+    )
+    st.dataframe(
+        display_summary,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "regiao": st.column_config.TextColumn("Regiao"),
+            "volume_total": st.column_config.NumberColumn("Volume", format="%d"),
+            "taxa_refaturamento": st.column_config.TextColumn("Tx. Refat."),
+            "cobertura_rotulo": st.column_config.TextColumn("Rotulo origem"),
+            "instalacoes_reincidentes": st.column_config.NumberColumn(
+                "Reincidentes", format="%d"
+            ),
+            "causa_dominante": st.column_config.TextColumn("Causa dominante"),
+            "share_causa_dominante": st.column_config.TextColumn("% dominante"),
+            "severidade_media": st.column_config.NumberColumn("Severidade (0-4)", format="%.2f"),
+            "share_critico": st.column_config.TextColumn("% critico"),
+        },
+    )
+
+    # --- Linha 2: Radar + Categoria ---
+    left, right = st.columns([1.1, 1.0])
+
+    radar = radar_causes_by_region(frame, top_n=10)
+    with left:
+        st.markdown("#### 🕸 Teia de aranha: perfil de causa por regiao")
+        st.caption(
+            "Compara o **perfil** de erros CE vs SP em uma unica figura. "
+            "Eixos = causas canonicas; raio = share percentual sobre o total da regiao. "
+            "Areas divergentes revelam problemas sistemicos especificos de cada mercado."
+        )
+        if radar.empty:
+            st.info("Sem causas suficientes para o radar.")
+        else:
+            radar_display = radar.copy()
+            radar_display["percentual_pct"] = radar_display["percentual"] * 100
+            fig = px.line_polar(
+                radar_display,
+                r="percentual_pct",
+                theta="causa_canonica",
+                color="regiao",
+                line_close=True,
+                color_discrete_map={"CE": PALETTE["ce"], "SP": PALETTE["sp"]},
+                hover_data={"qtd_erros": True, "percentual_pct": ":.1f"},
+            )
+            fig.update_traces(fill="toself", opacity=0.55)
+            fig.update_layout(
+                height=520,
+                margin=dict(l=40, r=40, t=40, b=20),
+                polar=dict(
+                    radialaxis=dict(
+                        ticksuffix="%",
+                        gridcolor="rgba(67, 56, 36, .15)",
+                        angle=90,
+                    ),
+                    angularaxis=dict(
+                        tickfont=dict(size=11),
+                        rotation=90,
+                        direction="clockwise",
+                    ),
+                    bgcolor="rgba(255,250,241,.45)",
+                ),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.08, xanchor="center", x=0.5),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+    category_df = category_breakdown(frame)
+    with right:
+        st.markdown("#### 🧱 Composicao por categoria funcional")
+        st.caption(
+            "Onde a perda acontece no processo? "
+            "`processo_leitura`, `faturamento_por_media`, `acesso_fisico`, `equipamento`, "
+            "`contestacao_cliente`, `cadastro`, `geracao_distribuida`, `regulatorio` — "
+            "cada categoria aponta para um **owner** operacional diferente."
+        )
+        if category_df.empty:
+            st.info("Sem categorias para exibir.")
+        else:
+            fig = px.bar(
+                category_df,
+                x="regiao",
+                y="percentual",
+                color="categoria",
+                text=category_df["qtd_erros"].map(lambda value: f"{value:,}".replace(",", ".")),
+                barmode="stack",
+                labels={
+                    "regiao": "Regiao",
+                    "percentual": "% do total da regiao",
+                    "categoria": "Categoria",
+                },
+                color_discrete_sequence=px.colors.sequential.Oranges_r
+                + px.colors.sequential.Tealgrn,
+            )
+            fig.update_layout(
+                height=520,
+                margin=dict(l=10, r=10, t=30, b=10),
+                yaxis_tickformat=".0%",
+                legend=dict(orientation="v", yanchor="top", y=1.0, xanchor="left", x=1.02),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+    # --- Linha 3: Severidade + Reincidencia ---
+    left2, right2 = st.columns(2)
+
+    severity = severity_heatmap(frame)
+    with left2:
+        st.markdown("#### 🔥 Matriz regiao × severidade")
+        st.caption(
+            "Severidade e atribuida pela taxonomia v2 — `critical` inclui faturamento por media, "
+            "GD e ART 113. Celulas com **alta severidade + alto refaturamento** sao priorizaveis."
+        )
+        if severity.empty:
+            st.info("Sem dados de severidade.")
+        else:
+            fig = px.density_heatmap(
+                severity,
+                x="regiao",
+                y="severidade",
+                z="qtd_erros",
+                histfunc="sum",
+                text_auto=True,
+                color_continuous_scale="OrRd",
+                labels={"qtd_erros": "Ordens", "severidade": "Severidade"},
+            )
+            fig.update_layout(height=340, margin=dict(l=10, r=10, t=30, b=10))
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.caption("Taxa de refaturamento por severidade:")
+            refat_table = severity.copy()
+            refat_table["taxa_refaturamento"] = refat_table["taxa_refaturamento"].map(
+                lambda value: f"{value:.1%}"
+            )
+            st.dataframe(
+                refat_table, hide_index=True, use_container_width=True
+            )
+
+    reincidence = reincidence_matrix(frame)
+    with right2:
+        st.markdown("#### 🔁 Perfil de reincidencia por instalacao")
+        st.caption(
+            "Quantas instalacoes tem 1, 2, 3-4, 5-9 ou 10+ ordens no recorte. "
+            "Instalacoes em faixas altas sao **candidatas a inspecao fisica** (medidor, rota, leiturista)."
+        )
+        if reincidence.empty:
+            st.info("Sem instalacoes com hash valido para reincidencia.")
+        else:
+            fig = px.bar(
+                reincidence,
+                x="faixa",
+                y="qtd_instalacoes",
+                color="regiao",
+                barmode="group",
+                text="qtd_instalacoes",
+                color_discrete_map={"CE": PALETTE["ce"], "SP": PALETTE["sp"]},
+                labels={
+                    "faixa": "Faixa de ordens por instalacao",
+                    "qtd_instalacoes": "Instalacoes unicas",
+                    "regiao": "Regiao",
+                },
+            )
+            fig.update_traces(textposition="outside")
+            fig.update_layout(height=340, margin=dict(l=10, r=10, t=30, b=10))
+            st.plotly_chart(fig, use_container_width=True)
+
+    # --- Linha 4: Serie MIS com MoM e MM3M ---
+    st.markdown("#### 📈 Serie mensal com MoM e media movel 3M")
+    st.caption(
+        "Serie temporal por regiao com variacao mes-a-mes (MoM) e media movel de 3 meses. "
+        "MoM negativo consecutivo sinaliza melhora estrutural; picos vs MM3M sinalizam eventos anomalos."
+    )
+    mis_monthly = mis_monthly_mis(frame)
+    if mis_monthly.empty:
+        st.info("Sem volume mensal suficiente.")
+    else:
+        fig = px.line(
+            mis_monthly,
+            x="mes_ingresso",
+            y="qtd_erros",
+            color="regiao",
+            markers=True,
+            color_discrete_map={"CE": PALETTE["ce"], "SP": PALETTE["sp"]},
+            labels={
+                "mes_ingresso": "Mes de ingresso",
+                "qtd_erros": "Ordens unicas",
+                "regiao": "Regiao",
+            },
+        )
+        for regiao in mis_monthly["regiao"].unique():
+            subset = mis_monthly.loc[mis_monthly["regiao"] == regiao]
+            fig.add_scatter(
+                x=subset["mes_ingresso"],
+                y=subset["media_movel_3m"],
+                mode="lines",
+                name=f"{regiao} · MM3M",
+                line=dict(dash="dot", width=2),
+                showlegend=True,
+            )
+        fig.update_layout(
+            height=380,
+            margin=dict(l=10, r=10, t=30, b=10),
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    # --- Linha 5: Taxonomia de referencia ---
+    with st.expander("📘 Taxonomia v2 de causa-raiz (referencia)", expanded=False):
+        st.caption(
+            "Taxonomia ampliada (CE + SP) com 14 classes, 8 categorias funcionais "
+            "e 4 niveis de severidade. Substitui o bucket generico `OUTROS` que dominava SP."
+        )
+        st.dataframe(taxonomy_reference(), hide_index=True, use_container_width=True)
 
 
 def _executive_layer(frame: pd.DataFrame) -> None:
