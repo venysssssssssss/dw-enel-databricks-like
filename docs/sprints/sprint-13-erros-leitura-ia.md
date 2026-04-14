@@ -215,3 +215,45 @@ make smoke
 - [ ] Dashboard Superset publicado com ≥4 gráficos
 - [ ] DAG Airflow verde por 3 execuções consecutivas
 - [ ] Cobertura de testes ≥80% nos módulos novos
+
+---
+
+## Extensão — Camada analítica CE Reclamações Totais (Abr/2026)
+
+A guia `erro de leitura` representa apenas ~3% do volume CE (4,9k de 172,5k ordens). A guia `reclamacao_total` (167,6k) estava sub-aproveitada. Esta extensão entrega visão analítica completa sobre ela sem criar um modelo supervisionado adicional — o campo `assunto` (populado em >99%) já é a taxonomia autoritativa da ENEL.
+
+### Decisão de design
+
+Não treinar classificador supervisionado sobre `reclamacao_total`. Em vez disso:
+
+1. **Taxonomia de negócio em 8 macro-temas** aplicada sobre `assunto` (normalizado upper), com regras ordenadas por precedência (primeiro match vence): Ouvidoria/Jurídico → GD → Religação/Multas → Entrega de Fatura → Média/Estimativa → Variação de Consumo → Refaturamento → Outros.
+2. **Drill-down em `causa_raiz`** quando preenchida (cobre ~32% dos registros, majoritariamente ordens GA finalizadas).
+3. **Agregações de BI/MIS** prontas para decisão: distribuição, Pareto 80/20, evolução mensal (MoM + MM3M), heatmap tema×mês, reincidência por instalação, radar GA vs GB, cruzamento com erros de leitura.
+
+### Módulos entregues
+
+| Arquivo | Papel |
+|---|---|
+| `src/viz/reclamacoes_ce_dashboard_data.py` | Data layer: `prepare_reclamacoes_ce_frame`, `compute_kpis`, `macro_tema_distribution`, `assunto_pareto`, `causa_raiz_drill`, `monthly_trend_by_tema`, `heatmap_tema_x_mes`, `top_instalacoes_reincidentes`, `radar_tema_por_grupo`, `cruzamento_com_erro_leitura`, `reincidence_matrix`, `executive_summary` |
+| `apps/streamlit/erro_leitura_dashboard.py` | Nova aba **🟧 CE · Reclamacoes Totais** (6 seções: KPIs → resumo+distribuição → Pareto → evolução/heatmap → radar+drill → reincidência+cruzamento) |
+| `tests/unit/viz/test_reclamacoes_ce_dashboard_data.py` | 12 testes cobrindo classificação, preparo, KPIs, agregações, radar, cruzamento e handling de frame vazio |
+
+### Métricas observadas (dataset Silver atual)
+
+- **Volume total**: 167.633 reclamações · 121 assuntos distintos · 15 meses (Jan/25–Mar/26)
+- **Mix de macro-temas**: Refaturamento 54,9% · Religação/Multas 13,7% · GD 9,0% · Ouvidoria/Jurídico 8,2% · Variação Consumo 7,2% · Média/Estimativa 4,3% · Outros 1,8% · Entrega Fatura 0,9%
+- **Pareto**: 10 assuntos concentram ~80% do volume
+- **Grupo B**: 97,5% do volume · **Reincidência**: 23.241 instalações (17,6%) com ≥2 reclamações; 83 instalações com ≥10
+- **Cobertura de `causa_raiz`**: 32% (label forte apenas parcial — por isso usada só em drill)
+
+### Verificação
+
+```bash
+# Data layer
+.venv/bin/python -m pytest tests/unit/viz/test_reclamacoes_ce_dashboard_data.py -q
+
+# Dashboard local (requer Silver em data/silver/erro_leitura_normalizado.csv)
+make dev
+.venv/bin/streamlit run apps/streamlit/erro_leitura_dashboard.py
+# Abrir aba "🟧 CE · Reclamacoes Totais"
+```
