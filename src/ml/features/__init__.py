@@ -4,10 +4,12 @@ from src.ml.features.feat_anomalias import AnomaliaFeatureBuilder
 from src.ml.features.feat_atraso import AtrasoFeatureBuilder
 from src.ml.features.feat_inadimplencia import InadimplenciaFeatureBuilder
 from src.ml.features.feat_metas import MetasFeatureBuilder
+from src.ml.features.text_embeddings import TextEmbeddingBuilder
 
 __all__ = [
     "AnomaliaFeatureBuilder",
     "AtrasoFeatureBuilder",
     "InadimplenciaFeatureBuilder",
     "MetasFeatureBuilder",
+    "TextEmbeddingBuilder",
 ]

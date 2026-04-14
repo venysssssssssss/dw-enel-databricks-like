@@ -2,6 +2,9 @@
 
 from src.ml.models.anomalia_model import AnomaliaModelTrainer
 from src.ml.models.atraso_model import AtrasoModelTrainer
+from src.ml.models.erro_leitura_anomaly import ErroLeituraAnomalyDetector
+from src.ml.models.erro_leitura_classifier import ErroLeituraClassifierTrainer, KeywordErroLeituraClassifier
+from src.ml.models.erro_leitura_topic_model import ErroLeituraTopicModelTrainer
 from src.ml.models.inadimplencia_model import InadimplenciaModelTrainer
 from src.ml.models.metas_model import MetasModelTrainer
 from src.ml.models.registry import LocalModelRegistry
@@ -9,7 +12,11 @@ from src.ml.models.registry import LocalModelRegistry
 __all__ = [
     "AnomaliaModelTrainer",
     "AtrasoModelTrainer",
+    "ErroLeituraAnomalyDetector",
+    "ErroLeituraClassifierTrainer",
+    "ErroLeituraTopicModelTrainer",
     "InadimplenciaModelTrainer",
+    "KeywordErroLeituraClassifier",
     "LocalModelRegistry",
     "MetasModelTrainer",
 ]

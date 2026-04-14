@@ -1,0 +1,37 @@
+version: 2
+
+models:
+  - name: dim_causa_raiz
+    columns:
+      - name: sk_causa_raiz
+        tests: [unique, not_null]
+      - name: causa_raiz
+        tests: [unique, not_null]
+
+  - name: dim_regiao
+    columns:
+      - name: sk_regiao
+        tests: [unique, not_null]
+      - name: regiao
+        tests: [unique, not_null]
+
+  - name: fato_erro_leitura
+    columns:
+      - name: ordem
+        tests: [unique, not_null]
+      - name: sk_regiao
+        tests: [not_null]
+      - name: qtd_erros
+        tests: [not_null]
+
+  - name: hotspots_erro_leitura
+    columns:
+      - name: regiao
+        tests: [not_null]
+      - name: classe_erro
+        tests: [not_null]
+
+  - name: vw_erro_leitura_padroes
+    columns:
+      - name: topic_name
+        tests: [not_null]
