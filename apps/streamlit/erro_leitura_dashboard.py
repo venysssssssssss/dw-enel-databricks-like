@@ -53,15 +53,65 @@ from src.viz.erro_leitura_dashboard_data import (  # noqa: E402
     taxonomy_reference,
     topic_distribution,
 )
+from src.viz.reclamacoes_ce_dashboard_data import (  # noqa: E402
+    MACRO_TEMA_LABELS,
+    MACRO_TEMA_ORDER,
+    assunto_pareto,
+    causa_raiz_drill,
+    compute_kpis as compute_reclamacoes_kpis,
+    cruzamento_com_erro_leitura,
+    executive_summary as reclamacoes_executive_summary,
+    heatmap_tema_x_mes,
+    load_reclamacoes_ce,
+    macro_tema_distribution,
+    monthly_trend_by_tema,
+    radar_tema_por_grupo,
+    reincidence_matrix as reclamacoes_reincidence_matrix,
+    top_instalacoes_reincidentes,
+)
 
 
+# Paleta ENEL — alinhada à identidade corporativa (azul + verde), com laranja/amarelo
+# oficiais como cores de destaque e neutros de alto contraste. Todos os pares de texto
+# sobre fundo obedecem WCAG AA (ratio ≥ 4.5:1 para corpo, ≥ 3:1 para títulos grandes).
 PALETTE = {
-    "primary": "#104C43",
-    "accent": "#D97706",
-    "ce": "#D97706",
-    "sp": "#104C43",
-    "muted": "#7C6A46",
+    "primary": "#0F4C81",     # ENEL azul corporativo
+    "primary_dark": "#0B3A63",
+    "primary_light": "#1F6FB2",
+    "secondary": "#00813E",   # ENEL verde (sustentabilidade)
+    "secondary_light": "#2BA65E",
+    "accent": "#F7941D",      # ENEL laranja oficial
+    "accent_soft": "#FBB040",
+    "warning": "#E4002B",     # Vermelho alerta ENEL
+    "neutral_900": "#1A1A1A",
+    "neutral_700": "#3F4A55",
+    "neutral_500": "#6B7680",
+    "neutral_200": "#E6ECF2",
+    "neutral_50": "#F6F9FC",
+    "ce": "#F7941D",          # Ceará → laranja (sol/sertão)
+    "sp": "#0F4C81",          # São Paulo → azul corporativo
+    "muted": "#6B7680",
 }
+
+CATEGORICAL_SEQUENCE = [
+    "#0F4C81", "#F7941D", "#00813E", "#5C2D91",
+    "#E4002B", "#1F6FB2", "#FBB040", "#2BA65E",
+]
+
+SEQUENTIAL_BLUE = [
+    "#EAF2FA", "#C7DDF0", "#9EC4E3", "#6FA6D3",
+    "#4088C0", "#1F6FB2", "#0F4C81", "#0B3A63",
+]
+
+SEQUENTIAL_ORANGE = [
+    "#FFF3E0", "#FFD9A6", "#FBB040", "#F7941D",
+    "#E07B10", "#B86008",
+]
+
+SEQUENTIAL_GREEN = [
+    "#E6F4EC", "#B6E0C5", "#80C89C", "#2BA65E",
+    "#00813E", "#005F2C",
+]
 
 
 def main() -> None:
@@ -113,6 +163,7 @@ def main() -> None:
 
     (
         tab_mis,
+        tab_ce_total,
         tab_overview,
         tab_patterns,
         tab_impact,
@@ -122,6 +173,7 @@ def main() -> None:
     ) = st.tabs(
         [
             "🧭 BI MIS Executivo",
+            "🟧 CE · Reclamacoes Totais",
             "📈 Ritmo Operacional",
             "🗺 Padroes & Concentracoes",
             "💰 Impacto de Refaturamento",
@@ -133,6 +185,8 @@ def main() -> None:
 
     with tab_mis:
         _mis_layer(filtered)
+    with tab_ce_total:
+        _reclamacoes_ce_layer(silver_path=silver_path, erro_leitura_frame=frame)
     with tab_overview:
         _executive_layer(filtered)
     with tab_patterns:
@@ -426,8 +480,7 @@ def _mis_layer(frame: pd.DataFrame) -> None:
                     "percentual": "% do total da regiao",
                     "categoria": "Categoria",
                 },
-                color_discrete_sequence=px.colors.sequential.Oranges_r
-                + px.colors.sequential.Tealgrn,
+                color_discrete_sequence=SEQUENTIAL_BLUE[::-1] + SEQUENTIAL_GREEN,
             )
             fig.update_layout(
                 height=520,
@@ -548,6 +601,304 @@ def _mis_layer(frame: pd.DataFrame) -> None:
             "e 4 niveis de severidade. Substitui o bucket generico `OUTROS` que dominava SP."
         )
         st.dataframe(taxonomy_reference(), hide_index=True, use_container_width=True)
+
+
+@st.cache_data(show_spinner="Carregando reclamacoes CE...")
+def _load_reclamacoes_ce(silver_path: Path) -> pd.DataFrame:
+    return load_reclamacoes_ce(silver_path=silver_path)
+
+
+def _reclamacoes_ce_layer(*, silver_path: Path, erro_leitura_frame: pd.DataFrame) -> None:
+    st.markdown("### 🟧 CE · Reclamacoes Totais — Visao Analitica Ampliada")
+    st.caption(
+        "Base **reclamacao_total** do Ceara (~167k ordens, 15 meses). "
+        "Taxonomia de negocio em 8 macro-temas derivada do campo `assunto` (label forte da ENEL) "
+        "com drill-down em `causa_raiz` quando preenchida."
+    )
+
+    frame = _load_reclamacoes_ce(silver_path)
+    if frame.empty:
+        st.warning(
+            "Nenhuma reclamacao total CE encontrada no Silver. "
+            "Verifique o caminho do dataset e se o ingestor foi executado."
+        )
+        return
+
+    kpis = compute_reclamacoes_kpis(frame)
+
+    # --- KPI cards ---
+    kpi_cols = st.columns(5)
+    kpi_cols[0].metric("Volume total", f"{kpis.total_reclamacoes:,}".replace(",", "."))
+    kpi_cols[1].metric("Instalacoes unicas", f"{kpis.unique_instalacoes:,}".replace(",", "."))
+    kpi_cols[2].metric(
+        "Reincidentes (>=2)",
+        f"{kpis.instalacoes_reincidentes:,}".replace(",", "."),
+        f"{kpis.instalacoes_reincidentes / max(kpis.unique_instalacoes, 1) * 100:.1f}%",
+    )
+    kpi_cols[3].metric("% Grupo B", f"{kpis.share_grupo_b * 100:.1f}%")
+    kpi_cols[4].metric("Cobertura causa-raiz", f"{kpis.taxa_rotulo_causa_raiz * 100:.1f}%")
+
+    st.divider()
+
+    # --- Section 1: Executive summary + macro-tema distribution ---
+    col_left, col_right = st.columns([1, 1.3])
+    with col_left:
+        st.markdown("**Resumo executivo**")
+        st.caption("Indicadores consolidados do periodo completo.")
+        st.dataframe(
+            reclamacoes_executive_summary(frame),
+            hide_index=True,
+            use_container_width=True,
+        )
+    with col_right:
+        st.markdown("**Distribuicao por macro-tema**")
+        st.caption("55% das reclamacoes concentram-se em refaturamento/cobranca. Use para priorizar tratativa.")
+        dist = macro_tema_distribution(frame)
+        fig = px.bar(
+            dist,
+            x="qtd",
+            y="macro_tema_label",
+            orientation="h",
+            text=dist["percentual"].map(lambda v: f"{v:.1f}%"),
+            color="macro_tema_label",
+            color_discrete_sequence=SEQUENTIAL_BLUE[::-1],
+        )
+        fig.update_layout(
+            showlegend=False,
+            height=360,
+            margin=dict(l=10, r=10, t=10, b=10),
+            yaxis={"categoryorder": "total ascending"},
+            xaxis_title="Quantidade",
+            yaxis_title="",
+        )
+        fig.update_traces(textposition="outside")
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+
+    # --- Section 2: Pareto 80/20 ---
+    st.markdown("**Pareto 80/20 dos assuntos**")
+    st.caption("Os assuntos dominantes concentram a maior parte do volume. Atacando o topo, resolve-se 80% do problema.")
+    pareto = assunto_pareto(frame, top_n=20)
+    fig_pareto = px.bar(
+        pareto,
+        x="assunto",
+        y="qtd",
+        text=pareto["percentual"].map(lambda v: f"{v:.1f}%"),
+        color="qtd",
+        color_continuous_scale=SEQUENTIAL_BLUE,
+    )
+    fig_pareto.add_scatter(
+        x=pareto["assunto"],
+        y=pareto["acumulado_pct"] / 100 * pareto["qtd"].max(),
+        mode="lines+markers",
+        name="Acumulado (%)",
+        yaxis="y2",
+        line=dict(color=PALETTE["primary"], width=2),
+    )
+    fig_pareto.update_layout(
+        height=440,
+        margin=dict(l=10, r=10, t=10, b=140),
+        xaxis_tickangle=-45,
+        yaxis=dict(title="Quantidade"),
+        yaxis2=dict(title="Acumulado (%)", overlaying="y", side="right", range=[0, 100]),
+        coloraxis_showscale=False,
+        showlegend=False,
+    )
+    st.plotly_chart(fig_pareto, use_container_width=True)
+
+    st.divider()
+
+    # --- Section 3: Monthly trend + heatmap ---
+    col_trend, col_heatmap = st.columns([1.2, 1])
+    with col_trend:
+        st.markdown("**Evolucao mensal por macro-tema (MM3M)**")
+        st.caption("Volume mensal com media movel de 3 meses. Util para detectar picos sistemicos.")
+        trend = monthly_trend_by_tema(frame)
+        fig_trend = px.line(
+            trend,
+            x="ano_mes",
+            y="media_movel_3m",
+            color="macro_tema_label",
+            markers=True,
+            color_discrete_sequence=CATEGORICAL_SEQUENCE,
+        )
+        fig_trend.update_layout(
+            height=400,
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis_title="Mes",
+            yaxis_title="Volume (MM3M)",
+            legend=dict(orientation="h", y=-0.25),
+        )
+        st.plotly_chart(fig_trend, use_container_width=True)
+    with col_heatmap:
+        st.markdown("**Heatmap tema x mes**")
+        st.caption("Intensidade por celula revela sazonalidade e picos.")
+        heatmap = heatmap_tema_x_mes(frame)
+        fig_heat = px.imshow(
+            heatmap,
+            color_continuous_scale=SEQUENTIAL_BLUE,
+            aspect="auto",
+            labels=dict(x="Mes", y="Macro-tema", color="Volume"),
+        )
+        fig_heat.update_layout(
+            height=400,
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis_tickangle=-45,
+        )
+        st.plotly_chart(fig_heat, use_container_width=True)
+
+    st.divider()
+
+    # --- Section 4: Radar GA vs GB + causa-raiz drill ---
+    col_radar, col_drill = st.columns([1, 1.1])
+    with col_radar:
+        st.markdown("**Perfil de reclamacao: Grupo A vs Grupo B**")
+        st.caption("Como o mix de causas difere entre GA (corporativo) e GB (residencial/comercial).")
+        radar = radar_tema_por_grupo(frame)
+        radar = radar.loc[radar["grupo"].isin(["GA", "GB"])]
+        fig_radar = px.line_polar(
+            radar,
+            r="percentual",
+            theta="macro_tema_label",
+            color="grupo",
+            line_close=True,
+            color_discrete_map={"GA": PALETTE["primary"], "GB": PALETTE["accent"]},  # azul vs laranja ENEL
+        )
+        fig_radar.update_traces(fill="toself", opacity=0.55)
+        fig_radar.update_layout(
+            height=430,
+            margin=dict(l=40, r=40, t=20, b=20),
+            polar=dict(radialaxis=dict(ticksuffix="%", range=[0, max(radar["percentual"].max() * 1.1, 5)])),
+            legend=dict(orientation="h", y=-0.1),
+        )
+        st.plotly_chart(fig_radar, use_container_width=True)
+    with col_drill:
+        st.markdown("**Drill-down em causa-raiz**")
+        st.caption("Quando o operador preencheu `Causa Raiz`, qual a distribuicao por macro-tema?")
+        tema_escolhido_label = st.selectbox(
+            "Macro-tema para drill",
+            options=[MACRO_TEMA_LABELS[t] for t in MACRO_TEMA_ORDER],
+            index=0,
+        )
+        tema_key = next(t for t, lbl in MACRO_TEMA_LABELS.items() if lbl == tema_escolhido_label)
+        drill = causa_raiz_drill(frame, macro_tema=tema_key, top_n=12)
+        if drill.empty:
+            st.info("Este macro-tema ainda nao possui causas-raiz preenchidas.")
+        else:
+            fig_drill = px.bar(
+                drill,
+                x="qtd",
+                y="causa_raiz",
+                orientation="h",
+                text=drill["percentual"].map(lambda v: f"{v:.1f}%"),
+                color="qtd",
+                color_continuous_scale=SEQUENTIAL_BLUE,
+            )
+            fig_drill.update_layout(
+                height=430,
+                margin=dict(l=10, r=10, t=10, b=10),
+                yaxis={"categoryorder": "total ascending"},
+                xaxis_title="Quantidade",
+                yaxis_title="",
+                coloraxis_showscale=False,
+            )
+            fig_drill.update_traces(textposition="outside")
+            st.plotly_chart(fig_drill, use_container_width=True)
+
+    st.divider()
+
+    # --- Section 5: Reincidence + top installations + crossover with erro_leitura ---
+    col_re1, col_re2, col_cross = st.columns([1, 1, 1.2])
+    with col_re1:
+        st.markdown("**Reincidencia por instalacao**")
+        st.caption("Quantas instalacoes reclamam N vezes no periodo.")
+        reinc = reclamacoes_reincidence_matrix(frame)
+        fig_reinc = px.bar(
+            reinc,
+            x="bucket",
+            y="instalacoes",
+            text="instalacoes",
+            color="bucket",
+            color_discrete_sequence=SEQUENTIAL_BLUE,
+        )
+        fig_reinc.update_layout(
+            height=360,
+            margin=dict(l=10, r=10, t=10, b=10),
+            showlegend=False,
+            xaxis_title="Reclamacoes por instalacao",
+            yaxis_title="Instalacoes",
+        )
+        fig_reinc.update_traces(textposition="outside")
+        st.plotly_chart(fig_reinc, use_container_width=True)
+    with col_re2:
+        st.markdown("**Top instalacoes reincidentes**")
+        st.caption("Clientes que mais geram ordens — candidatos a tratativa individualizada.")
+        top_inst = top_instalacoes_reincidentes(frame, top_n=15).copy()
+        top_inst["ultimo_ingresso"] = pd.to_datetime(top_inst["ultimo_ingresso"]).dt.strftime("%Y-%m-%d")
+        st.dataframe(
+            top_inst.rename(
+                columns={
+                    "instalacao_hash": "Instalacao (hash)",
+                    "qtd_reclamacoes": "Qtd",
+                    "temas_distintos": "Temas distintos",
+                    "ultimo_ingresso": "Ultimo ingresso",
+                }
+            ),
+            hide_index=True,
+            use_container_width=True,
+            height=360,
+        )
+    with col_cross:
+        st.markdown("**Cruzamento com erros de leitura (CE)**")
+        st.caption(
+            "Para cada macro-tema, quantas reclamacoes vieram de instalacoes que TAMBEM tem erro de leitura. "
+            "Indicador direto: erro de leitura e causa-raiz oculta de outras reclamacoes?"
+        )
+        cross = cruzamento_com_erro_leitura(frame, erro_leitura_frame)
+        if cross.empty:
+            st.info("Sem interseccao detectada (verifique se os dois datasets estao carregados).")
+        else:
+            fig_cross = px.bar(
+                cross,
+                x="percentual",
+                y="macro_tema_label",
+                orientation="h",
+                text=cross["percentual"].map(lambda v: f"{v:.1f}%"),
+                color="percentual",
+                color_continuous_scale=SEQUENTIAL_BLUE,
+            )
+            fig_cross.update_layout(
+                height=360,
+                margin=dict(l=10, r=10, t=10, b=10),
+                yaxis={"categoryorder": "total ascending"},
+                xaxis_title="% com erro de leitura",
+                yaxis_title="",
+                coloraxis_showscale=False,
+            )
+            fig_cross.update_traces(textposition="outside")
+            st.plotly_chart(fig_cross, use_container_width=True)
+
+    # --- Section 6: Taxonomy reference ---
+    with st.expander("📖 Taxonomia de macro-temas (regras)"):
+        taxonomy_ref = pd.DataFrame(
+            [
+                {
+                    "macro_tema": key,
+                    "label": MACRO_TEMA_LABELS[key],
+                    "volume": int((frame["macro_tema"] == key).sum()),
+                    "share_%": round(float((frame["macro_tema"] == key).mean() * 100), 2),
+                }
+                for key in MACRO_TEMA_ORDER
+            ]
+        )
+        st.dataframe(taxonomy_ref, hide_index=True, use_container_width=True)
+        st.markdown(
+            "**Critério**: `assunto` (normalizado upper) é testado contra listas de tokens, "
+            "ordenadas por precedência (ouvidoria/jurídico → GD → religação/multas → "
+            "entrega de fatura → média/estimativa → variação de consumo → refaturamento → outros). "
+            "Primeiro match vence. Quando `causa_raiz` existe, é usada para drill-down, não para reclassificação."
+        )
 
 
 def _executive_layer(frame: pd.DataFrame) -> None:
@@ -962,52 +1313,70 @@ def _inject_style() -> None:
     st.markdown(
         """
         <style>
+        :root {
+            --enel-blue: #0F4C81;
+            --enel-blue-dark: #0B3A63;
+            --enel-blue-light: #1F6FB2;
+            --enel-green: #00813E;
+            --enel-orange: #F7941D;
+            --enel-amber: #FBB040;
+            --enel-red: #E4002B;
+            --ink-900: #1A1A1A;
+            --ink-700: #3F4A55;
+            --ink-500: #6B7680;
+            --surface-0: #FFFFFF;
+            --surface-1: #F6F9FC;
+            --surface-2: #E6ECF2;
+        }
         .stApp {
             background:
-              radial-gradient(circle at 12% 8%, rgba(245, 158, 11, .22), transparent 28rem),
-              radial-gradient(circle at 88% 4%, rgba(20, 83, 45, .18), transparent 24rem),
-              linear-gradient(180deg, #F8F3EA 0%, #F4EEE3 45%, #ECE2D1 100%);
-            color: #1f2933;
+              radial-gradient(circle at 10% 6%, rgba(15, 76, 129, .10), transparent 28rem),
+              radial-gradient(circle at 90% 4%, rgba(0, 129, 62, .08), transparent 24rem),
+              linear-gradient(180deg, #FFFFFF 0%, #F6F9FC 55%, #E6ECF2 100%);
+            color: var(--ink-900);
         }
         .hero {
             padding: 2rem 2rem 1.4rem;
             border-radius: 28px;
             background:
-              linear-gradient(135deg, rgba(16, 76, 67, .94), rgba(67, 56, 36, .92)),
-              repeating-linear-gradient(45deg, rgba(255,255,255,.08) 0 1px, transparent 1px 12px);
-            color: #fff8ec;
+              linear-gradient(135deg, var(--enel-blue) 0%, var(--enel-blue-dark) 60%, #072A4A 100%),
+              repeating-linear-gradient(45deg, rgba(255,255,255,.05) 0 1px, transparent 1px 12px);
+            color: #FFFFFF;
             margin-bottom: 1rem;
-            box-shadow: 0 24px 70px rgba(67, 56, 36, .23);
+            box-shadow: 0 24px 60px rgba(15, 76, 129, .32);
+            border-left: 6px solid var(--enel-orange);
         }
         .hero h1 {
             font-size: clamp(2.1rem, 5vw, 4.7rem);
             line-height: .95;
-            letter-spacing: -.06em;
+            letter-spacing: -.04em;
             margin: .2rem 0 .8rem;
+            color: #FFFFFF;
         }
         .eyebrow {
             text-transform: uppercase;
             letter-spacing: .16em;
             font-weight: 700;
-            color: #FBBF24;
+            color: var(--enel-orange);
             margin: 0;
         }
         .subtitle {
             max-width: 58rem;
             font-size: 1.08rem;
-            color: #FDECC8;
+            color: #E6ECF2;
         }
         .metric-card {
             min-height: 140px;
-            padding: 1rem;
-            border: 1px solid rgba(67, 56, 36, .18);
-            border-radius: 22px;
-            background: rgba(255, 250, 241, .82);
-            box-shadow: 0 12px 32px rgba(67, 56, 36, .12);
+            padding: 1rem 1.1rem;
+            border: 1px solid var(--surface-2);
+            border-radius: 18px;
+            background: var(--surface-0);
+            box-shadow: 0 8px 24px rgba(15, 76, 129, .08);
+            border-top: 4px solid var(--enel-blue);
         }
         .metric-card span {
             display: block;
-            color: #6B5B3D;
+            color: var(--ink-500);
             font-size: .78rem;
             text-transform: uppercase;
             letter-spacing: .08em;
@@ -1016,28 +1385,59 @@ def _inject_style() -> None:
         .metric-card strong {
             display: block;
             font-size: 2rem;
-            letter-spacing: -.04em;
-            color: #104C43;
+            letter-spacing: -.02em;
+            color: var(--enel-blue);
             margin-top: .35rem;
+            font-weight: 700;
         }
         .metric-card small {
-            color: #7C6A46;
+            color: var(--ink-700);
         }
         [data-testid="stMetricValue"] {
-            color: #104C43;
+            color: var(--enel-blue);
+            font-weight: 700;
         }
-        .stTabs [data-baseweb="tab-list"] {
-            gap: .4rem;
-        }
-        .stTabs [data-baseweb="tab"] {
-            border-radius: 14px 14px 0 0;
-            padding: .6rem 1.1rem;
-            background: rgba(255, 250, 241, .55);
+        [data-testid="stMetricLabel"] {
+            color: var(--ink-700);
             font-weight: 600;
         }
+        [data-testid="stMetricDelta"] svg { fill: var(--enel-green); }
+        h1, h2, h3, h4 { color: var(--ink-900); }
+        .stTabs [data-baseweb="tab-list"] {
+            gap: .35rem;
+            border-bottom: 2px solid var(--surface-2);
+        }
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 12px 12px 0 0;
+            padding: .6rem 1.1rem;
+            background: var(--surface-1);
+            font-weight: 600;
+            color: var(--ink-700);
+            border: 1px solid transparent;
+        }
+        .stTabs [data-baseweb="tab"]:hover {
+            background: var(--surface-2);
+            color: var(--enel-blue);
+        }
         .stTabs [aria-selected="true"] {
-            background: #104C43 !important;
-            color: #fff8ec !important;
+            background: var(--enel-blue) !important;
+            color: #FFFFFF !important;
+            border-color: var(--enel-blue) !important;
+            box-shadow: 0 -2px 0 var(--enel-orange) inset;
+        }
+        section[data-testid="stSidebar"] {
+            background: var(--surface-0);
+            border-right: 1px solid var(--surface-2);
+        }
+        .stButton > button {
+            background: var(--enel-blue);
+            color: #FFFFFF;
+            border: none;
+            font-weight: 600;
+        }
+        .stButton > button:hover {
+            background: var(--enel-blue-light);
+            color: #FFFFFF;
         }
         </style>
         """,
