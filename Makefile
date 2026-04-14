@@ -1,4 +1,4 @@
-.PHONY: setup setup-all dev full ml down test test-unit test-integration lint format pipeline smoke sample-data seed-time features train score drift
+.PHONY: setup setup-all dev full ml down test test-unit test-integration lint format pipeline smoke sample-data seed-time features train score drift erro-leitura-dry-run erro-leitura-normalize erro-leitura-train erro-leitura-dashboard share-up share-url share-logs share-down
 
 setup:
 	python -m venv .venv
@@ -9,7 +9,7 @@ setup:
 setup-all:
 	python -m venv .venv
 	.venv/bin/pip install --upgrade pip
-	.venv/bin/pip install -e ".[dev,api,ml,platform]"
+	.venv/bin/pip install -e ".[dev,api,ml,platform,viz]"
 	.venv/bin/pre-commit install
 
 dev:
@@ -63,3 +63,29 @@ score:
 
 drift:
 	python -m scripts.check_drift --model-name atraso_entrega --reference-date 2026-02-01 --current-date 2026-03-01
+
+erro-leitura-dry-run:
+	python -m src.ingestion.descricoes_enel_ingestor --input-dir DESCRICOES_ENEL --dry-run
+
+erro-leitura-normalize:
+	python -m scripts.normalize_erro_leitura --input-dir DESCRICOES_ENEL
+
+erro-leitura-train:
+	python -m scripts.train_erro_leitura --input data/silver/erro_leitura_normalizado.csv
+
+erro-leitura-dashboard:
+	.venv/bin/streamlit run apps/streamlit/erro_leitura_dashboard.py
+
+# --- Compartilhamento publico do dashboard (Streamlit + Caddy + Cloudflare Tunnel) ---
+# Ver docs/SHARE_DASHBOARD.md para detalhes.
+share-up:
+	./scripts/share_dashboard.sh up
+
+share-url:
+	./scripts/share_dashboard.sh url
+
+share-logs:
+	./scripts/share_dashboard.sh logs
+
+share-down:
+	./scripts/share_dashboard.sh down

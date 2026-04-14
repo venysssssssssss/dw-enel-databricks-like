@@ -1,0 +1,42 @@
+services:
+  streamlit:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/streamlit.Dockerfile
+    image: enel-streamlit-dashboard:latest
+    container_name: enel-streamlit
+    working_dir: /app
+    volumes:
+      # Live mount so dashboard edits reflect on reload (Streamlit watches files).
+      - ../apps:/app/apps:ro
+      - ../src:/app/src:ro
+      - ../data:/app/data:ro
+    ports:
+      - "127.0.0.1:8501:8501"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: enel-caddy
+    volumes:
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "8080:8080"
+    depends_on:
+      streamlit:
+        condition: service_healthy
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: enel-cloudflared
+    command: tunnel --no-autoupdate --url http://caddy:8080
+    depends_on:
+      - caddy
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

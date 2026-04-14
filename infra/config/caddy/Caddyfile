@@ -1,0 +1,44 @@
+# Caddy reverse proxy para Streamlit (Sprint 13 — Erros de Leitura)
+#
+# Expoe o dashboard Streamlit em :8080 com suporte a WebSocket, gzip e
+# headers de seguranca. Basic Auth opcional (descomente bloco abaixo).
+#
+# Para gerar hash de senha:
+#   docker run --rm caddy caddy hash-password --plaintext 'suasenha'
+
+{
+	admin off
+	auto_https off
+	servers {
+		protocols h1 h2c
+	}
+}
+
+:8080 {
+	encode gzip zstd
+
+	# basicauth {
+	#     enel JDJhJDE0JHBsYWNlaG9sZGVyX3JlcGxhY2VfbWVfd2l0aF9hX3JlYWxfaGFzaA
+	# }
+
+	header {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Streamlit usa WebSocket em /_stcore/stream — reverse_proxy do Caddy
+	# detecta Upgrade: websocket automaticamente e faz o switch.
+	reverse_proxy streamlit:8501 {
+		transport http {
+			keepalive 30s
+			read_timeout 300s
+		}
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
