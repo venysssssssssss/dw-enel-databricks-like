@@ -193,7 +193,7 @@ async def test_erro_leitura_endpoints_authenticated(client: AsyncClient) -> None
     ordem = await client.get("/api/v1/erros-leitura/123", headers=headers)
 
     assert classification.status_code == 200
-    assert classification.json()["classe"] == "leitura_estimada"
+    assert classification.json()["classe"] == "leitura_estimada_media"
     assert padroes.status_code == 200
     assert padroes.json()[0]["topic_name"] == "leitura_estimada"
     assert hotspots.status_code == 200

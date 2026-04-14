@@ -95,7 +95,7 @@ def test_prepare_dashboard_frame_filters_total_and_sanitizes_columns() -> None:
     assert "texto_completo" not in frame.columns
     assert "observacao_ordem" not in frame.columns
     assert frame.loc[frame["ordem"].eq("1"), "causa_canonica"].item() == "digitacao"
-    assert frame.loc[frame["ordem"].eq("3"), "causa_canonica"].item() == "acesso_negado"
+    assert frame.loc[frame["ordem"].eq("3"), "causa_canonica"].item() == "impedimento_acesso"
     assert frame["instalacao_hash"].nunique() == 1
 
 

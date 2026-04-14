@@ -34,14 +34,14 @@ def _training_frame() -> pd.DataFrame:
             {
                 "ordem": "3",
                 "texto_completo": "portao fechado impede acesso ao medidor",
-                "causa_raiz": "acesso_negado",
+                "causa_raiz": "impedimento_acesso",
                 "dt_ingresso": "2026-01-03",
                 "_source_region": "SP",
             },
             {
                 "ordem": "4",
                 "texto_completo": "endereco divergente na ordem",
-                "causa_raiz": "endereco_divergente",
+                "causa_raiz": "endereco_tipologia",
                 "dt_ingresso": "2026-01-04",
                 "_source_region": "SP",
             },
@@ -55,7 +55,7 @@ def _training_frame() -> pd.DataFrame:
             {
                 "ordem": "6",
                 "texto_completo": "fatura corrigida apos refaturamento",
-                "causa_raiz": "refaturamento",
+                "causa_raiz": "refaturamento_corretivo",
                 "dt_ingresso": "2026-01-06",
                 "_source_region": "CE",
             },
@@ -106,15 +106,17 @@ def test_topic_training_text_removes_internal_user_tokens() -> None:
 
 
 def test_keyword_classifier_classifies_access_issue() -> None:
-    result = KeywordErroLeituraClassifier().classify("portao fechado sem acesso ao medidor")
-    assert result["classe"] == "acesso_negado"
+    result = KeywordErroLeituraClassifier().classify(
+        "portao fechado sem acesso ao medidor, cliente nao da acesso"
+    )
+    assert result["classe"] == "impedimento_acesso"
     assert len(result["top3"]) == 3
 
 
 def test_canonical_label_consolidates_source_variants() -> None:
     assert canonical_label("Erro de leitura - digitação") == "digitacao"
-    assert canonical_label("Faturamento por média - cliente") == "leitura_estimada"
-    assert canonical_label("Erro de tipologia outra área") == "tipologia_incorreta"
+    assert canonical_label("Faturamento por média - cliente") == "leitura_estimada_media"
+    assert canonical_label("Erro de tipologia outra área") == "endereco_tipologia"
     assert canonical_label("outros") is None
 
 
@@ -122,7 +124,7 @@ def test_classifier_training_returns_macro_f1() -> None:
     result = ErroLeituraClassifierTrainer(TextEmbeddingBuilder(dimensions=4)).train(_training_frame())
     assert result.backend == "logistic-regression-calibrated"
     assert result.macro_f1 >= 0.0
-    assert "acesso_negado" in result.classes
+    assert "impedimento_acesso" in result.classes
 
 
 def test_anomaly_detector_outputs_hotspots() -> None:
