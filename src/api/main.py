@@ -23,7 +23,7 @@ from src.api.exceptions import (
 from src.api.infrastructure.trino_client import AsyncTrinoClient
 from src.api.middleware.request_id import RequestIDMiddleware
 from src.api.middleware.timing import TimingMiddleware
-from src.api.routers.v1 import admin, exports, health, metrics, scores
+from src.api.routers.v1 import admin, erro_leitura, exports, health, metrics, scores
 from src.common.minio_client import MinIOClient
 
 
@@ -82,6 +82,7 @@ def create_app(
     app.include_router(health.router, prefix="/api/v1/health", tags=["Health"])
     app.include_router(exports.router, prefix="/api/v1/exports", tags=["Exports"])
     app.include_router(scores.router, prefix="/api/v1/scores", tags=["Scores"])
+    app.include_router(erro_leitura.router, prefix="/api/v1/erros-leitura", tags=["Erros de Leitura"])
     app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["Metrics"])
     app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 

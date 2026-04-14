@@ -72,6 +72,35 @@ async def client():
                     "is_anomaly": True,
                 }
             ],
+            "select topic_id, topic_name, quantidade, percentual from gold.vw_erro_leitura_padroes  order by quantidade desc": [
+                {
+                    "topic_id": 1,
+                    "topic_name": "leitura_estimada",
+                    "quantidade": 10,
+                    "percentual": 50.0,
+                }
+            ],
+            "select regiao, classe_erro, data, qtd_erros, anomaly_score, is_anomaly from gold.hotspots_erro_leitura where regiao = 'CE' order by anomaly_score desc": [
+                {
+                    "regiao": "CE",
+                    "classe_erro": "leitura_estimada",
+                    "data": "2026-01-01",
+                    "qtd_erros": 5,
+                    "anomaly_score": 0.91,
+                    "is_anomaly": True,
+                }
+            ],
+            "select * from gold.fato_erro_leitura where ordem = '123'": [
+                {
+                    "ordem": "123",
+                    "classe": "leitura_estimada",
+                    "probabilidade": 0.8,
+                    "causa_raiz": "LEITURA_ESTIMADA",
+                    "status": "ENCERRADA",
+                    "regiao": "CE",
+                    "explicacao": ["token: estimada"],
+                }
+            ],
         },
     )
     transport = ASGITransport(app=app)
@@ -147,3 +176,27 @@ async def test_validation_error_returns_422(client: AsyncClient) -> None:
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_erro_leitura_endpoints_authenticated(client: AsyncClient) -> None:
+    token = create_access_token({"sub": "admin", "role": "admin"})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    classification = await client.post(
+        "/api/v1/erros-leitura/classificar",
+        json={"texto": "Cliente informa leitura estimada ha tres meses"},
+        headers=headers,
+    )
+    padroes = await client.get("/api/v1/erros-leitura/padroes", headers=headers)
+    hotspots = await client.get("/api/v1/erros-leitura/hotspots", params={"regiao": "CE"}, headers=headers)
+    ordem = await client.get("/api/v1/erros-leitura/123", headers=headers)
+
+    assert classification.status_code == 200
+    assert classification.json()["classe"] == "leitura_estimada"
+    assert padroes.status_code == 200
+    assert padroes.json()[0]["topic_name"] == "leitura_estimada"
+    assert hotspots.status_code == 200
+    assert hotspots.json()[0]["is_anomaly"] is True
+    assert ordem.status_code == 200
+    assert ordem.json()["ordem"] == "123"
