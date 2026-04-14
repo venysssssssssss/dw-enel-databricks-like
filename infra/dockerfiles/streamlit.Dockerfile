@@ -1,4 +1,4 @@
-# Streamlit image with viz+ml deps pre-baked so container restarts are instant.
+# Streamlit image with dashboard deps pre-baked so container restarts are instant.
 # Build context: project root.
 FROM python:3.12-slim
 
@@ -20,7 +20,7 @@ COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
 RUN pip install --upgrade pip \
-    && pip install -e ".[viz,ml]"
+    && pip install -e ".[viz]"
 
 # App code is mounted at runtime via docker-compose (volume), but we copy as
 # fallback so the image is self-contained.
