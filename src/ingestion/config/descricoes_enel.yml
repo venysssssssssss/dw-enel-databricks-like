@@ -1,0 +1,68 @@
+source:
+  name: descricoes_reclamacoes
+  type: excel
+  path: DESCRICOES_ENEL
+  encoding: utf-8
+  delimiter: ";"
+  has_header: true
+schema:
+  - name: grupo
+    source_name: GRUPO
+    type: string
+    nullable: true
+  - name: ordem
+    source_name: ORDEM
+    type: string
+    nullable: false
+  - name: assunto
+    source_name: ASSUNTO
+    type: string
+    nullable: true
+  - name: instalacao
+    source_name: INSTALACAO
+    type: string
+    nullable: true
+  - name: dt_ingresso
+    source_name: DT. INGRESSO
+    type: timestamp
+    nullable: true
+  - name: observacao_ordem
+    source_name: OBSERVAÇÃO ORDEM
+    type: string
+    nullable: true
+  - name: status
+    source_name: Status
+    type: string
+    nullable: true
+  - name: devolutiva
+    source_name: DEVOLUTIVA
+    type: string
+    nullable: true
+  - name: causa_raiz
+    source_name: Causa Raiz
+    type: string
+    nullable: true
+  - name: _sheet_name
+    type: string
+    nullable: false
+  - name: _data_type
+    type: string
+    nullable: false
+  - name: _source_region
+    type: string
+    nullable: false
+  - name: _source_file
+    type: string
+    nullable: false
+  - name: _source_hash
+    type: string
+    nullable: false
+ingestion:
+  strategy: snapshot
+  partition_by: _source_region
+  dedup_key: [ordem, _source_region, _sheet_name]
+  dedup_order: _ingested_at
+quality:
+  min_rows: 1
+  max_null_pct: 0.25
+  critical_columns: [ordem, _source_region, _sheet_name, _data_type]
