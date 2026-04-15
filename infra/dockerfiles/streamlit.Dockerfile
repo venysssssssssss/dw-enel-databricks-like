@@ -20,7 +20,7 @@ COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
 RUN pip install --upgrade pip \
-    && pip install -e ".[viz]"
+    && pip install -e ".[viz,rag]"
 
 # App code is mounted at runtime via docker-compose (volume), but we copy as
 # fallback so the image is self-contained.

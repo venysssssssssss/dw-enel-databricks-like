@@ -10,7 +10,15 @@ services:
       # Live mount so dashboard edits reflect on reload (Streamlit watches files).
       - ../apps:/app/apps:ro
       - ../src:/app/src:ro
-      - ../data:/app/data:ro
+      # ChromaDB opens SQLite with write access even for reads, and the chat
+      # persists telemetry/feedback under data/rag.
+      - ../data:/app/data:rw
+    environment:
+      ENEL_PROJECT_ROOT: /app
+      RAG_EMBEDDING_MODEL: hashing
+      RAG_CHROMADB_PATH: /app/data/rag/chromadb
+      RAG_TELEMETRY_PATH: /app/data/rag/telemetry.jsonl
+      RAG_FEEDBACK_PATH: /app/data/rag/feedback.csv
     ports:
       - "127.0.0.1:8501:8501"
     restart: unless-stopped
