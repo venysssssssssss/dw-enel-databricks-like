@@ -139,6 +139,7 @@ URL publica em `http://localhost:4040`.
 # 1. Garantir dados e artefatos prontos
 make pipeline               # bronze → silver → gold
 make erro-leitura-train     # topicos + classificador
+python scripts/build_rag_corpus.py --rebuild  # indice do Assistente ENEL
 
 # 2. Subir compartilhamento
 ./scripts/share_dashboard.sh up
