@@ -9,10 +9,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install build deps for any wheels that need compilation (e.g. hdbscan).
+# Install build deps for any wheels that need compilation (e.g. hdbscan,
+# llama-cpp-python which builds a native CMake extension).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential curl \
+        build-essential curl cmake git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python deps first (layer cache).

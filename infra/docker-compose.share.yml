@@ -19,6 +19,12 @@ services:
       RAG_CHROMADB_PATH: /app/data/rag/chromadb
       RAG_TELEMETRY_PATH: /app/data/rag/telemetry.jsonl
       RAG_FEEDBACK_PATH: /app/data/rag/feedback.csv
+      RAG_PROVIDER: llama_cpp
+      RAG_MODEL_FILE: qwen2.5-3b-instruct-q4_k_m.gguf
+      RAG_MODEL_PATH: /app/data/rag/models/qwen2.5-3b-instruct-q4_k_m.gguf
+      RAG_N_CTX: "4096"
+      RAG_N_THREADS: "6"
+      RAG_SIMILARITY_THRESHOLD: "0.05"
     ports:
       - "127.0.0.1:8501:8501"
     restart: unless-stopped
