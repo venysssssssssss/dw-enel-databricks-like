@@ -226,6 +226,14 @@ def build_corpus(config: RagConfig, *, rebuild: bool = False) -> IngestionStats:
             )
         )
 
+    try:
+        from src.rag.data_ingestion import build_data_cards
+
+        data_chunks = build_data_cards()
+        all_chunks.extend(data_chunks)
+    except Exception as exc:  # pragma: no cover - não-crítico
+        stats.skipped.append(f"data_cards: {exc}")
+
     if not all_chunks:
         return stats
 

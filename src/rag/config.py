@@ -110,7 +110,7 @@ def load_rag_config() -> RagConfig:
         stream=_env_bool("RAG_STREAM", True),
         retrieval_k=_env_int("RAG_RETRIEVAL_K", 12),
         rerank_top_n=_env_int("RAG_RERANK_TOP_N", 5),
-        similarity_threshold=_env_float("RAG_SIMILARITY_THRESHOLD", 0.25),
+        similarity_threshold=_env_float("RAG_SIMILARITY_THRESHOLD", 0.05),
         corpus_roots=corpus_roots,
         chunk_size_tokens=_env_int("RAG_CHUNK_SIZE", 480),
         chunk_overlap_tokens=_env_int("RAG_CHUNK_OVERLAP", 64),

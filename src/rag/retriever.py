@@ -134,10 +134,18 @@ def route_doc_types(query: str) -> list[str] | None:
     Objetivo: enviar menos chunks ao LLM quando a intenção é clara.
     """
     q = query.lower()
+    analytics_terms = (
+        "quantos", "quantas", "volume", "total de", "percentual", "porcentagem",
+        "top ", "ranking", "maior", "mais frequente", "evolução", "mensal",
+        "ceará", " ce ", " ce?", " ce.", " sp ", " sp?", " sp.", "são paulo",
+        "reclamações", "reclamacoes", "causa-raiz", "causa raiz", "assunto",
+    )
+    if any(term in q for term in analytics_terms):
+        return ["data", "business", "viz"]
     if any(term in q for term in ("sprint", "entregável", "deliverable")):
         return ["sprint"]
     if any(term in q for term in ("acf", "asf", "refatur", "religa", "grupo b", "grupo a", "gd ")):
-        return ["business", "viz"]
+        return ["data", "business", "viz"]
     if any(term in q for term in ("modelo", "predict", "feature", "isolation", "lightgbm", "xgboost")):
         return ["ml"]
     if any(term in q for term in ("endpoint", "fastapi", "api ", "rota")):
