@@ -15,7 +15,6 @@ dependencies = [
   "PyYAML>=6.0,<7.0",
   "structlog>=25.1,<26.0",
   "tenacity>=9.0,<10.0",
-  "chromadb (>=1.5.7,<2.0.0)",
 ]
 
 [project.optional-dependencies]
