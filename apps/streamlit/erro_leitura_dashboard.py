@@ -28,6 +28,7 @@ from apps.streamlit.components.hero import render_hero
 from apps.streamlit.components.narrative import render_empty_state
 from apps.streamlit.components.skeleton import render_skeleton
 from apps.streamlit.layers import (
+    chat,
     educational,
     executive,
     governance,
@@ -47,6 +48,7 @@ from src.viz.erro_leitura_dashboard_data import (
 )
 
 TAB_LABELS = [
+    "💬 Assistente ENEL",
     "🧭 BI MIS Executivo",
     "🟧 CE · Reclamacoes Totais",
     "📈 Ritmo Operacional",
@@ -131,21 +133,26 @@ def main() -> None:
 
     tabs = st.tabs(TAB_LABELS)
     theme = filters.theme
+    context_hint = st.session_state.get("last_dashboard_area")
     with tabs[0]:
-        mis.render(st, filtered, theme=theme)
+        chat.render(st, theme=theme, context_hint=context_hint)
     with tabs[1]:
-        reclamacoes_ce.render(st, silver_path=silver_path, erro_leitura_frame=frame, theme=theme)
+        st.session_state["last_dashboard_area"] = "BI MIS Executivo"
+        mis.render(st, filtered, theme=theme)
     with tabs[2]:
-        executive.render(st, filtered, theme=theme)
+        st.session_state["last_dashboard_area"] = "CE · Reclamações Totais"
+        reclamacoes_ce.render(st, silver_path=silver_path, erro_leitura_frame=frame, theme=theme)
     with tabs[3]:
-        patterns.render(st, filtered, theme=theme)
+        executive.render(st, filtered, theme=theme)
     with tabs[4]:
-        impact.render(st, filtered, theme=theme)
+        patterns.render(st, filtered, theme=theme)
     with tabs[5]:
-        taxonomy_layer.render(st, taxonomy_path, theme=theme)
+        impact.render(st, filtered, theme=theme)
     with tabs[6]:
-        governance.render(st, filtered, theme=theme)
+        taxonomy_layer.render(st, taxonomy_path, theme=theme)
     with tabs[7]:
+        governance.render(st, filtered, theme=theme)
+    with tabs[8]:
         educational.render(st, theme=theme)
 
 
