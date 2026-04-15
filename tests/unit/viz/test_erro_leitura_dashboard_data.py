@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from src.viz.erro_leitura_dashboard_data import (
+    _keyword_fallback_labels,
     compute_kpis,
     monthly_volume,
     prepare_dashboard_frame,
@@ -128,3 +129,14 @@ def test_safe_topic_taxonomy_masks_examples() -> None:
     assert "pessoa@example.com" not in joined
     assert "[TELEFONE]" in joined
     assert "[EMAIL]" in joined
+
+
+def test_keyword_fallback_labels_reuses_disk_cache(tmp_path) -> None:
+    texts = pd.Series(["portao fechado sem acesso ao medidor", "portão fechado sem acesso"])
+    first = _keyword_fallback_labels(texts, cache_dir=tmp_path)
+    cache_files = list(tmp_path.glob("erro_leitura_keyword_labels_*.pkl"))
+    second = _keyword_fallback_labels(texts, cache_dir=tmp_path)
+
+    assert first.tolist() == second.tolist()
+    assert set(first) == {"impedimento_acesso"}
+    assert len(cache_files) == 1
