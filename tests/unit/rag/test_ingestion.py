@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
-from src.rag.ingestion import chunk_markdown, discover_files
+from src.rag.ingestion import _load_embedder, chunk_markdown, discover_files
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_discover_files_finds_markdown(tmp_path: Path) -> None:
@@ -93,3 +96,13 @@ def test_doc_type_inference(tmp_path: Path, filename: str, expected_type: str) -
     )
     assert chunks
     assert chunks[0].doc_type == expected_type
+
+
+def test_hashing_embedder_is_stateless_and_fixed_dimension() -> None:
+    embed = _load_embedder("hashing")
+    batch_vector = embed(["erro leitura refaturamento", "dashboard sprint rag"])[0]
+    single_vector = embed(["erro leitura refaturamento"])[0]
+    assert len(batch_vector) == 256
+    assert len(single_vector) == 256
+    assert single_vector == batch_vector
+    assert any(value != 0 for value in single_vector)
