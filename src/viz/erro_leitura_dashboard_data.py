@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pickle
+import re
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -9,18 +11,33 @@ from pathlib import Path
 import pandas as pd
 
 from src.ml.models.erro_leitura_classifier import (
-    KEYWORD_TAXONOMY,
-    TAXONOMY,
     KeywordErroLeituraClassifier,
     canonical_label,
+    normalize_text,
     taxonomy_metadata,
 )
-from src.ml.models.erro_leitura_topic_model import _taxonomy_example
+from src.viz.cache import load_or_build_disk_cache, path_fingerprint
 
 DEFAULT_SILVER_PATH = Path("data/silver/erro_leitura_normalizado.csv")
 DEFAULT_TOPIC_ASSIGNMENTS_PATH = Path("data/model_registry/erro_leitura/topic_assignments.csv")
 DEFAULT_TOPIC_TAXONOMY_PATH = Path("data/model_registry/erro_leitura/topic_taxonomy.json")
 TRAINING_DATA_TYPES = {"erro_leitura", "base_n1_sp"}
+DASHBOARD_CACHE_VERSION = "s14-perf-v3"
+KEYWORD_LABEL_CACHE_VERSION = "keyword-v1"
+MAX_TAXONOMY_EXAMPLE_CHARS = 420
+DASHBOARD_SILVER_COLUMNS = {
+    "ordem",
+    "_source_region",
+    "_data_type",
+    "dt_ingresso",
+    "causa_raiz",
+    "texto_completo",
+    "flag_resolvido_com_refaturamento",
+    "has_causa_raiz_label",
+    "instalacao",
+    "status",
+    "assunto",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,7 +58,51 @@ def load_dashboard_frame(
     topic_taxonomy_path: Path = DEFAULT_TOPIC_TAXONOMY_PATH,
     include_total: bool = False,
 ) -> pd.DataFrame:
-    silver = pd.read_csv(silver_path, dtype=str, low_memory=False)
+    signature = sha256(
+        "|".join(
+            [
+                path_fingerprint(silver_path),
+                path_fingerprint(topic_assignments_path),
+                path_fingerprint(topic_taxonomy_path),
+                str(include_total),
+                DASHBOARD_CACHE_VERSION,
+            ]
+        ).encode("utf-8")
+    ).hexdigest()
+
+    return load_or_build_disk_cache(
+        Path(".streamlit/cache"),
+        "erro_leitura_dashboard_frame",
+        signature,
+        lambda: _build_dashboard_frame(
+            silver_path=silver_path,
+            topic_assignments_path=topic_assignments_path,
+            topic_taxonomy_path=topic_taxonomy_path,
+            include_total=include_total,
+        ),
+    )
+
+
+def _build_dashboard_frame(
+    *,
+    silver_path: Path,
+    topic_assignments_path: Path,
+    topic_taxonomy_path: Path,
+    include_total: bool,
+) -> pd.DataFrame:
+    if include_total:
+        return _build_include_total_dashboard_frame(
+            silver_path=silver_path,
+            topic_assignments_path=topic_assignments_path,
+            topic_taxonomy_path=topic_taxonomy_path,
+        )
+
+    silver = pd.read_csv(
+        silver_path,
+        dtype=str,
+        low_memory=False,
+        usecols=lambda column: column in DASHBOARD_SILVER_COLUMNS,
+    )
     assignments = _read_optional_csv(topic_assignments_path)
     taxonomy = _read_optional_json(topic_taxonomy_path)
     return prepare_dashboard_frame(
@@ -50,6 +111,36 @@ def load_dashboard_frame(
         topic_taxonomy=taxonomy,
         include_total=include_total,
     )
+
+
+def _build_include_total_dashboard_frame(
+    *,
+    silver_path: Path,
+    topic_assignments_path: Path,
+    topic_taxonomy_path: Path,
+) -> pd.DataFrame:
+    training_frame = load_dashboard_frame(
+        silver_path=silver_path,
+        topic_assignments_path=topic_assignments_path,
+        topic_taxonomy_path=topic_taxonomy_path,
+        include_total=False,
+    )
+    silver = pd.read_csv(
+        silver_path,
+        dtype=str,
+        low_memory=False,
+        usecols=lambda column: column in DASHBOARD_SILVER_COLUMNS,
+    )
+    total_silver = silver.loc[~silver["_data_type"].isin(TRAINING_DATA_TYPES)].copy()
+    if total_silver.empty:
+        return training_frame
+    total_frame = prepare_dashboard_frame(
+        total_silver,
+        topic_assignments=None,
+        topic_taxonomy=None,
+        include_total=True,
+    )
+    return pd.concat([training_frame, total_frame], ignore_index=True)
 
 
 def prepare_dashboard_frame(
@@ -393,11 +484,18 @@ def _canonical_causes(frame: pd.DataFrame) -> pd.Series:
     labels = frame.get("causa_raiz", pd.Series(index=frame.index, dtype=object))
     canonical = labels.map(canonical_label)
     missing = canonical.isna()
-    if missing.any():
-        classifier = KeywordErroLeituraClassifier()
+    eligible_for_fallback = frame.get(
+        "_data_type",
+        pd.Series("", index=frame.index),
+    ).isin(TRAINING_DATA_TYPES)
+    fallback_mask = missing & eligible_for_fallback
+    if fallback_mask.any():
         texts = frame.get("texto_completo", pd.Series("", index=frame.index)).fillna("").astype(str)
-        fallback = texts.map(lambda text: _keyword_label_or_indefinido(classifier, text))
-        canonical.loc[missing] = fallback.loc[missing]
+        fallback = _keyword_fallback_labels(texts.loc[fallback_mask])
+        canonical.loc[fallback_mask] = fallback
+    total_mask = missing & ~eligible_for_fallback
+    if total_mask.any():
+        canonical.loc[total_mask] = "reclamacao_total_sem_causa"
     return canonical.fillna("indefinido").astype(str)
 
 
@@ -407,6 +505,56 @@ def _keyword_label_or_indefinido(classifier: KeywordErroLeituraClassifier, text:
     generico em SP que antes caia em `outros`."""
     result = classifier.classify(text)
     return str(result["classe"])
+
+
+def _keyword_fallback_labels(
+    texts: pd.Series,
+    *,
+    cache_dir: Path = Path(".streamlit/cache"),
+) -> pd.Series:
+    if texts.empty:
+        return pd.Series(dtype=str, index=texts.index)
+
+    cache_path = cache_dir / f"erro_leitura_keyword_labels_{KEYWORD_LABEL_CACHE_VERSION}.pkl"
+    cache: dict[str, str] = _read_keyword_label_cache(cache_path)
+    normalized = texts.fillna("").astype(str).map(normalize_text)
+    digests = normalized.map(lambda text: sha256(text.encode()).hexdigest())
+    missing_digests = set(digests.unique()).difference(cache)
+
+    if missing_digests:
+        classifier = KeywordErroLeituraClassifier()
+        new_labels: dict[str, str] = {}
+        unique_pairs = pd.DataFrame(
+            {"digest": digests, "text": normalized}
+        ).drop_duplicates("digest")
+        for row in unique_pairs.itertuples(index=False):
+            if row.digest in missing_digests:
+                new_labels[row.digest] = _keyword_label_or_indefinido(classifier, row.text)
+        cache.update(new_labels)
+        _write_keyword_label_cache(cache_path, cache)
+
+    return digests.map(cache).fillna("indefinido").astype(str)
+
+
+def _read_keyword_label_cache(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+    try:
+        with path.open("rb") as handle:
+            value = pickle.load(handle)
+    except (OSError, pickle.PickleError, EOFError):
+        return {}
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): str(label) for key, label in value.items()}
+
+
+def _write_keyword_label_cache(path: Path, cache: dict[str, str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    with tmp.open("wb") as handle:
+        pickle.dump(cache, handle)
+    tmp.replace(path)
 
 
 def _to_bool(series: pd.Series) -> pd.Series:
@@ -433,6 +581,39 @@ def _safe_examples(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [_taxonomy_example(item) for item in value[:3]]
+
+
+def _taxonomy_example(value: object) -> str:
+    text = _mask_sensitive_text(value)
+    if len(text) <= MAX_TAXONOMY_EXAMPLE_CHARS:
+        return text
+    return f"{text[:MAX_TAXONOMY_EXAMPLE_CHARS].rstrip()}..."
+
+
+def _mask_sensitive_text(value: object) -> str:
+    text = "" if value is None or pd.isna(value) else str(value)
+    text = re.sub(r"\b[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}\b", "[EMAIL]", text)
+    text = re.sub(r"\bbr\d{5,}\b", "br[ID_INTERNO]", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r"\bgmtuk\s+[^()*\n\r]{3,80}\s+\(br\[?ID_INTERNO\]?\)",
+        "gmtuk [USUARIO] (br[ID_INTERNO])",
+        text,
+    )
+    text = re.sub(
+        r"\bgmtuk\s+[a-zA-ZÀ-ÿ\s]{3,100}?"
+        r"(?=\s+(?:cliente|clt|reclama|solicita|trata|erro|segue|\*|$))",
+        "gmtuk [USUARIO]",
+        text,
+    )
+    text = re.sub(
+        r"(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?9?\d{4}[-\s]?\d{4}",
+        "[TELEFONE]",
+        text,
+    )
+    text = re.sub(r"\b\d{5}-?\d{3}\b", "[CEP]", text)
+    text = re.sub(r"\b(?:protocolo|prot)\s*[:#-]?\s*\d{6,}\b", "protocolo [PROTOCOLO]", text)
+    text = re.sub(r"\b((?:celular|telefone|tel))\s*:\s*\d+\b", r"\1: [TELEFONE]", text)
+    return text
 
 
 def _join_keywords(value: object) -> str:

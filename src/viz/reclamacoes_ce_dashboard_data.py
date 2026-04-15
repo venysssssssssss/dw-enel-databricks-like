@@ -14,7 +14,20 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.viz.cache import load_or_build_disk_cache, path_fingerprint
+
 DEFAULT_SILVER_PATH = Path("data/silver/erro_leitura_normalizado.csv")
+RECLAMACOES_CE_CACHE_VERSION = "s14-perf-v1"
+RECLAMACOES_CE_COLUMNS = {
+    "_source_region",
+    "_data_type",
+    "grupo",
+    "ordem",
+    "assunto",
+    "instalacao",
+    "dt_ingresso",
+    "causa_raiz",
+}
 
 MACRO_TEMA_ORDER: tuple[str, ...] = (
     "refaturamento",
@@ -54,12 +67,80 @@ def _macro_tema_rules() -> list[tuple[str, tuple[str, ...]]]:
     """Ordered rules (first match wins). Tokens matched against uppercased assunto."""
     return [
         ("ouvidoria_juridico", ("OUV ", "JUR ", "JURID", "3º NIVEL", "3 NIVEL", "GOV ")),
-        ("geracao_distribuida", (" GD", "GD ", "B2G", "RATEIO", "INJETADA", "MICRO GERA", "MINI GERA")),
-        ("religacao_multas", ("AUTORELIG", "AUTO RELIG", "RELIGAC", "A REVELIA", "REVELIA", "MULTA", "TOI", "PERDAS", "CORTE")),
-        ("entrega_fatura", ("CONTA NÃO ENTREGUE", "CONTA NAO ENTREGUE", "FATURA NÃO ENTREGUE", "FATURA NAO ENTREGUE", "ENTREGA DE CONTA", "ENTREGA DE FATURA", "FATURA DIGITAL", "END POSTAL", "EMAIL")),
-        ("media_estimativa", ("POR MEDIA", "POR MÉDIA", "FATURAMENTO POR M", "ESTIMAD", "AUSENCIA DE FATURAMENTO", "AUSENCIA DE FATURA")),
-        ("variacao_consumo", ("VARIACAO", "VARIAÇÃO", "CONSUMO ATIPICO", "CONSUMO ATÍPICO", "DESCONHECE A UC", "CUSTO DE DISPONIBILIDADE")),
-        ("refaturamento", ("REFAT", "REFATURAMENTO", "COBRANC", "COBRANÇ", "TARIFA", "ICMS", "FATURAMENTO", "CREDIT", "RESSARCIMEN", "ERRO DE LEITURA", "ITENS FINANCEIROS", "INCLUSAO DE VALORES", "PARCELAMENTO", "LIGAÇAO PROVISORIA", "LIGACAO PROVISORIA")),
+        (
+            "geracao_distribuida",
+            (" GD", "GD ", "B2G", "RATEIO", "INJETADA", "MICRO GERA", "MINI GERA"),
+        ),
+        (
+            "religacao_multas",
+            (
+                "AUTORELIG",
+                "AUTO RELIG",
+                "RELIGAC",
+                "A REVELIA",
+                "REVELIA",
+                "MULTA",
+                "TOI",
+                "PERDAS",
+                "CORTE",
+            ),
+        ),
+        (
+            "entrega_fatura",
+            (
+                "CONTA NÃO ENTREGUE",
+                "CONTA NAO ENTREGUE",
+                "FATURA NÃO ENTREGUE",
+                "FATURA NAO ENTREGUE",
+                "ENTREGA DE CONTA",
+                "ENTREGA DE FATURA",
+                "FATURA DIGITAL",
+                "END POSTAL",
+                "EMAIL",
+            ),
+        ),
+        (
+            "media_estimativa",
+            (
+                "POR MEDIA",
+                "POR MÉDIA",
+                "FATURAMENTO POR M",
+                "ESTIMAD",
+                "AUSENCIA DE FATURAMENTO",
+                "AUSENCIA DE FATURA",
+            ),
+        ),
+        (
+            "variacao_consumo",
+            (
+                "VARIACAO",
+                "VARIAÇÃO",
+                "CONSUMO ATIPICO",
+                "CONSUMO ATÍPICO",
+                "DESCONHECE A UC",
+                "CUSTO DE DISPONIBILIDADE",
+            ),
+        ),
+        (
+            "refaturamento",
+            (
+                "REFAT",
+                "REFATURAMENTO",
+                "COBRANC",
+                "COBRANÇ",
+                "TARIFA",
+                "ICMS",
+                "FATURAMENTO",
+                "CREDIT",
+                "RESSARCIMEN",
+                "ERRO DE LEITURA",
+                "ITENS FINANCEIROS",
+                "INCLUSAO DE VALORES",
+                "PARCELAMENTO",
+                "LIGAÇAO PROVISORIA",
+                "LIGACAO PROVISORIA",
+            ),
+        ),
     ]
 
 
@@ -89,7 +170,24 @@ class ReclamacoesKpis:
 def load_reclamacoes_ce(
     silver_path: Path = DEFAULT_SILVER_PATH,
 ) -> pd.DataFrame:
-    silver = pd.read_csv(silver_path, dtype=str, low_memory=False)
+    signature = sha256(
+        f"{path_fingerprint(silver_path)}|{RECLAMACOES_CE_CACHE_VERSION}".encode()
+    ).hexdigest()
+    return load_or_build_disk_cache(
+        Path(".streamlit/cache"),
+        "reclamacoes_ce_frame",
+        signature,
+        lambda: _build_reclamacoes_ce_frame(silver_path),
+    )
+
+
+def _build_reclamacoes_ce_frame(silver_path: Path) -> pd.DataFrame:
+    silver = pd.read_csv(
+        silver_path,
+        dtype=str,
+        low_memory=False,
+        usecols=lambda column: column in RECLAMACOES_CE_COLUMNS,
+    )
     return prepare_reclamacoes_ce_frame(silver)
 
 
@@ -108,7 +206,9 @@ def prepare_reclamacoes_ce_frame(silver: pd.DataFrame) -> pd.DataFrame:
     frame["ano_mes"] = frame["dt_ingresso"].dt.to_period("M").astype(str)
     frame["assunto_clean"] = frame["assunto"].fillna("(sem assunto)").str.strip().str.upper()
     frame["macro_tema"] = frame["assunto_clean"].map(classify_macro_tema)
-    frame["macro_tema_label"] = frame["macro_tema"].map(MACRO_TEMA_LABELS).fillna(MACRO_TEMA_LABELS["outros"])
+    frame["macro_tema_label"] = (
+        frame["macro_tema"].map(MACRO_TEMA_LABELS).fillna(MACRO_TEMA_LABELS["outros"])
+    )
     frame["severidade"] = frame["macro_tema"].map(MACRO_TEMA_SEVERITY).fillna("low")
     frame["grupo_norm"] = frame["grupo"].fillna("").str.strip().str.upper().replace({"": "ND"})
     frame["causa_raiz_clean"] = frame["causa_raiz"].fillna("").str.strip()
@@ -124,7 +224,10 @@ def compute_kpis(frame: pd.DataFrame) -> ReclamacoesKpis:
     tema_counts = frame["macro_tema_label"].value_counts()
     tema_dominante = str(tema_counts.index[0])
     share_dominante = float(tema_counts.iloc[0] / len(frame))
-    instalacao_counts = frame.loc[frame["instalacao_clean"].ne(""), "instalacao_hash"].value_counts()
+    instalacao_counts = frame.loc[
+        frame["instalacao_clean"].ne(""),
+        "instalacao_hash",
+    ].value_counts()
     reincidentes = int((instalacao_counts >= 2).sum())
     unique_inst = int((instalacao_counts > 0).sum())
     meses = int(frame["ano_mes"].nunique())
@@ -150,7 +253,9 @@ def macro_tema_distribution(frame: pd.DataFrame) -> pd.DataFrame:
         .reset_index(name="qtd")
     )
     counts["percentual"] = counts["qtd"] / counts["qtd"].sum() * 100
-    counts["ordem"] = counts["macro_tema"].map({t: i for i, t in enumerate(MACRO_TEMA_ORDER)}).fillna(99)
+    counts["ordem"] = (
+        counts["macro_tema"].map({t: i for i, t in enumerate(MACRO_TEMA_ORDER)}).fillna(99)
+    )
     return counts.sort_values("qtd", ascending=False).drop(columns="ordem").reset_index(drop=True)
 
 
@@ -165,7 +270,11 @@ def assunto_pareto(frame: pd.DataFrame, top_n: int = 20) -> pd.DataFrame:
     return counts
 
 
-def causa_raiz_drill(frame: pd.DataFrame, macro_tema: str | None = None, top_n: int = 15) -> pd.DataFrame:
+def causa_raiz_drill(
+    frame: pd.DataFrame,
+    macro_tema: str | None = None,
+    top_n: int = 15,
+) -> pd.DataFrame:
     if frame.empty:
         return pd.DataFrame(columns=["causa_raiz", "qtd", "percentual"])
     subset = frame.loc[frame["tem_causa_raiz"]].copy()
@@ -190,7 +299,9 @@ def monthly_trend_by_tema(frame: pd.DataFrame) -> pd.DataFrame:
     )
     pivot["mom"] = pivot.groupby("macro_tema_label")["qtd"].pct_change()
     pivot["media_movel_3m"] = (
-        pivot.groupby("macro_tema_label")["qtd"].transform(lambda s: s.rolling(3, min_periods=1).mean())
+        pivot.groupby("macro_tema_label")["qtd"].transform(
+            lambda s: s.rolling(3, min_periods=1).mean()
+        )
     )
     return pivot.reset_index(drop=True)
 
@@ -214,7 +325,9 @@ def heatmap_tema_x_mes(frame: pd.DataFrame) -> pd.DataFrame:
 
 def top_instalacoes_reincidentes(frame: pd.DataFrame, top_n: int = 20) -> pd.DataFrame:
     if frame.empty:
-        return pd.DataFrame(columns=["instalacao_hash", "qtd_reclamacoes", "temas_distintos", "ultimo_ingresso"])
+        return pd.DataFrame(
+            columns=["instalacao_hash", "qtd_reclamacoes", "temas_distintos", "ultimo_ingresso"]
+        )
     subset = frame.loc[frame["instalacao_clean"].ne("")]
     grouped = (
         subset.groupby("instalacao_hash")
@@ -249,7 +362,10 @@ def radar_tema_por_grupo(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def cruzamento_com_erro_leitura(reclamacoes_ce: pd.DataFrame, erro_leitura_frame: pd.DataFrame) -> pd.DataFrame:
+def cruzamento_com_erro_leitura(
+    reclamacoes_ce: pd.DataFrame,
+    erro_leitura_frame: pd.DataFrame,
+) -> pd.DataFrame:
     """Identifies installations that appear in BOTH datasets — candidates for
     reading-error as the root cause of broader complaints."""
     empty_out = pd.DataFrame(

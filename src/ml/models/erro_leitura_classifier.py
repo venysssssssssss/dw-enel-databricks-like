@@ -17,19 +17,12 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import numpy as np
 import pandas as pd
-from sklearn.calibration import CalibratedClassifierCV
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, f1_score
-from sklearn.model_selection import TimeSeriesSplit
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import LabelEncoder
 
-from src.ml.features.text_embeddings import TextEmbeddingBuilder
-
+if TYPE_CHECKING:
+    from src.ml.features.text_embeddings import TextEmbeddingBuilder
 
 KeywordWeight = str | tuple[str, float]
 
@@ -137,7 +130,10 @@ TAXONOMY: dict[str, TaxonomyEntry] = {
         ),
     ),
     "autoleitura_cliente": TaxonomyEntry(
-        description="Cliente contesta com foto/video/autoleitura ou apresenta leitura propria (forte em SP)",
+        description=(
+            "Cliente contesta com foto/video/autoleitura ou apresenta leitura propria "
+            "(forte em SP)"
+        ),
         category="contestacao_cliente",
         severity="high",
         keywords=(
@@ -366,7 +362,15 @@ CANONICAL_LABEL_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("autoleitura_cliente", ("autoleitura", "foto", "video", "vídeo", "evidencia")),
     (
         "endereco_tipologia",
-        ("endereco", "endereço", "tipologia", "outra_area", "outra_área", "localizacao", "localização"),
+        (
+            "endereco",
+            "endereço",
+            "tipologia",
+            "outra_area",
+            "outra_área",
+            "localizacao",
+            "localização",
+        ),
     ),
     (
         "refaturamento_corretivo",
@@ -374,9 +378,19 @@ CANONICAL_LABEL_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     (
         "compensacao_gd",
-        ("gd", "geracao_distribuida", "geração_distribuída", "injetada", "compensacao", "compensação"),
+        (
+            "gd",
+            "geracao_distribuida",
+            "geração_distribuída",
+            "injetada",
+            "compensacao",
+            "compensação",
+        ),
     ),
-    ("cobranca_indevida", ("autoreligacao", "autoreligação", "multa", "crefaz", "cobranca_indevida")),
+    (
+        "cobranca_indevida",
+        ("autoreligacao", "autoreligação", "multa", "crefaz", "cobranca_indevida"),
+    ),
     ("troca_titularidade", ("titularidade", "titular")),
     ("data_vencimento_ciclo", ("duas_faturas", "vencimento", "vecto", "ciclo")),
     ("art_113_regulatorio", ("art_113", "art.113", "artigo_113", "recuperacao", "recuperação")),
@@ -414,6 +428,13 @@ class ErroLeituraTrainingResult:
     report: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class _PreparedTaxonomyEntry:
+    keywords: tuple[tuple[str, float], ...]
+    patterns: tuple[re.Pattern[str], ...]
+    negatives: tuple[str, ...]
+
+
 class KeywordErroLeituraClassifier:
     """Classificador determinista baseado em taxonomia ponderada.
 
@@ -436,28 +457,42 @@ class KeywordErroLeituraClassifier:
         self.taxonomy = taxonomy or TAXONOMY
         self.min_score = min_score
         self.margin_ratio = margin_ratio
+        self._prepared = {
+            label: self._prepare_entry(entry) for label, entry in self.taxonomy.items()
+        }
 
     def score_text(self, text: str) -> dict[str, float]:
         normalized = normalize_text(text)
         if not normalized:
             return {label: 0.0 for label in self.taxonomy}
         scores: dict[str, float] = {}
-        for label, entry in self.taxonomy.items():
+        for label, entry in self._prepared.items():
             score = 0.0
-            for term in entry.keywords:
-                token, weight = (term, 1.0) if isinstance(term, str) else term
-                token_norm = normalize_text(token)
-                if token_norm and token_norm in normalized:
+            for token_norm, weight in entry.keywords:
+                if token_norm in normalized:
                     score += weight
             for pattern in entry.patterns:
-                if re.search(pattern, normalized):
+                if pattern.search(normalized):
                     score += 2.0
             for negative in entry.negatives:
-                if normalize_text(negative) in normalized:
+                if negative in normalized:
                     score = 0.0
                     break
             scores[label] = score
         return scores
+
+    def _prepare_entry(self, entry: TaxonomyEntry) -> _PreparedTaxonomyEntry:
+        keywords: list[tuple[str, float]] = []
+        for term in entry.keywords:
+            token, weight = (term, 1.0) if isinstance(term, str) else term
+            token_norm = normalize_text(token)
+            if token_norm:
+                keywords.append((token_norm, float(weight)))
+        return _PreparedTaxonomyEntry(
+            keywords=tuple(keywords),
+            patterns=tuple(re.compile(pattern) for pattern in entry.patterns),
+            negatives=tuple(filter(None, (normalize_text(value) for value in entry.negatives))),
+        )
 
     def predict_proba(self, texts: list[str]) -> list[dict[str, float]]:
         results: list[dict[str, float]] = []
@@ -486,10 +521,7 @@ class KeywordErroLeituraClassifier:
 
         is_weak = top_score < self.min_score
         is_ambiguous = second_score > 0 and top_score < second_score * self.margin_ratio
-        if is_weak or is_ambiguous:
-            predicted = "indefinido"
-        else:
-            predicted = top_label
+        predicted = "indefinido" if is_weak or is_ambiguous else top_label
 
         top3 = [
             {
@@ -513,16 +545,30 @@ class ErroLeituraClassifierTrainer:
     """Trains a calibrated multiclass classifier over text embeddings."""
 
     def __init__(self, embedding_builder: TextEmbeddingBuilder | None = None) -> None:
-        self.embedding_builder = embedding_builder or TextEmbeddingBuilder()
+        from sklearn.preprocessing import LabelEncoder
+
+        if embedding_builder is None:
+            from src.ml.features.text_embeddings import TextEmbeddingBuilder
+
+            self.embedding_builder = TextEmbeddingBuilder()
+        else:
+            self.embedding_builder = embedding_builder
         self.keyword_classifier = KeywordErroLeituraClassifier()
         self.label_encoder = LabelEncoder()
         self.model: Any | None = None
 
     def weak_labels(self, frame: pd.DataFrame) -> pd.Series:
-        labels = frame.get("causa_raiz", pd.Series(index=frame.index, dtype=object)).fillna("").astype(str)
+        labels = (
+            frame.get("causa_raiz", pd.Series(index=frame.index, dtype=object))
+            .fillna("")
+            .astype(str)
+        )
         normalized = labels.str.strip().str.casefold().str.replace(r"\s+", "_", regex=True)
         inferred = pd.Series(
-            [self.keyword_classifier.classify(text)["classe"] for text in frame["texto_completo"].fillna("")],
+            [
+                self.keyword_classifier.classify(text)["classe"]
+                for text in frame["texto_completo"].fillna("")
+            ],
             index=frame.index,
         )
         canonical = normalized.map(canonical_label)
@@ -533,11 +579,23 @@ class ErroLeituraClassifierTrainer:
         return canonical
 
     def train(self, frame: pd.DataFrame) -> ErroLeituraTrainingResult:
+        import numpy as np
+        from sklearn.calibration import CalibratedClassifierCV
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.metrics import classification_report, f1_score
+        from sklearn.model_selection import TimeSeriesSplit
+        from sklearn.pipeline import Pipeline
+
         if len(frame) < 4:
-            raise ValueError("Sao necessarias pelo menos 4 linhas para treinar o classificador de erro leitura.")
+            raise ValueError(
+                "Sao necessarias pelo menos 4 linhas para treinar o classificador "
+                "de erro leitura."
+            )
         labels = self.weak_labels(frame)
         embeddings = self.embedding_builder.build(frame).frame
-        feature_columns = [column for column in embeddings.columns if column.startswith("embedding_")]
+        feature_columns = [
+            column for column in embeddings.columns if column.startswith("embedding_")
+        ]
         target = self.label_encoder.fit_transform(labels)
         base_model = LogisticRegression(max_iter=500, class_weight="balanced")
         min_class_count = int(pd.Series(target).value_counts().min())
@@ -550,10 +608,14 @@ class ErroLeituraClassifierTrainer:
         macro_scores: list[float] = []
         splitter = TimeSeriesSplit(n_splits=min(3, max(2, len(frame) // 3)))
         for train_index, test_index in splitter.split(embeddings):
-            pipeline = Pipeline([("model", LogisticRegression(max_iter=500, class_weight="balanced"))])
+            pipeline = Pipeline(
+                [("model", LogisticRegression(max_iter=500, class_weight="balanced"))]
+            )
             pipeline.fit(embeddings.iloc[train_index][feature_columns], target[train_index])
             prediction = pipeline.predict(embeddings.iloc[test_index][feature_columns])
-            macro_scores.append(float(f1_score(target[test_index], prediction, average="macro", zero_division=0)))
+            macro_scores.append(
+                float(f1_score(target[test_index], prediction, average="macro", zero_division=0))
+            )
 
         fitted_predictions = self.model.predict(embeddings[feature_columns])
         report = classification_report(
@@ -571,18 +633,29 @@ class ErroLeituraClassifierTrainer:
         )
 
     def classify(self, text: str) -> dict[str, Any]:
+        import numpy as np
+
         if self.model is None:
             return self.keyword_classifier.classify(text)
         frame = pd.DataFrame({"ordem": ["ad_hoc"], "texto_completo": [text]})
         embeddings = self.embedding_builder.build(frame).frame
-        feature_columns = [column for column in embeddings.columns if column.startswith("embedding_")]
+        feature_columns = [
+            column for column in embeddings.columns if column.startswith("embedding_")
+        ]
         probabilities = self.model.predict_proba(embeddings[feature_columns])[0]
         top_indices = np.argsort(probabilities)[-3:][::-1]
         top3 = [
-            {"classe": self.label_encoder.classes_[index], "probabilidade": round(float(probabilities[index]), 4)}
+            {
+                "classe": self.label_encoder.classes_[index],
+                "probabilidade": round(float(probabilities[index]), 4),
+            }
             for index in top_indices
         ]
-        return {"classe": top3[0]["classe"], "probabilidade": top3[0]["probabilidade"], "top3": top3}
+        return {
+            "classe": top3[0]["classe"],
+            "probabilidade": top3[0]["probabilidade"],
+            "top3": top3,
+        }
 
 
 def canonical_label(value: object) -> str | None:
