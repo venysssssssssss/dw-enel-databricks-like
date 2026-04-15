@@ -1,6 +1,6 @@
 """Configuração do chat RAG, carregada de variáveis de ambiente.
 
-Default 100% open-source, CPU-only: llama-cpp-python + ChromaDB + MiniLM PT-BR.
+Default 100% open-source, CPU-only: llama-cpp-python + ChromaDB + hashing local.
 Não exige chave de API; o modelo GGUF é baixado sob demanda do Hugging Face.
 """
 
@@ -12,7 +12,7 @@ from pathlib import Path
 
 _DEFAULT_LLAMA_REPO = "Qwen/Qwen2.5-3B-Instruct-GGUF"
 _DEFAULT_LLAMA_FILE = "qwen2.5-3b-instruct-q4_k_m.gguf"
-_DEFAULT_EMBED_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+_DEFAULT_EMBED_MODEL = "hashing"
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,7 +20,7 @@ class RagConfig:
     """Configurações do chat RAG.
 
     Valores default são escolhidos para rodar em notebook 16GB RAM, CPU-only:
-    Qwen2.5-3B-Instruct quantizado Q4_K_M (~2GB de RAM) + MiniLM PT-BR (~120MB).
+    Qwen2.5-3B-Instruct quantizado Q4_K_M (~2GB de RAM) + hashing local offline.
     """
 
     provider: str  # "llama_cpp" | "openai" | "anthropic" | "ollama" | "stub"

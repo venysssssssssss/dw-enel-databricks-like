@@ -5,8 +5,8 @@ Decisões de design:
 - **Chunker**: 2 estágios — split por header Markdown, depois split por caracteres
   (~480 tokens ~= 1920 chars, overlap 64 tokens). Preserva cabeçalho como metadata
   para citação hierárquica (`docs/business-rules/glossario.md#acf-asf`).
-- **Embeddings**: MiniLM PT-BR via `sentence-transformers` com fallback TF-IDF
-  local (reusa `TextEmbeddingBuilder` se ST indisponível).
+- **Embeddings**: hashing local determinístico por default; MiniLM via
+  `sentence-transformers` pode ser ativado por `RAG_EMBEDDING_MODEL`.
 - **Store**: ChromaDB PersistentClient (SQLite-backed). Metadata rica permite
   filtragem por `doc_type` antes do vetor.
 """
@@ -14,16 +14,23 @@ Decisões de design:
 from __future__ import annotations
 
 import hashlib
+import math
 import re
-from collections.abc import Iterable
+from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from src.rag.config import RagConfig
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from src.rag.config import RagConfig
 
 _HEADER_RE = re.compile(r"^(#{1,4})\s+(.+?)\s*$", re.MULTILINE)
+_EMBED_TOKEN_RE = re.compile(r"[\wÀ-ÿ]+", re.UNICODE)
 _CHARS_PER_TOKEN = 4  # aproximação barata; evita depender de tiktoken em CPU
+_HASH_EMBED_DIM = 256
 _DOC_TYPE_MAP: dict[str, str] = {
     "sprints": "sprint",
     "business-rules": "business",
@@ -126,7 +133,11 @@ def _split_by_chars(
     if len(text) <= max_chars:
         return [text]
     stride = max(1, max_chars - overlap_chars)
-    return [text[i : i + max_chars] for i in range(0, len(text), stride) if text[i : i + max_chars].strip()]
+    return [
+        text[i : i + max_chars]
+        for i in range(0, len(text), stride)
+        if text[i : i + max_chars].strip()
+    ]
 
 
 def chunk_markdown(
@@ -155,7 +166,8 @@ def chunk_markdown(
             if len(piece) < 40:
                 continue
             anchor = _slug(header) if header else f"c{idx}"
-            chunk_id = hashlib.sha256(f"{rel_str}::{anchor}::{idx}::{piece[:120]}".encode()).hexdigest()[:16]
+            chunk_key = f"{rel_str}::{anchor}::{idx}::{piece[:120]}"
+            chunk_id = hashlib.sha256(chunk_key.encode()).hexdigest()[:16]
             chunks.append(
                 Chunk(
                     chunk_id=chunk_id,
@@ -185,10 +197,8 @@ def build_corpus(config: RagConfig, *, rebuild: bool = False) -> IngestionStats:
     client = chromadb.PersistentClient(path=str(config.chromadb_path))
 
     if rebuild:
-        try:
+        with suppress(Exception):
             client.delete_collection(config.collection_name)
-        except Exception:
-            pass
 
     collection = client.get_or_create_collection(
         name=config.collection_name,
@@ -223,7 +233,7 @@ def build_corpus(config: RagConfig, *, rebuild: bool = False) -> IngestionStats:
     texts = [c.text for c in all_chunks]
     vectors = embedder(texts)
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     metadatas = [
         {
             "source_path": c.source_path,
@@ -250,7 +260,17 @@ def build_corpus(config: RagConfig, *, rebuild: bool = False) -> IngestionStats:
 
 
 def _load_embedder(model_name: str):
-    """Retorna callable texts -> List[List[float]]. Usa ST, ou TF-IDF fallback."""
+    """Retorna callable texts -> List[List[float]].
+
+    `hashing` é o backend default porque é stateless: indexação e consulta sempre
+    geram vetores com a mesma dimensão, inclusive dentro do container Streamlit.
+    Se `RAG_EMBEDDING_MODEL` apontar para um modelo SentenceTransformer instalado,
+    usamos esse modelo; se a dependência/modelo não estiver disponível, caímos para
+    hashing sem quebrar o chat.
+    """
+    if model_name.strip().lower() in {"", "hashing", "hash", "local-hashing", "stub"}:
+        return _hashing_embedder()
+
     try:
         from sentence_transformers import SentenceTransformer
 
@@ -262,17 +282,25 @@ def _load_embedder(model_name: str):
 
         return embed
     except Exception:  # pragma: no cover - fallback em ambiente sem ST
-        from sklearn.decomposition import TruncatedSVD
-        from sklearn.feature_extraction.text import TfidfVectorizer
+        return _hashing_embedder()
 
-        def embed(texts: list[str]) -> list[list[float]]:
-            vec = TfidfVectorizer(min_df=1, ngram_range=(1, 2), max_features=4096)
-            matrix = vec.fit_transform(texts)
-            n_comp = max(2, min(256, matrix.shape[0] - 1, matrix.shape[1] - 1))
-            svd = TruncatedSVD(n_components=n_comp, random_state=42)
-            reduced = svd.fit_transform(matrix)
-            norms = (reduced**2).sum(axis=1) ** 0.5
-            norms[norms == 0] = 1.0
-            return [list(map(float, row / n)) for row, n in zip(reduced, norms, strict=True)]
 
-        return embed
+def _hashing_embedder():
+    """Embedder lexical stateless de 256 dimensões, sem dependências pesadas."""
+
+    def embed(texts: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        for text in texts:
+            vector = [0.0] * _HASH_EMBED_DIM
+            for token in _EMBED_TOKEN_RE.findall(text.lower()):
+                if len(token) <= 2:
+                    continue
+                digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
+                bucket = int.from_bytes(digest[:4], "little") % _HASH_EMBED_DIM
+                sign = 1.0 if digest[4] % 2 == 0 else -1.0
+                vector[bucket] += sign
+            norm = math.sqrt(sum(value * value for value in vector)) or 1.0
+            vectors.append([value / norm for value in vector])
+        return vectors
+
+    return embed
