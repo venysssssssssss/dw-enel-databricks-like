@@ -286,3 +286,55 @@ cat data/rag/telemetry.jsonl | jq .cost_usd_estimated | awk '{s+=$1} END {print 
 
 1. **Sprint 14 primeiro** — arquitetura modular, tema e cache são pré-requisitos duros da aba chat.
 2. **Sprint 15** herda tema, componentes `layer_intro`, cache utilities.
+
+---
+
+## 14. Entrega Abril/2026 — Dados reais + LLM local funcionando
+
+### Estado realizado (2026-04-15)
+
+**LLM local funcionando**: `llama-cpp-python 0.3.20` + **Qwen2.5-3B-Instruct Q4_K_M** (2GB GGUF) em `data/rag/models/`. First-token típico ~30s, resposta completa ~2min em i7 CPU-only (sem GPU).
+
+**Corpus hibrido**: 42 arquivos escaneados → **663 chunks indexados** em ChromaDB, incluindo:
+- Documentação: `docs/**/*.md` + `README.md` + `CLAUDE.md` (chunks por header + 480 tokens)
+- **Data cards reais** gerados por `src/rag/data_ingestion.py` a partir do silver `data/silver/erro_leitura_normalizado.csv` (184.690 ordens)
+
+### Data cards indexados
+
+Em vez de indexar linhas individuais (PII + volume), agregamos 8 cards analíticos:
+
+1. **visao-geral** — total CE (172.568) + SP (12.122), refaturamento (11.0%), causa-raiz rotulada (31.7%)
+2. **regiao-ce** — top 5 assuntos + top 5 causas-raiz do Ceará
+3. **regiao-sp** — top 5 assuntos + top 5 causas-raiz de São Paulo
+4. **top-assuntos** — top 12 assuntos da base (refaturamento domina)
+5. **top-causas-raiz** — top 12 causas rotuladas (multa autoreligação, erro digitação, GD, média)
+6. **refaturamento** — ordens resolvidas via refaturamento por região
+7. **evolucao-mensal** — série 2025-01 a 2026-03 com barras ASCII
+8. **grupo-tarifario** — GB domina, seguido de GA e GD
+
+### Chat UI premium
+
+`apps/streamlit/layers/chat.py` reescrito com:
+- Hero gradiente ENEL (vermelho → magenta) como greeting cold
+- Status panel lateral: modelo, provider (local 🔒), índice (✅/⚠️)
+- Chips categorizados por expanders: 📘 Regras, 🧠 Modelos, 📊 Dashboard, 🏗 Arquitetura, 🚀 Sprints, **📈 Dados** (expandido por default)
+- **Streaming token-a-token via `st.write_stream`** — placeholder com cursor "▌" durante geração
+- Typing indicator "Assistente ENEL está pensando…" antes do 1º token
+- Pills de metadata: intent, tokens (cores semafóricas), latência total, 1º token, nº de fontes
+- Citações como bloco Markdown ao final; history corta citações antigas ao enviar p/ LLM
+- Feedback 👍/👎 por turno com log CSV
+
+### Roteamento ajustado
+
+`route_doc_types` agora reconhece termos analíticos ("quantos", "volume", "CE", "SP", "causa-raiz"…) e direciona retrieval para `["data", "business", "viz"]`, priorizando os cards.
+
+### Ajuste de threshold
+
+`RAG_SIMILARITY_THRESHOLD` default baixado de 0.25 → 0.05 porque o embedder default é **hashing local determinístico** (não MiniLM), cujos scores cosine ficam entre 0.1-0.25. Pode ser sobreposto via env.
+
+### Validação
+
+Pergunta: *"Quantas reclamações temos no total entre CE e SP?"*
+- Retrieval trouxe `data/silver/...#visao-geral` e `#regiao-sp`
+- Qwen respondeu: **"184.690 reclamações reais"** — número exato dos data cards
+- Tempo total: ~2min primeiro turno (KV cache frio), ~40s subsequentes
