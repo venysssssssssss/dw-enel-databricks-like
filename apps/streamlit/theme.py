@@ -7,54 +7,54 @@ from typing import Literal
 ThemeMode = Literal["light", "dark"]
 
 PALETTE = {
-    "primary": "#0F4C81",
-    "primary_dark": "#0B3A63",
-    "primary_light": "#1F6FB2",
-    "secondary": "#00813E",
-    "secondary_light": "#2BA65E",
-    "accent": "#F7941D",
-    "accent_soft": "#FBB040",
+    "primary": "#870A3C",
+    "primary_dark": "#5F072A",
+    "primary_light": "#A70D49",
+    "secondary": "#C8102E",
+    "secondary_light": "#E4002B",
+    "accent": "#1E7B55",
+    "accent_soft": "#43A06F",
     "warning": "#E4002B",
-    "neutral_950": "#0C1420",
-    "neutral_900": "#1A1A1A",
-    "neutral_700": "#3F4A55",
-    "neutral_500": "#6B7680",
-    "neutral_200": "#E6ECF2",
-    "neutral_100": "#EDF3F8",
-    "neutral_50": "#F6F9FC",
+    "neutral_950": "#111318",
+    "neutral_900": "#1D1F24",
+    "neutral_700": "#3C424B",
+    "neutral_500": "#626B76",
+    "neutral_200": "#DDE2EA",
+    "neutral_100": "#EEF1F5",
+    "neutral_50": "#F7F8FA",
     "surface": "#FFFFFF",
-    "ce": "#F7941D",
-    "sp": "#0F4C81",
-    "muted": "#6B7680",
+    "ce": "#C8102E",
+    "sp": "#870A3C",
+    "muted": "#626B76",
 }
 
 CATEGORICAL_SEQUENCE = [
-    "#0F4C81",
-    "#F7941D",
-    "#00813E",
-    "#5C2D91",
+    "#870A3C",
+    "#C8102E",
     "#E4002B",
-    "#1F6FB2",
-    "#FBB040",
-    "#2BA65E",
+    "#1E7B55",
+    "#2F6F9F",
+    "#7B61A8",
+    "#6F7682",
+    "#43A06F",
 ]
 
 SEQUENTIAL_BLUE = [
-    "#EAF2FA",
-    "#C7DDF0",
-    "#9EC4E3",
-    "#6FA6D3",
-    "#4088C0",
-    "#1F6FB2",
-    "#0F4C81",
-    "#0B3A63",
+    "#FDECEF",
+    "#F8C9D2",
+    "#F19AAA",
+    "#E85D74",
+    "#E4002B",
+    "#C8102E",
+    "#A70D49",
+    "#870A3C",
 ]
 
 SEQUENTIAL_ORANGE = [
     "#FFF3E0",
     "#FFD9A6",
     "#FBB040",
-    "#F7941D",
+    "#C8102E",
     "#E07B10",
     "#B86008",
 ]
@@ -64,7 +64,7 @@ SEQUENTIAL_GREEN = [
     "#B6E0C5",
     "#80C89C",
     "#2BA65E",
-    "#00813E",
+    "#1E7B55",
     "#005F2C",
 ]
 
@@ -73,24 +73,24 @@ def css_variables(mode: ThemeMode = "light") -> dict[str, str]:
     """Return CSS variables for the selected visual mode."""
     if mode == "dark":
         return {
-            "--enel-bg": "#07111F",
-            "--enel-bg-soft": "#0D1D30",
-            "--enel-surface": "#12243A",
-            "--enel-surface-2": "#18324F",
-            "--enel-text": "#F4F8FC",
-            "--enel-muted": "#A9B8C8",
-            "--enel-border": "#294461",
+            "--enel-bg": "#111318",
+            "--enel-bg-soft": "#191B20",
+            "--enel-surface": "#20232A",
+            "--enel-surface-2": "#282C34",
+            "--enel-text": "#F8F9FB",
+            "--enel-muted": "#C7CDD6",
+            "--enel-border": "#424854",
             "--enel-shadow": "0 18px 45px rgba(0, 0, 0, 0.38)",
         }
     return {
-        "--enel-bg": "#F4F8FC",
-        "--enel-bg-soft": "#EAF2FA",
+        "--enel-bg": "#F7F8FA",
+        "--enel-bg-soft": "#EEF1F5",
         "--enel-surface": "#FFFFFF",
-        "--enel-surface-2": "#F6F9FC",
-        "--enel-text": "#172230",
-        "--enel-muted": "#596879",
-        "--enel-border": "#DCE7F1",
-        "--enel-shadow": "0 18px 45px rgba(15, 76, 129, 0.10)",
+        "--enel-surface-2": "#F1F3F6",
+        "--enel-text": "#1D1F24",
+        "--enel-muted": "#59616D",
+        "--enel-border": "#DDE2EA",
+        "--enel-shadow": "0 18px 45px rgba(135, 10, 60, 0.10)",
     }
 
 
@@ -98,8 +98,8 @@ def dashboard_css(mode: ThemeMode = "light") -> str:
     """Build Streamlit CSS with ENEL hierarchy, animation and accessible contrast."""
     variables = "\n".join(f"{key}: {value};" for key, value in css_variables(mode).items())
     dark = mode == "dark"
-    glass_bg = "rgba(18, 36, 58, 0.62)" if dark else "rgba(255, 255, 255, 0.72)"
-    glass_border = "rgba(255, 255, 255, 0.08)" if dark else "rgba(15, 76, 129, 0.10)"
+    glass_bg = "rgba(32, 35, 42, 0.82)" if dark else "rgba(255, 255, 255, 0.86)"
+    glass_border = "rgba(255, 255, 255, 0.14)" if dark else "rgba(135, 10, 60, 0.12)"
     return f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
@@ -129,11 +129,7 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 }}
 
 .stApp {{
-  background:
-    radial-gradient(circle at top left, rgba(247, 148, 29, 0.14), transparent 32rem),
-    radial-gradient(circle at top right, rgba(15, 76, 129, 0.18), transparent 30rem),
-    radial-gradient(circle at bottom right, rgba(0, 129, 62, 0.10), transparent 26rem),
-    linear-gradient(180deg, var(--enel-bg) 0%, var(--enel-bg-soft) 100%);
+  background: linear-gradient(180deg, var(--enel-bg) 0%, var(--enel-bg-soft) 100%);
   color: var(--enel-text);
   scroll-behavior: smooth;
 }}
@@ -158,8 +154,8 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 }}
 [data-testid="stMetric"]:hover, .enel-card:hover {{
   transform: translateY(-3px);
-  border-color: rgba(247, 148, 29, 0.55);
-  box-shadow: 0 28px 65px rgba(15, 76, 129, 0.18);
+  border-color: rgba(200, 16, 46, 0.55);
+  box-shadow: 0 28px 65px rgba(135, 10, 60, 0.18);
 }}
 [data-testid="stMetricLabel"] p {{
   font-size: 0.78rem; font-weight: 600;
@@ -169,7 +165,7 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 [data-testid="stMetricValue"] {{
   font-size: 1.55rem !important;
   font-weight: 700 !important;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--enel-text) !important;
 }}
 [data-testid="stMetricDelta"] {{ font-size: 0.82rem; font-weight: 600; }}
@@ -183,10 +179,12 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   margin-bottom: 1.2rem;
   color: #FFFFFF;
   background:
-    linear-gradient(135deg, rgba(15,76,129,0.98), rgba(0,129,62,0.88)),
-    radial-gradient(circle at 88% 12%, rgba(247,148,29,0.72), transparent 18rem),
-    radial-gradient(circle at 8% 88%, rgba(228,0,43,0.32), transparent 16rem);
-  box-shadow: 0 28px 80px rgba(15, 76, 129, 0.26);
+    linear-gradient(135deg, #870A3C 0%, #C8102E 62%, #E4002B 100%);
+  box-shadow: 0 28px 80px rgba(135, 10, 60, 0.26);
+}}
+.enel-hero,
+.enel-hero * {{
+  color: #FFFFFF !important;
 }}
 .enel-hero::after {{
   content: ""; position: absolute; inset: 0;
@@ -200,7 +198,7 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   position: relative; z-index: 1;
   font-size: clamp(2.15rem, 4vw, 3.6rem);
   line-height: 0.98;
-  letter-spacing: -0.05em;
+  letter-spacing: 0;
   margin: 0 0 0.7rem;
   font-weight: 800;
 }}
@@ -226,8 +224,8 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 
 /* ===== Intro / chips ===== */
 .enel-intro {{
-  border-left: 5px solid var(--enel-accent);
-  background: color-mix(in srgb, var(--enel-surface) 88%, var(--enel-accent) 12%);
+  border-left: 5px solid var(--enel-secondary);
+  background: color-mix(in srgb, var(--enel-surface) 90%, var(--enel-secondary) 10%);
   border-radius: 18px;
   padding: 1rem 1.2rem;
   margin: 0.25rem 0 1rem;
@@ -282,12 +280,12 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 }}
 .stTabs [data-baseweb="tab"]:hover {{
   color: var(--enel-primary);
-  background: color-mix(in srgb, var(--enel-surface) 60%, var(--enel-accent) 8%);
+  background: color-mix(in srgb, var(--enel-surface) 68%, var(--enel-secondary) 10%);
 }}
 .stTabs [aria-selected="true"] {{
   color: var(--enel-primary) !important;
   background: var(--enel-glass-bg) !important;
-  border-bottom: 3px solid var(--enel-accent) !important;
+  border-bottom: 3px solid var(--enel-secondary) !important;
 }}
 
 /* ===== Sidebar ===== */
@@ -315,15 +313,88 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 
 /* ===== Buttons ===== */
 .stButton > button {{
-  border-radius: 12px;
-  border: 1px solid var(--enel-border);
+  border-radius: 8px !important;
+  border: 1px solid var(--enel-border) !important;
+  background: var(--enel-surface) !important;
+  color: var(--enel-text) !important;
   font-weight: 600;
   transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
 }}
+.stButton > button p,
+.stButton > button span {{
+  color: var(--enel-text) !important;
+}}
 .stButton > button:hover {{
   transform: translateY(-1px);
-  border-color: var(--enel-accent);
-  box-shadow: 0 8px 18px rgba(247, 148, 29, 0.18);
+  background: color-mix(in srgb, var(--enel-surface) 88%, var(--enel-secondary) 12%)
+    !important;
+  color: var(--enel-text) !important;
+  border-color: var(--enel-secondary) !important;
+  box-shadow: 0 8px 18px rgba(200, 16, 46, 0.18);
+}}
+.stButton > button:focus-visible {{
+  outline: 3px solid color-mix(in srgb, var(--enel-secondary) 34%, transparent 66%)
+    !important;
+  outline-offset: 2px !important;
+}}
+.stButton > button:disabled,
+.stButton > button[disabled] {{
+  background: var(--enel-surface-2) !important;
+  color: var(--enel-muted) !important;
+  border-color: var(--enel-border) !important;
+  opacity: 0.76 !important;
+}}
+
+/* ===== Streamlit/BaseWeb contrast hardening ===== */
+.stApp, .stMarkdown, .stText, .stCaption, .stDataFrame, label, p, li, span {{
+  color: var(--enel-text);
+}}
+[data-testid="stSidebar"] *, [data-testid="stSidebar"] label {{
+  color: var(--enel-text);
+}}
+[data-baseweb="select"] > div,
+[data-baseweb="popover"] div,
+[data-baseweb="menu"] ul,
+[data-testid="stDateInput"] input,
+[data-testid="stTextInput"] input,
+[data-testid="stTextArea"] textarea,
+[data-testid="stChatInput"] textarea {{
+  background-color: var(--enel-surface) !important;
+  color: var(--enel-text) !important;
+  border-color: var(--enel-border) !important;
+}}
+[data-baseweb="checkbox"] div,
+[data-testid="stCheckbox"] div,
+[data-testid="stToggle"] div {{
+  color: var(--enel-text) !important;
+}}
+[data-baseweb="checkbox"] [role="checkbox"],
+[data-testid="stCheckbox"] [role="checkbox"],
+[data-testid="stToggle"] [role="checkbox"] {{
+  background-color: var(--enel-surface-2) !important;
+  border-color: var(--enel-border) !important;
+}}
+[data-baseweb="checkbox"] [aria-checked="true"],
+[data-testid="stCheckbox"] [aria-checked="true"],
+[data-testid="stToggle"] [aria-checked="true"] {{
+  background-color: var(--enel-secondary) !important;
+  border-color: var(--enel-secondary) !important;
+}}
+[data-baseweb="tag"] {{
+  background-color: color-mix(in srgb, var(--enel-secondary) 14%, var(--enel-surface) 86%)
+    !important;
+  color: var(--enel-text) !important;
+}}
+[data-testid="stAlert"] {{
+  background: var(--enel-surface) !important;
+  color: var(--enel-text) !important;
+  border: 1px solid var(--enel-border) !important;
+}}
+a {{
+  color: var(--enel-secondary);
+}}
+a:hover {{
+  color: var(--enel-primary);
 }}
 </style>
 """
@@ -335,9 +406,9 @@ def plotly_template(mode: ThemeMode = "light") -> dict[str, object]:
     return {
         "paper_bgcolor": "rgba(0,0,0,0)",
         "plot_bgcolor": "rgba(0,0,0,0)",
-        "font": {"family": "Inter, sans-serif", "color": "#F4F8FC" if dark else "#172230"},
+        "font": {"family": "Inter, sans-serif", "color": "#F8F9FB" if dark else "#1D1F24"},
         "margin": {"l": 24, "r": 24, "t": 48, "b": 32},
-        "hoverlabel": {"bgcolor": "#12243A" if dark else "#FFFFFF", "font_size": 13},
+        "hoverlabel": {"bgcolor": "#20232A" if dark else "#FFFFFF", "font_size": 13},
     }
 
 

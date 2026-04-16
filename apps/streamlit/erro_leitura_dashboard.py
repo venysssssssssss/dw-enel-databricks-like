@@ -26,6 +26,7 @@ from apps.streamlit.components.filters import (
 )
 from apps.streamlit.components.hero import render_hero
 from apps.streamlit.components.narrative import render_empty_state
+from apps.streamlit.components.react_island import render_react_island
 from apps.streamlit.components.skeleton import render_skeleton
 from apps.streamlit.layers import (
     chat,
@@ -39,6 +40,7 @@ from apps.streamlit.layers import (
 )
 from apps.streamlit.layers import taxonomy as taxonomy_layer
 from apps.streamlit.theme import dashboard_css
+from src.data_plane import DataStore
 from src.viz.cache import path_fingerprint
 from src.viz.erro_leitura_dashboard_data import (
     DEFAULT_SILVER_PATH,
@@ -130,9 +132,20 @@ def main() -> None:
         unsafe_allow_html=True,
     )
     render_hero(st, filtered, total_available=len(frame))
+    theme = filters.theme
+    render_react_island(
+        st,
+        filtered,
+        total_available=len(frame),
+        dataset_hash=DataStore(
+            silver_path=silver_path,
+            topic_assignments_path=assignments_path,
+            topic_taxonomy_path=taxonomy_path,
+        ).version().hash,
+        theme=theme,
+    )
 
     tabs = st.tabs(TAB_LABELS)
-    theme = filters.theme
     context_hint = st.session_state.get("last_dashboard_area")
     with tabs[0]:
         chat.render(st, theme=theme, context_hint=context_hint)
