@@ -81,5 +81,12 @@ dbt/target/
 dbt/dbt_packages/
 dbt/logs/
 
+# --- Frontend ---
+node_modules/
+apps/web/test-results/
+apps/web/playwright-report/
+
 # --- Infra runtime state (volumes gerados por Caddy/Cloudflared) ---
 infra/config/caddy/*.json
+.dual-graph/
+.dual-graph-context/

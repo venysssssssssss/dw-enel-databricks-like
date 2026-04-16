@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -67,6 +68,11 @@ def main() -> None:
         layout="wide",
         initial_sidebar_state="expanded",
     )
+    if os.getenv("ENEL_UI", "streamlit").strip().lower() == "react":
+        target = os.getenv("ENEL_WEB_URL", "http://localhost:5173")
+        st.info("A interface React está ativa para este ambiente.")
+        st.link_button("Abrir SPA ENEL", target, use_container_width=True)
+        st.stop()
 
     st.sidebar.title("⚙ Controles")
     st.sidebar.caption("Fontes, filtros e experiência")
