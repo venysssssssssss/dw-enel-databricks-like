@@ -27,7 +27,6 @@ from src.rag.retriever import check_stub_corpus, route_doc_types
 from src.rag.safety import OUT_OF_SCOPE_MESSAGE, check_input, is_out_of_scope
 from src.rag.telemetry import hash_question, log_feedback
 
-
 _CHIP_CATEGORIES: dict[str, str] = {
     "business": "📘 Regras",
     "ml": "🧠 Modelos",
@@ -47,44 +46,203 @@ _DATA_QUESTIONS: list[tuple[str, str]] = [
 
 _CHAT_CSS = """
 <style>
+/* ===== Chat hero (gradient ENEL) ===== */
 .chat-hero {
-  background: linear-gradient(135deg, #870A3C 0%, #C8102E 60%, #E4002B 100%);
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg,
+      rgba(15,76,129,0.95) 0%,
+      rgba(31,111,178,0.92) 55%,
+      rgba(0,129,62,0.88) 100%),
+    radial-gradient(circle at 92% 12%, rgba(247,148,29,0.55), transparent 14rem);
   color: #fff;
-  padding: 1.3rem 1.6rem;
-  border-radius: 14px;
+  padding: 1.45rem 1.7rem;
+  border-radius: var(--enel-radius-lg, 22px);
   margin-bottom: 1rem;
-  box-shadow: 0 8px 24px rgba(135, 10, 60, 0.18);
+  box-shadow: 0 18px 45px rgba(15, 76, 129, 0.22);
+  animation: chatHeroIn 360ms cubic-bezier(.2,.8,.2,1) both;
 }
-.chat-hero h3 { margin: 0 0 0.35rem 0; font-size: 1.25rem; color: #fff; }
-.chat-hero p { margin: 0; opacity: 0.92; font-size: 0.92rem; line-height: 1.4; }
+.chat-hero::after {
+  content: ""; position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+  pointer-events: none; opacity: 0.55;
+}
+.chat-hero h3 {
+  position: relative; z-index: 1;
+  margin: 0 0 0.4rem 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.chat-hero p {
+  position: relative; z-index: 1;
+  margin: 0;
+  opacity: 0.94;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  max-width: 720px;
+}
+@keyframes chatHeroIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== Status panel (glass) ===== */
 .chat-status {
-  background: #FFFFFF;
-  border: 1px solid #E6E8EB;
-  border-radius: 12px;
-  padding: 0.9rem 1rem;
-  font-size: 0.84rem;
+  background: var(--enel-glass-bg, rgba(255,255,255,0.72));
+  border: 1px solid var(--enel-glass-border, rgba(15,76,129,0.10));
+  border-radius: var(--enel-radius-md, 14px);
+  padding: 1rem 1.1rem;
+  font-size: 0.85rem;
   line-height: 1.55;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--enel-shadow, 0 18px 45px rgba(15,76,129,0.10));
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
 }
-.chat-status .label { color: #6B7680; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.03em; font-size: 0.72rem; }
-.chat-status .value { color: #141B25; font-family: 'JetBrains Mono', 'Menlo', monospace; }
-.chat-status .status-ok { color: #00813E; font-weight: 600; }
-.chat-status .status-warn { color: #F7941D; font-weight: 600; }
-.chat-chip-label { color: #6B7680; font-weight: 600; font-size: 0.78rem;
-  margin: 0.6rem 0 0.25rem 0; letter-spacing: 0.02em; }
-.chat-metadata { color: #6B7680; font-size: 0.75rem; margin-top: 0.35rem;
-  display: flex; gap: 0.9rem; flex-wrap: wrap; align-items: center; }
-.chat-metadata .pill { padding: 0.15rem 0.5rem; border-radius: 8px;
-  background: #F5F6F7; border: 1px solid #E6E8EB; }
-.chat-metadata .pill.ok { background: #E6F4EC; border-color: #CCE8D7; color: #00813E; }
-.chat-metadata .pill.warn { background: #FFF3E0; border-color: #FFE0B2; color: #E87D00; }
-.chat-metadata .pill.crit { background: #FFE6EA; border-color: #FFBCC4; color: #B8001F; }
-.chat-typing { color: #870A3C; font-style: italic; font-size: 0.9rem; }
-.chat-sources summary { cursor: pointer; color: #870A3C; font-weight: 600;
-  font-size: 0.86rem; padding: 0.3rem 0; }
-.chat-sources ul { margin: 0.3rem 0 0.2rem 1.1rem; padding: 0;
-  font-size: 0.82rem; line-height: 1.55; }
+.chat-status .label {
+  color: var(--enel-muted, #6B7680);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+}
+.chat-status .value {
+  color: var(--enel-text, #141B25);
+  font-family: 'JetBrains Mono', 'Menlo', monospace;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.chat-status .status-ok   { color: #00813E; font-weight: 700; }
+.chat-status .status-warn { color: #E07B10; font-weight: 700; }
+.chat-status .status-crit { color: #E4002B; font-weight: 700; }
+
+/* ===== Suggested chip section ===== */
+.chat-chip-label {
+  color: var(--enel-muted, #6B7680);
+  font-weight: 700;
+  font-size: 0.78rem;
+  margin: 0.6rem 0 0.3rem 0;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* ===== Assistant metadata pills ===== */
+.chat-metadata {
+  color: var(--enel-muted, #6B7680);
+  font-size: 0.74rem;
+  margin-top: 0.5rem;
+  display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;
+}
+.chat-metadata .pill {
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  background: var(--enel-glass-bg, rgba(247,249,252,0.85));
+  border: 1px solid var(--enel-border, #E6ECF2);
+  font-weight: 600;
+  font-feature-settings: 'tnum';
+  transition: transform 140ms ease, border-color 140ms ease;
+}
+.chat-metadata .pill:hover {
+  transform: translateY(-1px);
+  border-color: var(--enel-accent, #F7941D);
+}
+.chat-metadata .pill code {
+  background: transparent; padding: 0;
+  color: var(--enel-primary, #0F4C81);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.74rem;
+}
+.chat-metadata .pill.ok   {
+  background: rgba(0,129,62,0.10);
+  border-color: rgba(0,129,62,0.30);
+  color: #006B33;
+}
+.chat-metadata .pill.warn {
+  background: rgba(247,148,29,0.12);
+  border-color: rgba(247,148,29,0.35);
+  color: #B86008;
+}
+.chat-metadata .pill.crit {
+  background: rgba(228,0,43,0.10);
+  border-color: rgba(228,0,43,0.30);
+  color: #B8001F;
+}
+
+/* ===== Animated typing indicator (3 dots) ===== */
+.chat-typing {
+  display: inline-flex; align-items: center; gap: 0.55rem;
+  color: var(--enel-primary, #0F4C81);
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 0.4rem 0.8rem;
+  background: var(--enel-glass-bg, rgba(255,255,255,0.7));
+  border: 1px solid var(--enel-glass-border, rgba(15,76,129,0.12));
+  border-radius: 999px;
+  backdrop-filter: blur(10px);
+  width: fit-content;
+}
+.chat-typing-dots {
+  display: inline-flex; gap: 0.22rem; align-items: center;
+}
+.chat-typing-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--enel-accent, #F7941D);
+  animation: typingPulse 1.1s ease-in-out infinite;
+}
+.chat-typing-dots span:nth-child(2) { animation-delay: 0.18s; }
+.chat-typing-dots span:nth-child(3) { animation-delay: 0.36s; }
+@keyframes typingPulse {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.45; }
+  40%           { transform: scale(1.0); opacity: 1; }
+}
+
+/* ===== Sources expander styling ===== */
+.chat-sources summary {
+  cursor: pointer;
+  color: var(--enel-primary, #0F4C81);
+  font-weight: 700;
+  font-size: 0.86rem;
+  padding: 0.4rem 0;
+}
+.chat-sources ul {
+  margin: 0.3rem 0 0.2rem 1.1rem;
+  padding: 0;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+/* ===== st.chat_message bubble polish ===== */
+[data-testid="stChatMessage"] {
+  background: var(--enel-glass-bg, rgba(255,255,255,0.72)) !important;
+  border: 1px solid var(--enel-glass-border, rgba(15,76,129,0.08))
+    !important;
+  border-radius: var(--enel-radius-md, 14px) !important;
+  padding: 0.9rem 1.1rem !important;
+  box-shadow: 0 4px 14px rgba(15, 76, 129, 0.06);
+  backdrop-filter: blur(10px);
+  margin-bottom: 0.6rem;
+  animation: bubbleIn 220ms cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes bubbleIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== Chat input refinement ===== */
+[data-testid="stChatInput"] textarea {
+  border-radius: 14px !important;
+  border-color: var(--enel-border, #DCE7F1) !important;
+  font-family: 'Inter', sans-serif !important;
+}
+[data-testid="stChatInput"] textarea:focus {
+  border-color: var(--enel-accent, #F7941D) !important;
+  box-shadow: 0 0 0 3px rgba(247,148,29,0.15) !important;
+}
 </style>
 """
 
@@ -327,7 +485,10 @@ def _stream_answer(
     placeholder = st.empty()
     typing_slot = st.empty()
     typing_slot.markdown(
-        "<div class='chat-typing'>⚡ Assistente ENEL está pensando…</div>",
+        "<div class='chat-typing'>"
+        "<span>⚡ Assistente ENEL pensando</span>"
+        "<span class='chat-typing-dots'><span></span><span></span><span></span></span>"
+        "</div>",
         unsafe_allow_html=True,
     )
 

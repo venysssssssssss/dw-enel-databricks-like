@@ -5,7 +5,12 @@ from typing import Any
 import plotly.express as px
 
 from apps.streamlit.components.narrative import LayerNarrative, download_dataframe, layer_intro
-from apps.streamlit.layers.common import aggregate, render_chart, render_table_or_empty
+from apps.streamlit.layers.common import (
+    aggregate,
+    color_sequence,
+    render_chart,
+    render_table_or_empty,
+)
 from apps.streamlit.theme import SEQUENTIAL_BLUE
 from src.viz.erro_leitura_dashboard_data import monthly_volume, root_cause_distribution
 
@@ -33,6 +38,16 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 color="regiao",
                 markers=True,
                 title="Volume mensal de erros de leitura",
+                color_discrete_sequence=color_sequence(),
+                labels={
+                    "mes_ingresso": "Mês",
+                    "qtd_erros": "Ordens",
+                    "regiao": "Região",
+                },
+            )
+            fig.update_traces(
+                line={"width": 2.2, "shape": "spline"},
+                hovertemplate="<b>%{x|%b/%Y}</b><br>%{fullData.name}: %{y:,d}<extra></extra>",
             )
             render_chart(st, fig, key="executive_monthly", theme=theme)
             download_dataframe(st, "📥 CSV volume mensal", monthly, section="ritmo_volume_mensal")
@@ -48,7 +63,16 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 color="qtd_erros",
                 color_continuous_scale=SEQUENTIAL_BLUE,
                 title="Pareto de causas canônicas",
+                labels={"qtd_erros": "Ordens", "causa_canonica": "Causa"},
+                text="qtd_erros",
             )
             fig.update_yaxes(categoryorder="total ascending")
+            fig.update_traces(
+                texttemplate="%{x:,d}",
+                textposition="outside",
+                cliponaxis=False,
+                hovertemplate="<b>%{y}</b><br>%{x:,d} ordens<extra></extra>",
+            )
+            fig.update_layout(coloraxis_showscale=False)
             render_chart(st, fig, key="executive_causes", theme=theme, on_select="rerun")
             download_dataframe(st, "📥 CSV Pareto", causes, section="ritmo_pareto_causas")

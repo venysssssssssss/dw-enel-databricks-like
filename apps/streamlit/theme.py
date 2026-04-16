@@ -97,9 +97,12 @@ def css_variables(mode: ThemeMode = "light") -> dict[str, str]:
 def dashboard_css(mode: ThemeMode = "light") -> str:
     """Build Streamlit CSS with ENEL hierarchy, animation and accessible contrast."""
     variables = "\n".join(f"{key}: {value};" for key, value in css_variables(mode).items())
+    dark = mode == "dark"
+    glass_bg = "rgba(18, 36, 58, 0.62)" if dark else "rgba(255, 255, 255, 0.72)"
+    glass_border = "rgba(255, 255, 255, 0.08)" if dark else "rgba(15, 76, 129, 0.10)"
     return f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
 
 :root {{
   {variables}
@@ -108,18 +111,31 @@ def dashboard_css(mode: ThemeMode = "light") -> str:
   --enel-secondary: {PALETTE["secondary"]};
   --enel-accent: {PALETTE["accent"]};
   --enel-warning: {PALETTE["warning"]};
+  --enel-glass-bg: {glass_bg};
+  --enel-glass-border: {glass_border};
+  --enel-radius-lg: 22px;
+  --enel-radius-md: 14px;
+  --enel-radius-sm: 10px;
 }}
 
 html, body, [class*="css"] {{
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+}}
+
+code, pre, [data-testid="stMetricValue"], .enel-mono {{
+  font-family: 'JetBrains Mono', 'Menlo', monospace;
+  font-variant-numeric: tabular-nums;
 }}
 
 .stApp {{
   background:
-    radial-gradient(circle at top left, rgba(247, 148, 29, 0.15), transparent 30rem),
-    radial-gradient(circle at top right, rgba(15, 76, 129, 0.18), transparent 28rem),
+    radial-gradient(circle at top left, rgba(247, 148, 29, 0.14), transparent 32rem),
+    radial-gradient(circle at top right, rgba(15, 76, 129, 0.18), transparent 30rem),
+    radial-gradient(circle at bottom right, rgba(0, 129, 62, 0.10), transparent 26rem),
     linear-gradient(180deg, var(--enel-bg) 0%, var(--enel-bg-soft) 100%);
   color: var(--enel-text);
+  scroll-behavior: smooth;
 }}
 
 .block-container {{
@@ -127,90 +143,187 @@ html, body, [class*="css"] {{
   max-width: 1480px;
 }}
 
+/* ===== Métrica / card glass ===== */
 [data-testid="stMetric"], .enel-card {{
-  background: linear-gradient(145deg, var(--enel-surface), var(--enel-surface-2));
-  border: 1px solid var(--enel-border);
-  border-radius: 22px;
+  background: var(--enel-glass-bg);
+  border: 1px solid var(--enel-glass-border);
+  border-radius: var(--enel-radius-lg);
   box-shadow: var(--enel-shadow);
-  padding: 1.1rem;
-  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+  padding: 1.15rem 1.2rem;
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  transition: transform 220ms cubic-bezier(.2,.8,.2,1),
+              box-shadow 220ms ease,
+              border-color 220ms ease;
 }}
-
 [data-testid="stMetric"]:hover, .enel-card:hover {{
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   border-color: rgba(247, 148, 29, 0.55);
-  box-shadow: 0 22px 55px rgba(15, 76, 129, 0.16);
+  box-shadow: 0 28px 65px rgba(15, 76, 129, 0.18);
 }}
+[data-testid="stMetricLabel"] p {{
+  font-size: 0.78rem; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--enel-muted);
+}}
+[data-testid="stMetricValue"] {{
+  font-size: 1.55rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em;
+  color: var(--enel-text) !important;
+}}
+[data-testid="stMetricDelta"] {{ font-size: 0.82rem; font-weight: 600; }}
 
+/* ===== Hero ===== */
 .enel-hero {{
   position: relative;
   overflow: hidden;
   border-radius: 30px;
-  padding: 2rem;
+  padding: 2.1rem 2.2rem;
   margin-bottom: 1.2rem;
   color: #FFFFFF;
   background:
     linear-gradient(135deg, rgba(15,76,129,0.98), rgba(0,129,62,0.88)),
-    radial-gradient(circle at 88% 12%, rgba(247,148,29,0.72), transparent 18rem);
+    radial-gradient(circle at 88% 12%, rgba(247,148,29,0.72), transparent 18rem),
+    radial-gradient(circle at 8% 88%, rgba(228,0,43,0.32), transparent 16rem);
   box-shadow: 0 28px 80px rgba(15, 76, 129, 0.26);
 }}
-
+.enel-hero::after {{
+  content: ""; position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none; opacity: 0.5;
+}}
 .enel-hero h1 {{
-  font-size: clamp(2.15rem, 4vw, 4rem);
-  line-height: 0.96;
-  letter-spacing: -0.06em;
-  margin: 0 0 0.8rem;
+  position: relative; z-index: 1;
+  font-size: clamp(2.15rem, 4vw, 3.6rem);
+  line-height: 0.98;
+  letter-spacing: -0.05em;
+  margin: 0 0 0.7rem;
   font-weight: 800;
 }}
-
 .enel-hero p {{
+  position: relative; z-index: 1;
   max-width: 880px;
   margin: 0;
-  color: rgba(255, 255, 255, 0.88);
+  color: rgba(255, 255, 255, 0.92);
   font-size: 1.05rem;
+  line-height: 1.55;
+}}
+.enel-hero .enel-hero-meta {{
+  position: relative; z-index: 1;
+  display: inline-flex; gap: 0.5rem; align-items: center;
+  margin-top: 1rem;
+  padding: 0.45rem 0.85rem;
+  background: rgba(255,255,255,0.14);
+  backdrop-filter: blur(14px);
+  border-radius: 999px;
+  font-weight: 700; font-size: 0.85rem;
+  border: 1px solid rgba(255,255,255,0.22);
 }}
 
+/* ===== Intro / chips ===== */
 .enel-intro {{
   border-left: 5px solid var(--enel-accent);
-  background: color-mix(in srgb, var(--enel-surface) 86%, var(--enel-accent) 14%);
+  background: color-mix(in srgb, var(--enel-surface) 88%, var(--enel-accent) 12%);
   border-radius: 18px;
   padding: 1rem 1.2rem;
   margin: 0.25rem 0 1rem;
+  box-shadow: 0 1px 3px rgba(15,76,129,0.04);
 }}
-
-.enel-intro strong {{
-  color: var(--enel-primary);
-}}
+.enel-intro strong {{ color: var(--enel-primary); }}
 
 .enel-chip {{
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0.35rem 0.65rem;
+  padding: 0.35rem 0.7rem;
   margin: 0 0.35rem 0.35rem 0;
   border-radius: 999px;
   border: 1px solid var(--enel-border);
-  background: var(--enel-surface);
+  background: var(--enel-glass-bg);
   color: var(--enel-text);
   font-size: 0.84rem;
   font-weight: 600;
+  backdrop-filter: blur(8px);
+  transition: transform 160ms ease, border-color 160ms ease;
+}}
+.enel-chip:hover {{
+  transform: translateY(-1px);
+  border-color: var(--enel-accent);
 }}
 
 .enel-empty {{
   border: 1px dashed var(--enel-border);
-  background: var(--enel-surface);
+  background: var(--enel-glass-bg);
   border-radius: 22px;
-  padding: 1.4rem;
+  padding: 1.6rem;
   color: var(--enel-muted);
+  text-align: center;
+  backdrop-filter: blur(8px);
 }}
 
+/* ===== Tabs ===== */
+.stTabs [data-baseweb="tab-list"] {{
+  gap: 0.4rem;
+  border-bottom: 1px solid var(--enel-border);
+  padding-bottom: 0.2rem;
+}}
+.stTabs [data-baseweb="tab"] {{
+  height: 48px;
+  background: transparent;
+  border-radius: 12px 12px 0 0;
+  padding: 0 1.1rem;
+  font-weight: 600;
+  color: var(--enel-muted);
+  transition: color 180ms ease, background 180ms ease;
+}}
+.stTabs [data-baseweb="tab"]:hover {{
+  color: var(--enel-primary);
+  background: color-mix(in srgb, var(--enel-surface) 60%, var(--enel-accent) 8%);
+}}
+.stTabs [aria-selected="true"] {{
+  color: var(--enel-primary) !important;
+  background: var(--enel-glass-bg) !important;
+  border-bottom: 3px solid var(--enel-accent) !important;
+}}
+
+/* ===== Sidebar ===== */
+[data-testid="stSidebar"] {{
+  background: var(--enel-glass-bg);
+  backdrop-filter: blur(18px) saturate(140%);
+  border-right: 1px solid var(--enel-glass-border);
+}}
+
+/* ===== Plotly fade-in ===== */
 .js-plotly-plot {{
-  animation: enelFade 220ms ease-out;
+  animation: enelFade 320ms cubic-bezier(.2,.8,.2,1) both;
+}}
+@keyframes enelFade {{
+  from {{ opacity: 0; transform: translateY(8px); }}
+  to {{ opacity: 1; transform: translateY(0); }}
 }}
 
-@keyframes enelFade {{
-  from {{ opacity: 0; transform: translateY(4px); }}
-  to {{ opacity: 1; transform: translateY(0); }}
+/* ===== Dataframe polish ===== */
+[data-testid="stDataFrame"] {{
+  border-radius: var(--enel-radius-md);
+  overflow: hidden;
+  border: 1px solid var(--enel-border);
+}}
+
+/* ===== Buttons ===== */
+.stButton > button {{
+  border-radius: 12px;
+  border: 1px solid var(--enel-border);
+  font-weight: 600;
+  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+}}
+.stButton > button:hover {{
+  transform: translateY(-1px);
+  border-color: var(--enel-accent);
+  box-shadow: 0 8px 18px rgba(247, 148, 29, 0.18);
 }}
 </style>
 """

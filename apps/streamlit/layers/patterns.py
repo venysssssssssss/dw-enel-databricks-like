@@ -6,7 +6,12 @@ import pandas as pd
 import plotly.express as px
 
 from apps.streamlit.components.narrative import LayerNarrative, download_dataframe, layer_intro
-from apps.streamlit.layers.common import aggregate, render_chart, render_table_or_empty
+from apps.streamlit.layers.common import (
+    aggregate,
+    color_sequence,
+    render_chart,
+    render_table_or_empty,
+)
 from apps.streamlit.theme import SEQUENTIAL_BLUE, SEQUENTIAL_GREEN
 from src.viz.erro_leitura_dashboard_data import (
     radar_causes_by_region,
@@ -43,7 +48,14 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
             z="qtd_erros",
             color_continuous_scale=SEQUENTIAL_BLUE,
             title="Concentração região × causa",
+            labels={"regiao": "Região", "causa_canonica": "Causa", "qtd_erros": "Ordens"},
+            text_auto=True,
         )
+        fig.update_traces(
+            hovertemplate="<b>%{y}</b> · %{x}<br>%{z:,d} ordens<extra></extra>",
+            textfont={"size": 10, "color": "#0C1420"},
+        )
+        fig.update_layout(coloraxis_colorbar={"title": "Ordens", "thickness": 12})
         render_chart(st, fig, key="patterns_heatmap", theme=theme, height=520, on_select="rerun")
         download_dataframe(st, "📥 CSV heatmap", long_matrix, section="padroes_heatmap")
 
@@ -59,10 +71,17 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 orientation="h",
                 color="taxa_refaturamento",
                 color_continuous_scale=SEQUENTIAL_GREEN,
-                hover_data=["topic_keywords"],
+                hover_data={"topic_keywords": True, "taxa_refaturamento": ":.1%"},
                 title="Tópicos IA mais recorrentes",
+                labels={
+                    "qtd_erros": "Ordens",
+                    "topic_name": "Tópico",
+                    "taxa_refaturamento": "Refaturamento",
+                    "topic_keywords": "Palavras-chave",
+                },
             )
             fig.update_yaxes(categoryorder="total ascending")
+            fig.update_layout(coloraxis_colorbar={"title": "Refat.", "tickformat": ".0%"})
             render_chart(st, fig, key="patterns_topics", theme=theme, on_select="rerun")
             download_dataframe(st, "📥 CSV tópicos", topics, section="padroes_topicos")
     with right:
@@ -76,5 +95,22 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 color="regiao",
                 line_close=True,
                 title="Perfil relativo por região",
+                color_discrete_sequence=color_sequence(),
+            )
+            fig.update_traces(
+                fill="toself",
+                opacity=0.45,
+                hovertemplate="<b>%{theta}</b><br>%{fullData.name}: %{r:.1f}%<extra></extra>",
+            )
+            fig.update_layout(
+                polar={
+                    "radialaxis": {
+                        "ticksuffix": "%",
+                        "tickfont": {"size": 10},
+                        "gridcolor": "rgba(15, 76, 129, 0.10)",
+                    },
+                    "angularaxis": {"tickfont": {"size": 11}},
+                    "bgcolor": "rgba(0,0,0,0)",
+                },
             )
             render_chart(st, fig, key="patterns_radar", theme=theme, height=460)
