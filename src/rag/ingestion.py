@@ -52,6 +52,7 @@ class Chunk:
     sprint_id: str
     token_count: int
     anchor: str
+    dataset_version: str = ""
 
 
 @dataclass(slots=True)
@@ -227,9 +228,10 @@ def build_corpus(config: RagConfig, *, rebuild: bool = False) -> IngestionStats:
         )
 
     try:
-        from src.rag.data_ingestion import build_data_cards
+        from src.data_plane import DataStore
+        from src.data_plane.cards import build_data_cards
 
-        data_chunks = build_data_cards()
+        data_chunks = build_data_cards(DataStore())
         all_chunks.extend(data_chunks)
     except Exception as exc:  # pragma: no cover - não-crítico
         stats.skipped.append(f"data_cards: {exc}")
@@ -250,6 +252,7 @@ def build_corpus(config: RagConfig, *, rebuild: bool = False) -> IngestionStats:
             "sprint_id": c.sprint_id,
             "token_count": c.token_count,
             "anchor": c.anchor,
+            "dataset_version": c.dataset_version,
             "indexed_at": now,
         }
         for c in all_chunks
@@ -277,6 +280,16 @@ def _load_embedder(model_name: str):
     hashing sem quebrar o chat.
     """
     if model_name.strip().lower() in {"", "hashing", "hash", "local-hashing", "stub"}:
+        try:
+            import enel_core
+
+            def rust_embed(texts: list[str]) -> list[list[float]]:
+                result = enel_core.hash_embed(texts, _HASH_EMBED_DIM)
+                return [list(map(float, row)) for row in result]
+
+            return rust_embed
+        except Exception:
+            pass
         return _hashing_embedder()
 
     try:

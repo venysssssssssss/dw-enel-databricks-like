@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-from src.rag.config import RagConfig
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from src.rag.config import RagConfig
 
 _TOKEN_RE = re.compile(r"[\wÀ-ÿ]+", re.UNICODE)
 
@@ -27,6 +30,7 @@ class Passage:
     sprint_id: str
     anchor: str
     score: float
+    dataset_version: str = ""
 
     def citation(self) -> str:
         anchor = f"#{self.anchor}" if self.anchor else ""
@@ -38,6 +42,13 @@ def _tokens(text: str) -> set[str]:
 
 
 def lexical_overlap(query: str, passage: str) -> float:
+    try:
+        import enel_core
+
+        scores = enel_core.bm25_score(query, [passage])
+        return float(scores[0]) if scores else 0.0
+    except Exception:
+        pass
     q = _tokens(query)
     p = _tokens(passage)
     if not q or not p:
@@ -80,11 +91,22 @@ class HybridRetriever:
         *,
         k: int | None = None,
         doc_types: list[str] | None = None,
+        dataset_version: str | None = None,
     ) -> list[Passage]:
         self._ensure_ready()
         k_eff = k or self.config.retrieval_k
         query_embedding = self._embed_fn([query])[0]  # type: ignore[misc]
-        where = {"doc_type": {"$in": doc_types}} if doc_types else None
+        where_clauses: list[dict[str, object]] = []
+        if doc_types:
+            where_clauses.append({"doc_type": {"$in": doc_types}})
+        if dataset_version:
+            where_clauses.append({"dataset_version": dataset_version})
+        if len(where_clauses) == 1:
+            where = where_clauses[0]
+        elif where_clauses:
+            where = {"$and": where_clauses}
+        else:
+            where = None
         result = self._collection.query(  # type: ignore[union-attr]
             query_embeddings=[query_embedding],
             n_results=k_eff,
@@ -112,6 +134,7 @@ class HybridRetriever:
                     sprint_id=(meta or {}).get("sprint_id", ""),
                     anchor=(meta or {}).get("anchor", ""),
                     score=score,
+                    dataset_version=(meta or {}).get("dataset_version", ""),
                 )
             )
         passages.sort(key=lambda p: p.score, reverse=True)
@@ -123,9 +146,15 @@ class HybridRetriever:
         *,
         top_n: int | None = None,
         doc_types: list[str] | None = None,
+        dataset_version: str | None = None,
     ) -> list[Passage]:
         top = top_n or self.config.rerank_top_n
-        return self.retrieve(query, k=self.config.retrieval_k, doc_types=doc_types)[:top]
+        return self.retrieve(
+            query,
+            k=self.config.retrieval_k,
+            doc_types=doc_types,
+            dataset_version=dataset_version,
+        )[:top]
 
 
 def route_doc_types(query: str) -> list[str] | None:
@@ -144,9 +173,14 @@ def route_doc_types(query: str) -> list[str] | None:
         return ["data", "business", "viz"]
     if any(term in q for term in ("sprint", "entregável", "deliverable")):
         return ["sprint"]
-    if any(term in q for term in ("acf", "asf", "refatur", "religa", "grupo b", "grupo a", "gd ")):
+    if any(term in q for term in ("acf", "asf")):
+        return ["business", "viz"]
+    if any(term in q for term in ("refatur", "religa", "grupo b", "grupo a", "gd ")):
         return ["data", "business", "viz"]
-    if any(term in q for term in ("modelo", "predict", "feature", "isolation", "lightgbm", "xgboost")):
+    if any(
+        term in q
+        for term in ("modelo", "predict", "feature", "isolation", "lightgbm", "xgboost")
+    ):
         return ["ml"]
     if any(term in q for term in ("endpoint", "fastapi", "api ", "rota")):
         return ["api"]

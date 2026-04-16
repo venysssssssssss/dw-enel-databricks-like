@@ -13,13 +13,11 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
-from src.common.llm_gateway import LLMProvider, build_provider
-from src.rag.config import RagConfig
+from src.common.llm_gateway import build_provider
 from src.rag.prompts import build_messages
 from src.rag.retriever import HybridRetriever, Passage, route_doc_types
 from src.rag.safety import (
@@ -29,6 +27,12 @@ from src.rag.safety import (
     sanitize_output,
 )
 from src.rag.telemetry import TurnTelemetry, hash_question, preview, record
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from src.common.llm_gateway import LLMProvider
+    from src.rag.config import RagConfig
 
 _GREETING_RE = re.compile(
     r"^\s*(olá|ola|oi+|bom\s*dia|boa\s*tarde|boa\s*noite|hello|hi|hey|e\s*aí)\b",
@@ -80,7 +84,7 @@ def classify_intent(question: str) -> str:
 
 
 def greeting_response(context_hint: str | None = None) -> str:
-    hour = datetime.now(timezone.utc).astimezone().hour
+    hour = datetime.now(UTC).astimezone().hour
     if 5 <= hour < 12:
         saud = "Bom dia!"
     elif 12 <= hour < 18:
@@ -120,6 +124,7 @@ class RagOrchestrator:
         *,
         history: list[dict[str, str]] | None = None,
         context_hint: str | None = None,
+        dataset_version: str | None = None,
     ) -> RagResponse:
         timer = _Timer()
         check = check_input(question)
@@ -158,10 +163,10 @@ class RagOrchestrator:
 
         doc_types = route_doc_types(check.sanitized)
         try:
-            passages = self.retriever.top_passages(
+            passages = self._top_passages(
                 check.sanitized,
-                top_n=self.config.rerank_top_n,
                 doc_types=doc_types,
+                dataset_version=dataset_version,
             )
         except (FileNotFoundError, RuntimeError) as exc:
             return RagResponse(
@@ -228,6 +233,7 @@ class RagOrchestrator:
         *,
         history: list[dict[str, str]] | None = None,
         context_hint: str | None = None,
+        dataset_version: str | None = None,
     ) -> Iterator[str]:
         """Versão streaming: emite chunks de texto conforme chegam.
 
@@ -245,10 +251,10 @@ class RagOrchestrator:
             return
 
         try:
-            passages = self.retriever.top_passages(
+            passages = self._top_passages(
                 check.sanitized,
-                top_n=self.config.rerank_top_n,
                 doc_types=route_doc_types(check.sanitized),
+                dataset_version=dataset_version,
             )
         except (FileNotFoundError, RuntimeError) as exc:
             yield (
@@ -292,6 +298,21 @@ class RagOrchestrator:
             total_ms=timer.total_ms(),
         )
 
+    def _top_passages(
+        self,
+        query: str,
+        *,
+        doc_types: list[str] | None,
+        dataset_version: str | None,
+    ) -> list[Passage]:
+        kwargs: dict[str, Any] = {
+            "top_n": self.config.rerank_top_n,
+            "doc_types": doc_types,
+        }
+        if dataset_version:
+            kwargs["dataset_version"] = dataset_version
+        return self.retriever.top_passages(query, **kwargs)
+
     def _enforce_budget(self, passages: list[Passage]) -> list[Passage]:
         budget = self.config.max_turn_tokens - 600  # reserva para system+pergunta+resposta
         acc = 0
@@ -316,7 +337,7 @@ class RagOrchestrator:
     ) -> None:
         try:
             telemetry = TurnTelemetry(
-                ts=datetime.now(timezone.utc).isoformat(),
+                ts=datetime.now(UTC).isoformat(),
                 provider=getattr(self.provider, "name", "unknown"),
                 model=getattr(self.provider, "model", "unknown"),
                 question_hash=hash_question(question),
