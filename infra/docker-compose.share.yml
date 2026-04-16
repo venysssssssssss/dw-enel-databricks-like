@@ -53,8 +53,7 @@ services:
       - ../data:/app/data:rw
     environment:
       ENEL_PROJECT_ROOT: /app
-      ENEL_UI: ${ENEL_UI:-react}
-      ENEL_WEB_URL: http://localhost:5173
+      ENEL_UI: streamlit
       RAG_EMBEDDING_MODEL: hashing
       RAG_CHROMADB_PATH: /app/data/rag/chromadb
       RAG_TELEMETRY_PATH: /app/data/rag/telemetry.jsonl
@@ -79,7 +78,6 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - web
       - streamlit
     restart: unless-stopped
 

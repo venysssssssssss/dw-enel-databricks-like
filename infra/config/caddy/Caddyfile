@@ -1,6 +1,6 @@
-# Caddy reverse proxy para React SPA (Sprint 16 — Unified Data Plane)
+# Caddy reverse proxy para Streamlit (Erros de Leitura)
 #
-# Expoe a SPA em :8080 com gzip/zstd e headers de seguranca.
+# Expoe o dashboard Streamlit em :8080 com gzip/zstd e headers de seguranca.
 #
 # Para gerar hash de senha:
 #   docker run --rm caddy caddy hash-password --plaintext 'suasenha'
@@ -27,7 +27,9 @@
 		-Server
 	}
 
-	reverse_proxy web:8080 {
+	# Streamlit usa WebSocket em /_stcore/stream. O Caddy detecta Upgrade:
+	# websocket automaticamente e faz o switch.
+	reverse_proxy streamlit:8501 {
 		transport http {
 			keepalive 30s
 			read_timeout 300s
