@@ -16,13 +16,11 @@ from src.ml.models.erro_leitura_classifier import (
     normalize_text,
     taxonomy_metadata,
 )
-from src.viz.cache import load_or_build_disk_cache, path_fingerprint
 
 DEFAULT_SILVER_PATH = Path("data/silver/erro_leitura_normalizado.csv")
 DEFAULT_TOPIC_ASSIGNMENTS_PATH = Path("data/model_registry/erro_leitura/topic_assignments.csv")
 DEFAULT_TOPIC_TAXONOMY_PATH = Path("data/model_registry/erro_leitura/topic_taxonomy.json")
 TRAINING_DATA_TYPES = {"erro_leitura", "base_n1_sp"}
-DASHBOARD_CACHE_VERSION = "s14-perf-v3"
 KEYWORD_LABEL_CACHE_VERSION = "keyword-v1"
 MAX_TAXONOMY_EXAMPLE_CHARS = 420
 DASHBOARD_SILVER_COLUMNS = {
@@ -37,6 +35,7 @@ DASHBOARD_SILVER_COLUMNS = {
     "instalacao",
     "status",
     "assunto",
+    "grupo",
 }
 
 
@@ -58,29 +57,13 @@ def load_dashboard_frame(
     topic_taxonomy_path: Path = DEFAULT_TOPIC_TAXONOMY_PATH,
     include_total: bool = False,
 ) -> pd.DataFrame:
-    signature = sha256(
-        "|".join(
-            [
-                path_fingerprint(silver_path),
-                path_fingerprint(topic_assignments_path),
-                path_fingerprint(topic_taxonomy_path),
-                str(include_total),
-                DASHBOARD_CACHE_VERSION,
-            ]
-        ).encode("utf-8")
-    ).hexdigest()
+    from src.data_plane import DataStore
 
-    return load_or_build_disk_cache(
-        Path(".streamlit/cache"),
-        "erro_leitura_dashboard_frame",
-        signature,
-        lambda: _build_dashboard_frame(
-            silver_path=silver_path,
-            topic_assignments_path=topic_assignments_path,
-            topic_taxonomy_path=topic_taxonomy_path,
-            include_total=include_total,
-        ),
-    )
+    return DataStore(
+        silver_path=silver_path,
+        topic_assignments_path=topic_assignments_path,
+        topic_taxonomy_path=topic_taxonomy_path,
+    ).load_silver(include_total=include_total)
 
 
 def _build_dashboard_frame(
@@ -205,6 +188,7 @@ def prepare_dashboard_frame(
         "causa_canonica",
         "status",
         "assunto",
+        "grupo",
         "flag_resolvido_com_refaturamento",
         "has_causa_raiz_label",
         "instalacao_hash",
