@@ -1,4 +1,42 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: enel-redis
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.api
+    image: enel-api:latest
+    container_name: enel-api
+    working_dir: /app
+    volumes:
+      - ../data:/app/data:rw
+    environment:
+      ENEL_UI: react
+      RAG_EMBEDDING_MODEL: hashing
+      RAG_CHROMADB_PATH: /app/data/rag/chromadb
+      RAG_TELEMETRY_PATH: /app/data/rag/telemetry.jsonl
+      RAG_FEEDBACK_PATH: /app/data/rag/feedback.csv
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/web.Dockerfile
+    image: enel-web:latest
+    container_name: enel-web
+    ports:
+      - "127.0.0.1:5173:8080"
+    depends_on:
+      - api
+    restart: unless-stopped
+
   streamlit:
     build:
       context: ..
@@ -15,6 +53,8 @@ services:
       - ../data:/app/data:rw
     environment:
       ENEL_PROJECT_ROOT: /app
+      ENEL_UI: ${ENEL_UI:-react}
+      ENEL_WEB_URL: http://localhost:5173
       RAG_EMBEDDING_MODEL: hashing
       RAG_CHROMADB_PATH: /app/data/rag/chromadb
       RAG_TELEMETRY_PATH: /app/data/rag/telemetry.jsonl
@@ -39,8 +79,8 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      streamlit:
-        condition: service_healthy
+      - web
+      - streamlit
     restart: unless-stopped
 
   cloudflared:
