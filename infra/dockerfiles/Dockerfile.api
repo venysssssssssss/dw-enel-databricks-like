@@ -1,10 +1,32 @@
+FROM python:3.12-slim AS enel-core-wheel
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential curl pkg-config \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain 1.86.0
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /build
+COPY rust/ ./rust/
+RUN python -m pip install --no-cache-dir "maturin>=1.7,<2.0" \
+    && cd rust/enel_core \
+    && maturin build --release -o /wheels
+
 FROM python:3.12-slim
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential curl cmake git \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml README.md /app/
 COPY src/ /app/src/
-RUN pip install --no-cache-dir ".[api]"
+COPY --from=enel-core-wheel /wheels/*.whl /tmp/
+RUN pip install --no-cache-dir ".[api,viz,rag]" \
+    && pip install --no-cache-dir /tmp/enel_core-*.whl \
+    && rm -f /tmp/enel_core-*.whl
 
 EXPOSE 8000
 
