@@ -1,0 +1,21 @@
+[package]
+name = "enel_core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "enel_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+ahash = "0.8"
+arrow = "53"
+memmap2 = "0.9"
+moka = { version = "0.12", features = ["sync"] }
+murmur3 = "0.5"
+polars = { version = "0.43", features = ["lazy", "parquet", "ipc", "csv"] }
+pyo3 = { version = "0.22", features = ["extension-module"] }
+rayon = "1.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-segmentation = "1.11"
