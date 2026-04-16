@@ -52,10 +52,9 @@ _CHAT_CSS = """
   overflow: hidden;
   background:
     linear-gradient(135deg,
-      rgba(15,76,129,0.95) 0%,
-      rgba(31,111,178,0.92) 55%,
-      rgba(0,129,62,0.88) 100%),
-    radial-gradient(circle at 92% 12%, rgba(247,148,29,0.55), transparent 14rem);
+      rgba(135,10,60,0.98) 0%,
+      rgba(200,16,46,0.96) 58%,
+      rgba(228,0,43,0.94) 100%);
   color: #fff;
   padding: 1.45rem 1.7rem;
   border-radius: var(--enel-radius-lg, 22px);
@@ -76,7 +75,7 @@ _CHAT_CSS = """
   margin: 0 0 0.4rem 0;
   font-size: 1.35rem;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: #fff;
 }
 .chat-hero p {
@@ -117,8 +116,8 @@ _CHAT_CSS = """
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
-.chat-status .status-ok   { color: #00813E; font-weight: 700; }
-.chat-status .status-warn { color: #E07B10; font-weight: 700; }
+.chat-status .status-ok   { color: #1E7B55; font-weight: 700; }
+.chat-status .status-warn { color: #9A5800; font-weight: 700; }
 .chat-status .status-crit { color: #E4002B; font-weight: 700; }
 
 /* ===== Suggested chip section ===== */
@@ -149,18 +148,18 @@ _CHAT_CSS = """
 }
 .chat-metadata .pill:hover {
   transform: translateY(-1px);
-  border-color: var(--enel-accent, #F7941D);
+  border-color: var(--enel-secondary, #C8102E);
 }
 .chat-metadata .pill code {
   background: transparent; padding: 0;
-  color: var(--enel-primary, #0F4C81);
+  color: var(--enel-primary, #870A3C);
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.74rem;
 }
 .chat-metadata .pill.ok   {
-  background: rgba(0,129,62,0.10);
-  border-color: rgba(0,129,62,0.30);
-  color: #006B33;
+  background: rgba(30,123,85,0.12);
+  border-color: rgba(30,123,85,0.34);
+  color: #1E7B55;
 }
 .chat-metadata .pill.warn {
   background: rgba(247,148,29,0.12);
@@ -176,7 +175,7 @@ _CHAT_CSS = """
 /* ===== Animated typing indicator (3 dots) ===== */
 .chat-typing {
   display: inline-flex; align-items: center; gap: 0.55rem;
-  color: var(--enel-primary, #0F4C81);
+  color: var(--enel-primary, #870A3C);
   font-weight: 600;
   font-size: 0.9rem;
   padding: 0.4rem 0.8rem;
@@ -191,7 +190,7 @@ _CHAT_CSS = """
 }
 .chat-typing-dots span {
   width: 6px; height: 6px; border-radius: 50%;
-  background: var(--enel-accent, #F7941D);
+  background: var(--enel-secondary, #C8102E);
   animation: typingPulse 1.1s ease-in-out infinite;
 }
 .chat-typing-dots span:nth-child(2) { animation-delay: 0.18s; }
@@ -204,7 +203,7 @@ _CHAT_CSS = """
 /* ===== Sources expander styling ===== */
 .chat-sources summary {
   cursor: pointer;
-  color: var(--enel-primary, #0F4C81);
+  color: var(--enel-primary, #870A3C);
   font-weight: 700;
   font-size: 0.86rem;
   padding: 0.4rem 0;
@@ -225,6 +224,7 @@ _CHAT_CSS = """
   padding: 0.9rem 1.1rem !important;
   box-shadow: 0 4px 14px rgba(15, 76, 129, 0.06);
   backdrop-filter: blur(10px);
+  color: var(--enel-text, #1D1F24) !important;
   margin-bottom: 0.6rem;
   animation: bubbleIn 220ms cubic-bezier(.2,.8,.2,1) both;
 }
@@ -240,8 +240,8 @@ _CHAT_CSS = """
   font-family: 'Inter', sans-serif !important;
 }
 [data-testid="stChatInput"] textarea:focus {
-  border-color: var(--enel-accent, #F7941D) !important;
-  box-shadow: 0 0 0 3px rgba(247,148,29,0.15) !important;
+  border-color: var(--enel-secondary, #C8102E) !important;
+  box-shadow: 0 0 0 3px rgba(200,16,46,0.18) !important;
 }
 </style>
 """

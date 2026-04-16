@@ -53,7 +53,7 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
         )
         fig.update_traces(
             hovertemplate="<b>%{y}</b> · %{x}<br>%{z:,d} ordens<extra></extra>",
-            textfont={"size": 10, "color": "#0C1420"},
+            textfont={"size": 10, "color": "#F8F9FB" if theme == "dark" else "#1D1F24"},
         )
         fig.update_layout(coloraxis_colorbar={"title": "Ordens", "thickness": 12})
         render_chart(st, fig, key="patterns_heatmap", theme=theme, height=520, on_select="rerun")

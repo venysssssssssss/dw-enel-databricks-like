@@ -72,7 +72,7 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
         )
         fig.update_traces(
             hovertemplate="<b>%{y}</b> · severidade <b>%{x}</b><br>%{z:,d} ordens<extra></extra>",
-            textfont={"size": 11, "color": "#0C1420"},
+            textfont={"size": 11, "color": "#F8F9FB" if theme == "dark" else "#1D1F24"},
         )
         fig.update_layout(coloraxis_colorbar={"title": "Ordens", "thickness": 12})
         render_chart(st, fig, key="mis_severity", theme=theme, height=360)
