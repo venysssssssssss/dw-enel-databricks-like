@@ -203,6 +203,54 @@ class HybridRetriever:
             region=region,
         )[:top]
 
+    def get_by_anchors(
+        self,
+        anchors: list[str],
+        *,
+        dataset_version: str | None = None,
+    ) -> list[Passage]:
+        """Busca determinística por anchor — usado para forçar inclusão de cards
+        canônicos no contexto quando a intenção da query é claramente identificável.
+
+        Retorna no máximo 1 passage por anchor (o mais recente se houver duplicatas
+        por versão de dataset).
+        """
+        if not anchors:
+            return []
+        self._ensure_ready()
+        where_clauses: list[dict[str, object]] = [
+            {"anchor": {"$in": list(anchors)}},
+            {"doc_type": "data"},
+        ]
+        if dataset_version:
+            where_clauses.append({"dataset_version": dataset_version})
+        where = where_clauses[0] if len(where_clauses) == 1 else {"$and": where_clauses}
+        result = self._collection.get(where=where, limit=max(len(anchors) * 4, 16))  # type: ignore[union-attr]
+        ids = result.get("ids", []) or []
+        docs = result.get("documents", []) or []
+        metas = result.get("metadatas", []) or []
+        by_anchor: dict[str, Passage] = {}
+        for cid, text, meta in zip(ids, docs, metas, strict=False):
+            m = meta or {}
+            anchor = str(m.get("anchor", ""))
+            if anchor and anchor not in by_anchor:
+                by_anchor[anchor] = Passage(
+                    chunk_id=cid,
+                    text=text,
+                    source_path=str(m.get("source_path", "")),
+                    section=str(m.get("section", "")),
+                    doc_type=str(m.get("doc_type", "data")),
+                    sprint_id=str(m.get("sprint_id", "")),
+                    anchor=anchor,
+                    score=0.99,  # score sintético alto — card canônico para a intenção
+                    dataset_version=str(m.get("dataset_version", "")),
+                    region=str(m.get("region", "CE+SP")),
+                    scope=str(m.get("scope", "regional")),
+                    data_source=str(m.get("data_source", "silver.erro_leitura_normalizado")),
+                )
+        # Preserva a ordem de prioridade passada pelo caller
+        return [by_anchor[a] for a in anchors if a in by_anchor]
+
 
 def route_doc_types(query: str) -> list[str] | None:
     """Heurística de roteamento: reduz o espaço de busca por palavra-chave.

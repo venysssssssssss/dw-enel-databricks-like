@@ -59,8 +59,14 @@ REGRAS DE EXATIDÃO DE RESPOSTA:
 
 GROUNDING E CITAÇÕES:
 - Use APENAS o CONTEXTO RECUPERADO.
-- Se a informação não estiver no contexto, diga:
-  "Não encontrei essa informação nos dados indexados de CE/SP."
+- Os DATA CARDS (caminho `data/silver/erro_leitura_normalizado.csv#<anchor>`)
+  contêm **todos os números agregados** sobre CE/SP: top-causas-raiz,
+  top-assuntos, refaturamento, evolucao-mensal, grupo-tarifario, regiao-ce,
+  regiao-sp, ce-vs-sp-*. **Se houver um data card no contexto que responde à
+  pergunta, USE-O — não diga que não encontrou.**
+- Só diga "Não encontrei essa informação nos dados indexados de CE/SP." quando
+  o contexto claramente não contiver dados relevantes (ex.: pergunta sobre
+  cliente individual, ou tema fora do domínio).
 - Sempre cite fontes no formato [fonte: caminho#anchor].
 
 CAVEATS DE QUALIDADE DE DADOS:

@@ -51,6 +51,99 @@ OUT_OF_REGIONAL_SCOPE_MESSAGE = (
     "ou a equipe de dados."
 )
 
+INDIVIDUAL_CLIENT_MESSAGE = (
+    "O dataset CE/SP é **agregado e anonimizado** — não há dados por cliente, "
+    "UC ou instalação individual neste assistente. Posso responder sobre "
+    "causas-raiz, assuntos, refaturamento, evolução mensal e grupo tarifário. "
+    "Reformule a pergunta em termos de métrica agregada (ex.: "
+    "\"Quais os principais motivos de reclamação?\")."
+)
+
+_INDIVIDUAL_CLIENT_RE = re.compile(
+    r"\b(cliente|clientes|consumidor|consumidores|cpf|uc individual|"
+    r"instalação|instalacao|medidor específico|número de telefone)\b",
+    re.IGNORECASE,
+)
+
+# Boosts determinísticos: cada regra casa a query e injeta cards canônicos na
+# retrieval. Ordem importa — primeiros anchors têm prioridade visual no prompt.
+_CARD_BOOST_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
+    # Causas-raiz / motivos principais
+    (
+        re.compile(
+            r"\b(causa|causas|causa-raiz|causa raiz|motivo|motivos|"
+            r"principal|principais|mais frequente|mais comum|mais gera|"
+            r"o que mais)\b",
+            re.IGNORECASE,
+        ),
+        ("top-causas-raiz", "top-assuntos"),
+    ),
+    # Assuntos / tipos de reclamação
+    (
+        re.compile(
+            r"\b(assunto|assuntos|tipo de reclama|tipos de reclama|"
+            r"categoria|categorias)\b",
+            re.IGNORECASE,
+        ),
+        ("top-assuntos", "top-causas-raiz"),
+    ),
+    # Refaturamento / maior taxa
+    (
+        re.compile(
+            r"\b(refatur|maior taxa|maior percentual|maior índice|"
+            r"mais refatur)\b",
+            re.IGNORECASE,
+        ),
+        ("refaturamento", "ce-vs-sp-refaturamento", "top-assuntos"),
+    ),
+    # Evolução temporal / repetição / mensal
+    (
+        re.compile(
+            r"\b(mensal|mês|meses|tempo|evolu|série|serie|"
+            r"repete|repetem|repetiç|longo do tempo|ao longo|"
+            r"frequência temporal|pico|tendência|tendencia)\b",
+            re.IGNORECASE,
+        ),
+        ("evolucao-mensal", "ce-vs-sp-mensal", "top-assuntos"),
+    ),
+    # Grupo tarifário
+    (
+        re.compile(r"\b(grupo|tarifári|tarifario|\bgb\b|\bga\b|grupo b|grupo a)\b", re.IGNORECASE),
+        ("grupo-tarifario",),
+    ),
+    # Comparação CE vs SP
+    (
+        re.compile(
+            r"\b(compar\w*|vs|versus|diferen\w+|entre ce e sp|entre sp e ce)\b",
+            re.IGNORECASE,
+        ),
+        ("ce-vs-sp-causas", "ce-vs-sp-refaturamento", "ce-vs-sp-mensal"),
+    ),
+    # Visão geral / totais
+    (
+        re.compile(
+            r"\b(total|totais|visão geral|visao geral|resumo|overview|quantas ordens)\b",
+            re.IGNORECASE,
+        ),
+        ("visao-geral",),
+    ),
+)
+
+
+def detect_card_boosts(question: str) -> list[str]:
+    """Retorna anchors canônicos a forçar em top-N, respeitando ordem de prioridade."""
+    seen: dict[str, None] = {}
+    for pattern, anchors in _CARD_BOOST_RULES:
+        if pattern.search(question):
+            for anchor in anchors:
+                seen.setdefault(anchor, None)
+    return list(seen.keys())
+
+
+def is_individual_client_query(question: str) -> bool:
+    """Queries sobre cliente/UC individual: recusar cedo com orientação agregada."""
+    return bool(_INDIVIDUAL_CLIENT_RE.search(question))
+
 
 @dataclass(frozen=True, slots=True)
 class RagResponse:
@@ -212,6 +305,16 @@ class RagOrchestrator:
                 out_of_regional_scope=True,
             )
 
+        if is_individual_client_query(check.sanitized):
+            return RagResponse(
+                text=INDIVIDUAL_CLIENT_MESSAGE,
+                passages=[],
+                intent="individual_client_scope",
+                prompt_tokens=0,
+                completion_tokens=0,
+                latency_ms=timer.total_ms(),
+            )
+
         intent = classify_intent(check.sanitized)
         region = detect_regional_scope(check.sanitized)
         if region is None and intent in ANALYTICAL_INTENTS:
@@ -285,7 +388,7 @@ class RagOrchestrator:
         )
         resp = self.provider.complete(
             messages,
-            max_tokens=min(640, self.config.max_turn_tokens // 2),
+            max_tokens=self._answer_budget(),
             temperature=self.config.temperature,
             top_p=self.config.top_p,
         )
@@ -336,6 +439,10 @@ class RagOrchestrator:
             yield OUT_OF_REGIONAL_SCOPE_MESSAGE
             return
 
+        if is_individual_client_query(check.sanitized):
+            yield INDIVIDUAL_CLIENT_MESSAGE
+            return
+
         intent = classify_intent(check.sanitized)
         region = detect_regional_scope(check.sanitized)
         if region is None and intent in ANALYTICAL_INTENTS:
@@ -359,6 +466,9 @@ class RagOrchestrator:
             )
             return
 
+        # Boosts determinísticos (via _top_passages) injetam passages com
+        # score sintético 0.99, então is_out_of_scope só bloqueia quando não
+        # houve boost E a semântica também falhou.
         if is_out_of_scope(passages, self.config.similarity_threshold):
             yield OUT_OF_SCOPE_MESSAGE
             return
@@ -370,7 +480,7 @@ class RagOrchestrator:
         acc_text = []
         for chunk in self.provider.stream(
             messages,
-            max_tokens=min(640, self.config.max_turn_tokens // 2),
+            max_tokens=self._answer_budget(),
             temperature=self.config.temperature,
             top_p=self.config.top_p,
         ):
@@ -404,14 +514,52 @@ class RagOrchestrator:
         dataset_version: str | None,
         region: Literal["CE", "SP", "CE+SP"] | None,
     ) -> list[Passage]:
+        top_n = self.config.rerank_top_n
+        # Primeiro passo: recuperação semântica + lexical padrão, mas pedindo
+        # mais passages (2x top_n) para permitir merge com boosts sem perder
+        # diversidade.
         kwargs: dict[str, Any] = {
-            "top_n": self.config.rerank_top_n,
+            "top_n": top_n * 2,
             "doc_types": doc_types,
             "region": region,
         }
         if dataset_version:
             kwargs["dataset_version"] = dataset_version
-        return self.retriever.top_passages(query, **kwargs)
+        semantic = self.retriever.top_passages(query, **kwargs)
+
+        # Segundo passo: boost determinístico — cards canônicos forçados no topo
+        # quando a intenção da query é claramente identificável por keyword.
+        forced_anchors = detect_card_boosts(query)
+        if forced_anchors:
+            forced = self.retriever.get_by_anchors(
+                forced_anchors, dataset_version=dataset_version
+            )
+            # Filtra por região compatível quando especificada
+            if region in {"CE", "SP"}:
+                forced = [
+                    p for p in forced
+                    if p.region in {region, "CE+SP"}
+                ]
+            forced_ids = {p.chunk_id for p in forced}
+            # Mantém ordem: boosts primeiro (ordem de prioridade) — mesmo que o
+            # card já tenha vindo da semântica, promove para o topo com score
+            # sintético alto. Remove duplicatas dos semantic.
+            merged: list[Passage] = list(forced)
+            seen = set(forced_ids)
+            for p in semantic:
+                if p.chunk_id not in seen:
+                    merged.append(p)
+                    seen.add(p.chunk_id)
+            return merged[:top_n]
+        return semantic[:top_n]
+
+    def _answer_budget(self) -> int:
+        """Teto de tokens de resposta para SLA de ~35s em CPU (Qwen 2.5 3B Q4).
+
+        Aproximação: ~12-14 tok/s em i7-1185G7 → 35s ≈ 400 tokens úteis.
+        Respostas curtas e diretas também reforçam as regras de exatidão.
+        """
+        return min(400, self.config.max_turn_tokens // 2)
 
     def _enforce_budget(self, passages: list[Passage]) -> list[Passage]:
         budget = self.config.max_turn_tokens - 600  # reserva para system+pergunta+resposta
