@@ -29,14 +29,17 @@ _INJECTION_PATTERNS = (
     "act as a different",
 )
 
-_OTHER_REGIONS = re.compile(
-    r"\b(rio de janeiro|minas gerais|bahia|pernambuco|paraná|paraíba|"
-    r"rio grande|goiás|mato grosso|santa catarina|amazonas|pará|maranhão|"
-    r"alagoas|sergipe|piauí|tocantins|rondônia|acre|amapá|roraima|"
-    r"espírito santo|distrito federal|\brj\b|\bmg\b|\bba\b|\bpe\b|\bpr\b|"
-    r"\bpb\b|\brs\b|\bgo\b|\bmt\b|\bms\b|\bsc\b|\bam\b|\bpa\b|\bma\b|"
-    r"\bal\b|\bse\b|\bpi\b|\bto\b|\bro\b|\bac\b|\bap\b|\brr\b|\bes\b|\bdf\b)",
+_OTHER_REGIONS_NAMES = re.compile(
+    r"\b(rio de janeiro|minas gerais|bahia|pernambuco|paraná|parana|paraíba|paraiba|"
+    r"rio grande do sul|rio grande do norte|goiás|goias|mato grosso|santa catarina|"
+    r"amazonas|pará|maranhão|maranhao|alagoas|sergipe|piauí|piaui|tocantins|"
+    r"rondônia|rondonia|acre|amapá|amapa|roraima|espírito santo|espirito santo|"
+    r"distrito federal)",
     re.IGNORECASE,
+)
+# Siglas de UF: exigimos maiúsculas para não colidir com pronomes PT-BR (se, to, ...)
+_OTHER_REGIONS_UF = re.compile(
+    r"\b(RJ|MG|BA|PE|PR|PB|RS|RN|GO|MT|MS|SC|AM|PA|MA|AL|SE|PI|TO|RO|AC|AP|RR|ES|DF)\b"
 )
 
 _CE_SP_SCOPE = re.compile(r"(ceará|cearense|\bce\b|são paulo|paulista|\bsp\b)", re.IGNORECASE)
@@ -103,7 +106,8 @@ def is_out_of_scope(passages: list, threshold: float) -> bool:
 
 
 def is_out_of_regional_scope(question: str) -> bool:
-    q = question.lower()
-    has_other = bool(_OTHER_REGIONS.search(q))
-    has_ce_sp = bool(_CE_SP_SCOPE.search(q))
+    has_other = bool(_OTHER_REGIONS_NAMES.search(question)) or bool(
+        _OTHER_REGIONS_UF.search(question)
+    )
+    has_ce_sp = bool(_CE_SP_SCOPE.search(question))
     return has_other and not has_ce_sp
