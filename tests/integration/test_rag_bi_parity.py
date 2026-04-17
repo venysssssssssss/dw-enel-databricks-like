@@ -4,6 +4,7 @@ import re
 from typing import TYPE_CHECKING
 
 import pandas as pd
+import pytest
 
 from src.common.llm_gateway import LLMResponse, StubProvider
 from src.data_plane import DataStore
@@ -16,8 +17,8 @@ if TYPE_CHECKING:
 
 
 class CardRetriever:
-    def __init__(self, passages: list[Passage]) -> None:
-        self._passages = passages
+    def __init__(self, cards: list[Passage]) -> None:
+        self._cards = cards
         self.dataset_version: str | None = None
 
     def top_passages(
@@ -27,20 +28,43 @@ class CardRetriever:
         top_n: int | None = None,
         doc_types: list[str] | None = None,
         dataset_version: str | None = None,
+        region: str | None = None,
     ) -> list[Passage]:
-        del query, top_n, doc_types
+        del top_n, doc_types
         self.dataset_version = dataset_version
-        return self._passages
+        q = query.lower()
+        if region == "CE":
+            target = "regiao-ce"
+        elif region == "SP":
+            target = "regiao-sp"
+        elif "ceará" in q or " ce" in q:
+            target = "regiao-ce"
+        elif "são paulo" in q or " sp" in q:
+            target = "regiao-sp"
+        else:
+            target = "visao-geral"
+        return [card for card in self._cards if card.anchor == target][:1]
 
 
 class ExtractiveProvider(StubProvider):
     def complete(self, messages, **kwargs):
         del kwargs
+        question = messages[-1]["content"].lower()
         context = messages[1]["content"]
-        match = re.search(r"com \*\*(\d+) ordens\*\*", context)
-        total = match.group(1) if match else "0"
+        if "taxa" in question:
+            match = re.search(r"taxa de refaturamento de \*\*([\d.,]+%)\*\*", context)
+            total = match.group(1) if match else "0.0%"
+        elif "refaturadas" in question:
+            match = re.search(r"Ordens refaturadas: \*\*([\d.]+)\*\*", context)
+            total = match.group(1) if match else "0"
+        elif "causas rotuladas" in question:
+            match = re.search(r"Causas rotuladas: \*\*([\d.]+)\*\*", context)
+            total = match.group(1) if match else "0"
+        else:
+            match = re.search(r"com \*\*([\d.]+) ordens\*\*", context)
+            total = match.group(1) if match else "0"
         return LLMResponse(
-            text=f"O KPI exibido no BI é {total} ordens.",
+            text=f"KPI={total}",
             prompt_tokens=20,
             completion_tokens=10,
             provider=self.name,
@@ -55,6 +79,8 @@ def _config(tmp_path: Path) -> RagConfig:
         model_file="",
         model_path=None,
         embedding_model="stub",
+        regional_scope="CE+SP",
+        prompt_version="2.0.0",
         chromadb_path=tmp_path / "chroma",
         collection_name="test",
         max_turn_tokens=2000,
@@ -74,10 +100,15 @@ def _config(tmp_path: Path) -> RagConfig:
         api_key=None,
         telemetry_path=tmp_path / "telemetry.jsonl",
         feedback_path=tmp_path / "feedback.csv",
+        llm_judge_enabled=False,
     )
 
 
-def test_rag_answer_uses_same_dataset_version_and_kpi_as_bi(tmp_path: Path) -> None:
+def _normalize_int(value: str) -> float:
+    return float(value.strip().replace(".", ""))
+
+
+def _sample_store(tmp_path: Path) -> DataStore:
     silver_path = tmp_path / "silver.csv"
     pd.DataFrame(
         [
@@ -94,17 +125,90 @@ def test_rag_answer_uses_same_dataset_version_and_kpi_as_bi(tmp_path: Path) -> N
                 "status": "PROCEDENTE",
                 "assunto": "ERRO",
                 "grupo": "B",
-            }
+            },
+            {
+                "ordem": "2",
+                "_source_region": "CE",
+                "_data_type": "erro_leitura",
+                "dt_ingresso": "2026-02-10",
+                "causa_raiz": "Erro de leitura - acesso",
+                "texto_completo": "sem acesso",
+                "flag_resolvido_com_refaturamento": "False",
+                "has_causa_raiz_label": "True",
+                "instalacao": "101",
+                "status": "ABERTO",
+                "assunto": "ERRO",
+                "grupo": "A",
+            },
+            {
+                "ordem": "3",
+                "_source_region": "CE",
+                "_data_type": "erro_leitura",
+                "dt_ingresso": "2026-03-10",
+                "causa_raiz": "Erro de leitura - digitação",
+                "texto_completo": "outro ce",
+                "flag_resolvido_com_refaturamento": "False",
+                "has_causa_raiz_label": "False",
+                "instalacao": "102",
+                "status": "ABERTO",
+                "assunto": "REFATURAMENTO PRODUTOS",
+                "grupo": "B",
+            },
+            {
+                "ordem": "4",
+                "_source_region": "SP",
+                "_data_type": "base_n1_sp",
+                "dt_ingresso": "2026-02-01",
+                "causa_raiz": "ERRO_LEITURA",
+                "texto_completo": "sp 1",
+                "flag_resolvido_com_refaturamento": "False",
+                "has_causa_raiz_label": "False",
+                "instalacao": "200",
+                "status": "ABERTO",
+                "assunto": "ERRO DE LEITURA",
+                "grupo": "B",
+            },
+            {
+                "ordem": "5",
+                "_source_region": "SP",
+                "_data_type": "base_n1_sp",
+                "dt_ingresso": "2026-03-01",
+                "causa_raiz": "ERRO_LEITURA",
+                "texto_completo": "sp 2",
+                "flag_resolvido_com_refaturamento": "False",
+                "has_causa_raiz_label": "True",
+                "instalacao": "201",
+                "status": "ABERTO",
+                "assunto": "ERRO DE LEITURA",
+                "grupo": "B",
+            },
         ]
     ).to_csv(silver_path, index=False)
-    store = DataStore(
+    return DataStore(
         silver_path=silver_path,
         topic_assignments_path=tmp_path / "missing_assignments.csv",
         topic_taxonomy_path=tmp_path / "missing_taxonomy.json",
         cache_dir=tmp_path / "cache",
     )
+
+
+@pytest.mark.parametrize(
+    ("region", "question", "metric"),
+    [
+        ("CE", "Quantas ordens existem em CE?", "qtd_ordens"),
+        ("CE", "Qual a taxa de refaturamento em CE?", "taxa_refaturamento"),
+        ("CE", "Quantas ordens refaturadas existem em CE?", "ordens_refaturadas"),
+        ("CE", "Quantas causas rotuladas existem em CE?", "causas_rotuladas"),
+        ("SP", "Quantas ordens existem em SP?", "qtd_ordens"),
+        ("SP", "Qual a taxa de refaturamento em SP?", "taxa_refaturamento"),
+        ("SP", "Quantas ordens refaturadas existem em SP?", "ordens_refaturadas"),
+        ("SP", "Quantas causas rotuladas existem em SP?", "causas_rotuladas"),
+    ],
+)
+def test_rag_bi_parity_for_8_kpis(tmp_path: Path, region: str, question: str, metric: str) -> None:
+    store = _sample_store(tmp_path)
     version = store.version()
-    bi_total = store.aggregate_records("overview")[0]["total_registros"]
+    by_region = store.aggregate_records("by_region", {"regiao": [region]})[0]
     passages = [
         Passage(
             chunk_id=card.chunk_id,
@@ -116,9 +220,11 @@ def test_rag_answer_uses_same_dataset_version_and_kpi_as_bi(tmp_path: Path) -> N
             anchor=card.anchor,
             score=0.9,
             dataset_version=card.dataset_version,
+            region=card.region,
+            scope=card.scope,
+            data_source=card.data_source,
         )
-        for card in store.cards()
-        if card.anchor == "visao-geral"
+        for card in store.cards(regional_scope="CE+SP")
     ]
     retriever = CardRetriever(passages)
     orchestrator = RagOrchestrator(
@@ -127,11 +233,15 @@ def test_rag_answer_uses_same_dataset_version_and_kpi_as_bi(tmp_path: Path) -> N
         provider=ExtractiveProvider(),
     )
 
-    response = orchestrator.answer(
-        "quantas ordens aparecem no BI?",
-        dataset_version=version.hash,
-    )
-    answer_total = int(re.search(r"(\d+) ordens", response.text).group(1))  # type: ignore[union-attr]
+    response = orchestrator.answer(question, dataset_version=version.hash)
+    raw = re.search(r"KPI=([^\s]+)", response.text).group(1)  # type: ignore[union-attr]
+
+    if metric == "taxa_refaturamento":
+        expected = round(float(by_region[metric]) * 100, 1)
+        measured = float(raw.strip().replace("%", "").replace(",", "."))
+        assert round(measured, 1) == expected
+    else:
+        expected = float(by_region[metric])
+        assert _normalize_int(raw) == expected
 
     assert retriever.dataset_version == version.hash
-    assert answer_total == bi_total

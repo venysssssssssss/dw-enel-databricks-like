@@ -98,6 +98,13 @@ All CPU-only, tree-based. TimeSeriesSplit for validation (never random split).
 - API: `docs/api/` (FastAPI design, endpoints, schemas)
 - Sprints: `docs/sprints/` (12 sprints covering full implementation)
 
+## RAG Environment (Sprint 17)
+
+- `RAG_REGIONAL_SCOPE` default `CE+SP` (escopo regional do corpus de cards).
+- `RAG_EMBEDDING_MODEL` default `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`.
+- `RAG_PROMPT_VERSION` default `2.0.0` (rollback: `1.0.0`).
+- `RAG_LLM_JUDGE` default `0` (habilita avaliação de faithfulness opcional quando `1`).
+
 <!-- dgc-policy-v11 -->
 # Dual-Graph Context Policy
 

@@ -1,4 +1,4 @@
-.PHONY: setup setup-all dev full ml down test test-unit test-integration lint format pipeline smoke sample-data seed-time features train score drift erro-leitura-dry-run erro-leitura-normalize erro-leitura-train erro-leitura-dashboard share-up share-url share-logs share-down
+.PHONY: setup setup-all dev full ml down test test-unit test-integration lint format pipeline smoke sample-data seed-time features train score drift erro-leitura-dry-run erro-leitura-normalize erro-leitura-train erro-leitura-dashboard share-up share-url share-logs share-down rag-rebuild test-rag-evals test-rag
 
 setup:
 	python -m venv .venv
@@ -89,3 +89,19 @@ share-logs:
 
 share-down:
 	./scripts/share_dashboard.sh down
+
+rag-rebuild:
+	poetry run python scripts/rebuild_rag_corpus_regional.py \
+		--regional-scope $${REGIONAL_SCOPE:-CE+SP}
+
+test-rag-evals:
+	poetry run python scripts/rag_eval_regional.py \
+		--golden tests/evals/rag_sp_ce_golden.jsonl \
+		--gate-recall5 0.85 \
+		--gate-regional-compliance 1.0 \
+		--gate-refusal 0.95 \
+		--gate-citation 0.80 \
+		--gate-exactness 0.75
+
+test-rag: test-rag-evals
+	pytest tests/unit/rag/ tests/integration/test_rag_*.py -v
