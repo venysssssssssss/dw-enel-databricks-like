@@ -17,14 +17,23 @@ from typing import Any
 from apps.streamlit.components.narrative import LayerNarrative, layer_intro
 from src.rag.config import load_rag_config
 from src.rag.orchestrator import (
+    INDIVIDUAL_CLIENT_MESSAGE,
+    OUT_OF_REGIONAL_SCOPE_MESSAGE,
     RagOrchestrator,
     classify_intent,
+    detect_regional_scope,
     format_citations,
     greeting_response,
+    is_individual_client_query,
 )
 from src.rag.prompts import SUGGESTED_QUESTIONS
 from src.rag.retriever import check_stub_corpus, route_doc_types
-from src.rag.safety import OUT_OF_SCOPE_MESSAGE, check_input, is_out_of_scope
+from src.rag.safety import (
+    OUT_OF_SCOPE_MESSAGE,
+    check_input,
+    is_out_of_regional_scope,
+    is_out_of_scope,
+)
 from src.rag.telemetry import hash_question, log_feedback
 
 _CHIP_CATEGORIES: dict[str, str] = {
@@ -443,6 +452,28 @@ def _stream_answer(
         st.warning(check.reason or "Pergunta inválida.")
         return None, check.reason or "Pergunta inválida."
 
+    if is_out_of_regional_scope(check.sanitized):
+        st.info(OUT_OF_REGIONAL_SCOPE_MESSAGE)
+        elapsed = (time.perf_counter() - start) * 1000
+        return {
+            "intent": "out_of_regional_scope",
+            "prompt_tokens": 0,
+            "completion_tokens": len(OUT_OF_REGIONAL_SCOPE_MESSAGE) // 4,
+            "latency_ms": elapsed,
+            "sources": 0,
+        }, OUT_OF_REGIONAL_SCOPE_MESSAGE
+
+    if is_individual_client_query(check.sanitized):
+        st.info(INDIVIDUAL_CLIENT_MESSAGE)
+        elapsed = (time.perf_counter() - start) * 1000
+        return {
+            "intent": "individual_client_scope",
+            "prompt_tokens": 0,
+            "completion_tokens": len(INDIVIDUAL_CLIENT_MESSAGE) // 4,
+            "latency_ms": elapsed,
+            "sources": 0,
+        }, INDIVIDUAL_CLIENT_MESSAGE
+
     intent = classify_intent(check.sanitized)
     if intent in {"saudacao", "cortesia"}:
         text = greeting_response(context_hint)
@@ -456,11 +487,15 @@ def _stream_answer(
             "sources": 0,
         }, text
 
+    region = detect_regional_scope(check.sanitized)
+    if region is None and intent == "analise_dados":
+        region = "CE+SP"
     try:
-        passages = orch.retriever.top_passages(
+        passages = orch._top_passages(  # noqa: SLF001 (reuso intencional do pipeline)
             check.sanitized,
-            top_n=config.rerank_top_n,
             doc_types=route_doc_types(check.sanitized),
+            dataset_version=None,
+            region=region,
         )
     except (FileNotFoundError, RuntimeError) as exc:
         msg = (
@@ -496,7 +531,7 @@ def _stream_answer(
     first_token_ms: float | None = None
     for chunk in orch.provider.stream(
         messages,
-        max_tokens=min(640, config.max_turn_tokens // 2),
+        max_tokens=orch._answer_budget(),  # noqa: SLF001 (SLA 35s CPU)
         temperature=config.temperature,
         top_p=config.top_p,
     ):
