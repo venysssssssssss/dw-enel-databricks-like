@@ -12,7 +12,7 @@ from pathlib import Path
 
 _DEFAULT_LLAMA_REPO = "Qwen/Qwen2.5-3B-Instruct-GGUF"
 _DEFAULT_LLAMA_FILE = "qwen2.5-3b-instruct-q4_k_m.gguf"
-_DEFAULT_EMBED_MODEL = "hashing"
+_DEFAULT_EMBED_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +28,8 @@ class RagConfig:
     model_file: str
     model_path: Path | None
     embedding_model: str
+    regional_scope: str
+    prompt_version: str
     chromadb_path: Path
     collection_name: str
     max_turn_tokens: int
@@ -47,6 +49,7 @@ class RagConfig:
     api_key: str | None
     telemetry_path: Path
     feedback_path: Path
+    llm_judge_enabled: bool
 
 
 def _env_path(key: str, default: str) -> Path:
@@ -102,6 +105,8 @@ def load_rag_config() -> RagConfig:
         model_file=os.getenv("RAG_MODEL_FILE", _DEFAULT_LLAMA_FILE),
         model_path=model_path,
         embedding_model=os.getenv("RAG_EMBEDDING_MODEL", _DEFAULT_EMBED_MODEL),
+        regional_scope=os.getenv("RAG_REGIONAL_SCOPE", "CE+SP").upper(),
+        prompt_version=os.getenv("RAG_PROMPT_VERSION", "2.0.0"),
         chromadb_path=_env_path("RAG_CHROMADB_PATH", "data/rag/chromadb"),
         collection_name=os.getenv("RAG_COLLECTION", "enel_docs"),
         max_turn_tokens=_env_int("RAG_MAX_TURN_TOKENS", 3000),
@@ -121,4 +126,5 @@ def load_rag_config() -> RagConfig:
         api_key=os.getenv("RAG_API_KEY") or None,
         telemetry_path=_env_path("RAG_TELEMETRY_PATH", "data/rag/telemetry.jsonl"),
         feedback_path=_env_path("RAG_FEEDBACK_PATH", "data/rag/feedback.csv"),
+        llm_judge_enabled=_env_bool("RAG_LLM_JUDGE", False),
     )

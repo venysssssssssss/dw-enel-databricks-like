@@ -29,6 +29,18 @@ _INJECTION_PATTERNS = (
     "act as a different",
 )
 
+_OTHER_REGIONS = re.compile(
+    r"\b(rio de janeiro|minas gerais|bahia|pernambuco|paraná|paraíba|"
+    r"rio grande|goiás|mato grosso|santa catarina|amazonas|pará|maranhão|"
+    r"alagoas|sergipe|piauí|tocantins|rondônia|acre|amapá|roraima|"
+    r"espírito santo|distrito federal|\brj\b|\bmg\b|\bba\b|\bpe\b|\bpr\b|"
+    r"\bpb\b|\brs\b|\bgo\b|\bmt\b|\bms\b|\bsc\b|\bam\b|\bpa\b|\bma\b|"
+    r"\bal\b|\bse\b|\bpi\b|\bto\b|\bro\b|\bac\b|\bap\b|\brr\b|\bes\b|\bdf\b)",
+    re.IGNORECASE,
+)
+
+_CE_SP_SCOPE = re.compile(r"(ceará|cearense|\bce\b|são paulo|paulista|\bsp\b)", re.IGNORECASE)
+
 OUT_OF_SCOPE_MESSAGE = (
     "Não encontrei essa informação nos documentos da plataforma ENEL. "
     "Tente reformular a pergunta ou consulte diretamente os arquivos em `docs/`."
@@ -88,3 +100,10 @@ def is_out_of_scope(passages: list, threshold: float) -> bool:
         return True
     best = max(p.score for p in passages)
     return best < threshold
+
+
+def is_out_of_regional_scope(question: str) -> bool:
+    q = question.lower()
+    has_other = bool(_OTHER_REGIONS.search(q))
+    has_ce_sp = bool(_CE_SP_SCOPE.search(q))
+    return has_other and not has_ce_sp

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from src.rag.config import load_rag_config
 from src.rag.telemetry import TurnTelemetry, hash_question, log_feedback, preview, record
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 
 def test_load_rag_config_defaults(monkeypatch, tmp_path: Path) -> None:
-    for key in list(monkeypatch.__dict__.get("_setitem", {})):
-        pass
     monkeypatch.setenv("ENEL_PROJECT_ROOT", str(tmp_path))
     (tmp_path / "docs").mkdir()
     cfg = load_rag_config()
@@ -17,6 +18,8 @@ def test_load_rag_config_defaults(monkeypatch, tmp_path: Path) -> None:
     assert cfg.chunk_size_tokens > 0
     assert cfg.retrieval_k >= cfg.rerank_top_n
     assert cfg.similarity_threshold >= 0.0
+    assert cfg.regional_scope == "CE+SP"
+    assert cfg.prompt_version == "2.0.0"
 
 
 def test_load_rag_config_env_overrides(monkeypatch, tmp_path: Path) -> None:
@@ -25,11 +28,15 @@ def test_load_rag_config_env_overrides(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("RAG_MAX_TURN_TOKENS", "4096")
     monkeypatch.setenv("RAG_CHUNK_SIZE", "256")
     monkeypatch.setenv("RAG_SIMILARITY_THRESHOLD", "0.4")
+    monkeypatch.setenv("RAG_REGIONAL_SCOPE", "SP")
+    monkeypatch.setenv("RAG_PROMPT_VERSION", "1.0.0")
     cfg = load_rag_config()
     assert cfg.provider == "stub"
     assert cfg.max_turn_tokens == 4096
     assert cfg.chunk_size_tokens == 256
     assert cfg.similarity_threshold == 0.4
+    assert cfg.regional_scope == "SP"
+    assert cfg.prompt_version == "1.0.0"
 
 
 def test_hash_question_stable() -> None:

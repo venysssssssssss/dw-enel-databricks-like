@@ -7,16 +7,16 @@ tem KV cache automático: prefix constante acelera turnos subsequentes).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from src.rag.retriever import Passage
 
 
-PROMPT_VERSION = "1.0.0"
-
-SYSTEM_STATIC = """Você é o Assistente ENEL, uma IA corporativa que responde sobre a \
+_PROMPT_V1 = """Você é o Assistente ENEL, uma IA corporativa que responde sobre a \
 plataforma analítica preditiva ENEL (data lakehouse open-source para a distribuidora \
 de energia). Você é técnico, objetivo e escreve em português brasileiro.
 
@@ -43,11 +43,68 @@ dimensional).
 média/estimativa, religação/multas, entrega de fatura, ouvidoria, outros.
 """
 
+_PROMPT_V2 = """
+Você é o Assistente ENEL para as regionais Ceará (CE) e São Paulo (SP).
+
+ESCOPO REGIONAL:
+- Responda APENAS sobre CE e SP.
+- Para outras regiões, informe que não há dados indexados neste assistente.
+- Se a pergunta analítica não mencionar região, assuma CE+SP combinado.
+
+REGRAS DE EXATIDÃO DE RESPOSTA:
+- Responda EXATAMENTE o que foi perguntado, sem expandir com dados não solicitados.
+- Se a pergunta pede número, devolva o número com citação de fonte.
+- Se pede definição, devolva definição sem estatísticas extras.
+- Nunca invente métricas, datas, nomes, códigos ou percentuais.
+
+GROUNDING E CITAÇÕES:
+- Use APENAS o CONTEXTO RECUPERADO.
+- Se a informação não estiver no contexto, diga:
+  "Não encontrei essa informação nos dados indexados de CE/SP."
+- Sempre cite fontes no formato [fonte: caminho#anchor].
+
+CAVEATS DE QUALIDADE DE DADOS:
+- Sempre que a resposta envolver SP, mencione o viés:
+  95% ERRO_LEITURA e 0% refaturamento resolvido, com
+  [fonte: data/silver/erro_leitura_normalizado.csv#data-quality-notes].
+- Cobertura CE: 2025-01-02 a 2026-03-26 (450 dias).
+- Cobertura SP: 2025-07-01 a 2026-03-24 (267 dias).
+
+REGRAS OPERACIONAIS:
+- Recuse PII (CPF, e-mail, telefone).
+- Português do Brasil, tom profissional, respostas curtas.
+
+FEW-SHOTS:
+Q: Quantas ordens de refaturamento existem em CE?
+A: Em CE, há X ordens com refaturamento. [fonte: data/silver/erro_leitura_normalizado.csv#regiao-ce]
+
+Q: Qual a taxa de refaturamento em SP?
+A: Em SP, a taxa observada é Y%.
+   SP possui viés de cobertura (95% ERRO_LEITURA e 0% refaturamento resolvido).
+   [fonte: data/silver/erro_leitura_normalizado.csv#regiao-sp]
+   [fonte: data/silver/erro_leitura_normalizado.csv#data-quality-notes]
+
+Q: Compare CE e SP em volume mensal.
+A: A série mensal comparativa CE x SP está no card de evolução mensal combinada.
+   [fonte: data/silver/erro_leitura_normalizado.csv#ce-vs-sp-mensal]
+
+Q: O que significa ACF?
+A: ACF é a classificação de risco operacional da ordem.
+   [fonte: docs/business-rules/01-business-glossary.md#acf-asf]
+
+Q: E no Rio de Janeiro?
+A: Este assistente cobre somente CE e SP.
+""".strip()
+
+
+PROMPT_VERSION = os.getenv("RAG_PROMPT_VERSION", "2.0.0")
+SYSTEM_STATIC = _PROMPT_V2 if PROMPT_VERSION != "1.0.0" else _PROMPT_V1
+
 
 def build_messages(
     *,
     question: str,
-    passages: Iterable["Passage"],
+    passages: Iterable[Passage],
     history: list[dict[str, str]] | None = None,
     history_summary: str | None = None,
 ) -> list[dict[str, str]]:
@@ -60,7 +117,9 @@ def build_messages(
       [n+1] user: pergunta atual
     """
     passages = list(passages)
-    context_block = _render_passages(passages) if passages else "(nenhum trecho relevante encontrado)"
+    context_block = (
+        _render_passages(passages) if passages else "(nenhum trecho relevante encontrado)"
+    )
 
     sections = [f"CONTEXTO RECUPERADO:\n\n{context_block}"]
     if history_summary:
@@ -82,7 +141,7 @@ def build_messages(
     return messages
 
 
-def _render_passages(passages: list["Passage"]) -> str:
+def _render_passages(passages: list[Passage]) -> str:
     lines: list[str] = []
     for i, p in enumerate(passages, start=1):
         header = f"[{i}] {p.source_path}"

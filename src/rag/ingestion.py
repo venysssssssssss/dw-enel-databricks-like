@@ -5,8 +5,8 @@ Decisões de design:
 - **Chunker**: 2 estágios — split por header Markdown, depois split por caracteres
   (~480 tokens ~= 1920 chars, overlap 64 tokens). Preserva cabeçalho como metadata
   para citação hierárquica (`docs/business-rules/glossario.md#acf-asf`).
-- **Embeddings**: hashing local determinístico por default; MiniLM via
-  `sentence-transformers` pode ser ativado por `RAG_EMBEDDING_MODEL`.
+- **Embeddings**: MiniLM multilíngue por default; fallback hashing local
+  determinístico quando `sentence-transformers` não está disponível.
 - **Store**: ChromaDB PersistentClient (SQLite-backed). Metadata rica permite
   filtragem por `doc_type` antes do vetor.
 """
@@ -53,6 +53,9 @@ class Chunk:
     token_count: int
     anchor: str
     dataset_version: str = ""
+    region: str = "CE+SP"
+    scope: str = "global"
+    data_source: str = "docs.markdown"
 
 
 @dataclass(slots=True)
@@ -231,7 +234,10 @@ def build_corpus(config: RagConfig, *, rebuild: bool = False) -> IngestionStats:
         from src.data_plane import DataStore
         from src.data_plane.cards import build_data_cards
 
-        data_chunks = build_data_cards(DataStore())
+        data_chunks = build_data_cards(
+            DataStore(),
+            regional_scope=config.regional_scope,
+        )
         all_chunks.extend(data_chunks)
     except Exception as exc:  # pragma: no cover - não-crítico
         stats.skipped.append(f"data_cards: {exc}")
@@ -253,6 +259,9 @@ def build_corpus(config: RagConfig, *, rebuild: bool = False) -> IngestionStats:
             "token_count": c.token_count,
             "anchor": c.anchor,
             "dataset_version": c.dataset_version,
+            "region": c.region,
+            "scope": c.scope,
+            "data_source": c.data_source,
             "indexed_at": now,
         }
         for c in all_chunks

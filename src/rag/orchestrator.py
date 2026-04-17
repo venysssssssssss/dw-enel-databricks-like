@@ -15,7 +15,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from src.common.llm_gateway import build_provider
 from src.rag.prompts import build_messages
@@ -23,6 +23,7 @@ from src.rag.retriever import HybridRetriever, Passage, route_doc_types
 from src.rag.safety import (
     OUT_OF_SCOPE_MESSAGE,
     check_input,
+    is_out_of_regional_scope,
     is_out_of_scope,
     sanitize_output,
 )
@@ -39,6 +40,17 @@ _GREETING_RE = re.compile(
     re.IGNORECASE,
 )
 
+_CE_RE = re.compile(r"(ceará|cearense|fortaleza|\bce\b)", re.IGNORECASE)
+_SP_RE = re.compile(r"(são paulo|paulista|\bsp\b)", re.IGNORECASE)
+
+ANALYTICAL_INTENTS = {"analise_dados"}
+
+OUT_OF_REGIONAL_SCOPE_MESSAGE = (
+    "Este assistente responde apenas sobre as regionais **Ceará (CE)** e "
+    "**São Paulo (SP)**. Para outras regiões, consulte o dashboard regional "
+    "ou a equipe de dados."
+)
+
 
 @dataclass(frozen=True, slots=True)
 class RagResponse:
@@ -49,6 +61,8 @@ class RagResponse:
     completion_tokens: int
     latency_ms: float
     blocked_reason: str | None = None
+    region_detected: Literal["CE", "SP", "CE+SP"] | None = None
+    out_of_regional_scope: bool = False
 
 
 @dataclass(slots=True)
@@ -76,11 +90,45 @@ def classify_intent(question: str) -> str:
         return "ml"
     if any(t in q for t in ("dashboard", "aba", "gráfico", "filtro", "streamlit")):
         return "dashboard_howto"
-    if any(t in q for t in ("por que", "porque", "causa", "explique", "análise", "analise")):
+    if any(
+        t in q
+        for t in (
+            "por que",
+            "porque",
+            "causa",
+            "explique",
+            "análise",
+            "analise",
+            "quantos",
+            "quantas",
+            "volume",
+            "taxa",
+            "percentual",
+            "mensal",
+            "total",
+            "reclama",
+            "compare",
+            "compar",
+            "resumo",
+            "dados",
+        )
+    ):
         return "analise_dados"
     if any(t in q for t in ("como rodar", "como executar", "como instalar", "comando")):
         return "dev"
     return "glossario"
+
+
+def detect_regional_scope(question: str) -> Literal["CE", "SP", "CE+SP"] | None:
+    ce = bool(_CE_RE.search(question))
+    sp = bool(_SP_RE.search(question))
+    if ce and sp:
+        return "CE+SP"
+    if ce:
+        return "CE"
+    if sp:
+        return "SP"
+    return None
 
 
 def greeting_response(context_hint: str | None = None) -> str:
@@ -125,6 +173,7 @@ class RagOrchestrator:
         history: list[dict[str, str]] | None = None,
         context_hint: str | None = None,
         dataset_version: str | None = None,
+        golden_case_id: str | None = None,
     ) -> RagResponse:
         timer = _Timer()
         check = check_input(question)
@@ -139,7 +188,34 @@ class RagOrchestrator:
                 blocked_reason=check.reason,
             )
 
+        if is_out_of_regional_scope(check.sanitized):
+            self._record(
+                question=check.sanitized,
+                intent="out_of_regional_scope",
+                passages=[],
+                prompt_tokens=0,
+                completion_tokens=0,
+                first_token_ms=timer.first_token_ms or timer.total_ms(),
+                total_ms=timer.total_ms(),
+                region_detected=None,
+                out_of_regional_scope=True,
+                golden_case_id=golden_case_id,
+            )
+            return RagResponse(
+                text=OUT_OF_REGIONAL_SCOPE_MESSAGE,
+                passages=[],
+                intent="out_of_regional_scope",
+                prompt_tokens=0,
+                completion_tokens=0,
+                latency_ms=timer.total_ms(),
+                region_detected=None,
+                out_of_regional_scope=True,
+            )
+
         intent = classify_intent(check.sanitized)
+        region = detect_regional_scope(check.sanitized)
+        if region is None and intent in ANALYTICAL_INTENTS:
+            region = "CE+SP"
 
         if intent in {"saudacao", "cortesia"}:
             text = greeting_response(context_hint)
@@ -151,6 +227,9 @@ class RagOrchestrator:
                 completion_tokens=len(text) // 4,
                 first_token_ms=timer.first_token_ms or timer.total_ms(),
                 total_ms=timer.total_ms(),
+                region_detected=region,
+                out_of_regional_scope=False,
+                golden_case_id=golden_case_id,
             )
             return RagResponse(
                 text=text,
@@ -159,6 +238,7 @@ class RagOrchestrator:
                 prompt_tokens=0,
                 completion_tokens=len(text) // 4,
                 latency_ms=timer.total_ms(),
+                region_detected=region,
             )
 
         doc_types = route_doc_types(check.sanitized)
@@ -167,6 +247,7 @@ class RagOrchestrator:
                 check.sanitized,
                 doc_types=doc_types,
                 dataset_version=dataset_version,
+                region=region,
             )
         except (FileNotFoundError, RuntimeError) as exc:
             return RagResponse(
@@ -181,6 +262,7 @@ class RagOrchestrator:
                 completion_tokens=0,
                 latency_ms=timer.total_ms(),
                 blocked_reason="no_index",
+                region_detected=region,
             )
 
         if is_out_of_scope(passages, self.config.similarity_threshold):
@@ -191,6 +273,7 @@ class RagOrchestrator:
                 prompt_tokens=0,
                 completion_tokens=0,
                 latency_ms=timer.total_ms(),
+                region_detected=region,
             )
 
         passages = self._enforce_budget(passages)
@@ -217,6 +300,9 @@ class RagOrchestrator:
             completion_tokens=resp.completion_tokens,
             first_token_ms=timer.first_token_ms,
             total_ms=timer.total_ms(),
+            region_detected=region,
+            out_of_regional_scope=False,
+            golden_case_id=golden_case_id,
         )
         return RagResponse(
             text=text,
@@ -225,6 +311,7 @@ class RagOrchestrator:
             prompt_tokens=resp.prompt_tokens,
             completion_tokens=resp.completion_tokens,
             latency_ms=timer.total_ms(),
+            region_detected=region,
         )
 
     def stream_answer(
@@ -245,7 +332,14 @@ class RagOrchestrator:
             yield check.reason or "Pergunta inválida."
             return
 
+        if is_out_of_regional_scope(check.sanitized):
+            yield OUT_OF_REGIONAL_SCOPE_MESSAGE
+            return
+
         intent = classify_intent(check.sanitized)
+        region = detect_regional_scope(check.sanitized)
+        if region is None and intent in ANALYTICAL_INTENTS:
+            region = "CE+SP"
         if intent in {"saudacao", "cortesia"}:
             yield greeting_response(context_hint)
             return
@@ -255,6 +349,7 @@ class RagOrchestrator:
                 check.sanitized,
                 doc_types=route_doc_types(check.sanitized),
                 dataset_version=dataset_version,
+                region=region,
             )
         except (FileNotFoundError, RuntimeError) as exc:
             yield (
@@ -296,6 +391,9 @@ class RagOrchestrator:
             completion_tokens=len(joined) // 4,
             first_token_ms=timer.first_token_ms,
             total_ms=timer.total_ms(),
+            region_detected=region,
+            out_of_regional_scope=False,
+            golden_case_id=None,
         )
 
     def _top_passages(
@@ -304,10 +402,12 @@ class RagOrchestrator:
         *,
         doc_types: list[str] | None,
         dataset_version: str | None,
+        region: Literal["CE", "SP", "CE+SP"] | None,
     ) -> list[Passage]:
         kwargs: dict[str, Any] = {
             "top_n": self.config.rerank_top_n,
             "doc_types": doc_types,
+            "region": region,
         }
         if dataset_version:
             kwargs["dataset_version"] = dataset_version
@@ -334,8 +434,12 @@ class RagOrchestrator:
         completion_tokens: int,
         first_token_ms: float,
         total_ms: float,
+        region_detected: Literal["CE", "SP", "CE+SP"] | None,
+        out_of_regional_scope: bool,
+        golden_case_id: str | None,
     ) -> None:
         try:
+            regions = sorted({p.region for p in passages if p.region})
             telemetry = TurnTelemetry(
                 ts=datetime.now(UTC).isoformat(),
                 provider=getattr(self.provider, "name", "unknown"),
@@ -343,6 +447,10 @@ class RagOrchestrator:
                 question_hash=hash_question(question),
                 question_preview=preview(question),
                 intent_class=intent,
+                region_detected=region_detected,
+                region_of_passages=regions,
+                out_of_regional_scope=out_of_regional_scope,
+                golden_case_id=golden_case_id,
                 n_passages=len(passages),
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,

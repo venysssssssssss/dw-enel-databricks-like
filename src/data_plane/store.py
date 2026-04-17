@@ -29,6 +29,7 @@ class DataStore:
     topic_assignments_path: Path = DEFAULT_TOPIC_ASSIGNMENTS_PATH
     topic_taxonomy_path: Path = DEFAULT_TOPIC_TAXONOMY_PATH
     cache_dir: Path = Path(".streamlit/cache")
+    default_regions: tuple[str, ...] = ("CE", "SP")
 
     def version(self) -> DatasetVersion:
         return DatasetVersion.from_paths(
@@ -71,10 +72,10 @@ class DataStore:
         frame = self.aggregate(view_id, filters, include_total=include_total)
         return json.loads(frame.to_json(orient="records", date_format="iso"))
 
-    def cards(self) -> list[Any]:
+    def cards(self, *, regional_scope: str = "CE+SP") -> list[Any]:
         from src.data_plane.cards import build_data_cards
 
-        return build_data_cards(self)
+        return build_data_cards(self, regional_scope=regional_scope)
 
     def _build_silver(self, *, include_total: bool) -> pd.DataFrame:
         if not self.silver_path.exists():
@@ -108,9 +109,14 @@ class DataStore:
         )
 
     def _apply_filters(self, frame: pd.DataFrame, filters: dict[str, Any]) -> pd.DataFrame:
-        if frame.empty or not filters:
+        if frame.empty:
             return frame.copy()
         filtered = frame.copy()
+        if "regiao" in filtered.columns and self.default_regions:
+            allowed_default = {str(region) for region in self.default_regions}
+            filtered = filtered.loc[filtered["regiao"].astype(str).isin(allowed_default)]
+        if not filters:
+            return filtered
         for column in (
             "regiao",
             "tipo_origem",

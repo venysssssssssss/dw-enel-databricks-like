@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -31,6 +31,9 @@ class Passage:
     anchor: str
     score: float
     dataset_version: str = ""
+    region: str = "CE+SP"
+    scope: str = "global"
+    data_source: str = "docs.markdown"
 
     def citation(self) -> str:
         anchor = f"#{self.anchor}" if self.anchor else ""
@@ -119,6 +122,7 @@ class HybridRetriever:
         k: int | None = None,
         doc_types: list[str] | None = None,
         dataset_version: str | None = None,
+        region: Literal["CE", "SP", "CE+SP"] | None = None,
     ) -> list[Passage]:
         self._ensure_ready()
         k_eff = k or self.config.retrieval_k
@@ -128,16 +132,23 @@ class HybridRetriever:
             where_clauses.append({"doc_type": {"$in": doc_types}})
         if dataset_version:
             where_clauses.append({"dataset_version": dataset_version})
+        if region == "CE":
+            where_clauses.append({"region": {"$in": ["CE", "CE+SP"]}})
+        elif region == "SP":
+            where_clauses.append({"region": {"$in": ["SP", "CE+SP"]}})
+        elif region == "CE+SP":
+            where_clauses.append({"region": {"$in": ["CE", "SP", "CE+SP"]}})
+
         if len(where_clauses) == 1:
-            where = where_clauses[0]
+            where_filter = where_clauses[0]
         elif where_clauses:
-            where = {"$and": where_clauses}
+            where_filter = {"$and": where_clauses}
         else:
-            where = None
+            where_filter = None
         result = self._collection.query(  # type: ignore[union-attr]
             query_embeddings=[query_embedding],
             n_results=k_eff,
-            where=where,
+            where=where_filter,
         )
         ids = result.get("ids", [[]])[0]
         docs = result.get("documents", [[]])[0]
@@ -152,9 +163,9 @@ class HybridRetriever:
             ids, docs, metas, dists, lex_scores, strict=False
         ):
             cos_sim = max(0.0, 1.0 - float(dist))  # chroma cosine retorna distance
-            # Combina cosine (peso 0.75) com lexical (peso 0.25): ganho consistente
-            # em consultas com entidades nomeadas (ACF, ASF, GD).
-            score = 0.75 * cos_sim + 0.25 * lex
+            # Combina cosine com lexical para preservar sinônimos PT-BR sem
+            # perder correspondência exata de termos de negócio.
+            score = 0.60 * cos_sim + 0.40 * lex
             passages.append(
                 Passage(
                     chunk_id=cid,
@@ -166,6 +177,9 @@ class HybridRetriever:
                     anchor=(meta or {}).get("anchor", ""),
                     score=score,
                     dataset_version=(meta or {}).get("dataset_version", ""),
+                    region=(meta or {}).get("region", "CE+SP"),
+                    scope=(meta or {}).get("scope", "global"),
+                    data_source=(meta or {}).get("data_source", "docs.markdown"),
                 )
             )
         passages.sort(key=lambda p: p.score, reverse=True)
@@ -178,6 +192,7 @@ class HybridRetriever:
         top_n: int | None = None,
         doc_types: list[str] | None = None,
         dataset_version: str | None = None,
+        region: Literal["CE", "SP", "CE+SP"] | None = None,
     ) -> list[Passage]:
         top = top_n or self.config.rerank_top_n
         return self.retrieve(
@@ -185,6 +200,7 @@ class HybridRetriever:
             k=self.config.retrieval_k,
             doc_types=doc_types,
             dataset_version=dataset_version,
+            region=region,
         )[:top]
 
 
@@ -194,10 +210,13 @@ def route_doc_types(query: str) -> list[str] | None:
     Objetivo: enviar menos chunks ao LLM quando a intenção é clara.
     """
     q = query.lower()
+    if re.search(r"(ceará|cearense|fortaleza|\bce\b)", q):
+        return ["data", "business", "viz"]
+    if re.search(r"(são paulo|paulista|\bsp\b)", q):
+        return ["data", "business", "viz"]
     analytics_terms = (
         "quantos", "quantas", "volume", "total de", "percentual", "porcentagem",
         "top ", "ranking", "maior", "mais frequente", "evolução", "mensal",
-        "ceará", " ce ", " ce?", " ce.", " sp ", " sp?", " sp.", "são paulo",
         "reclamações", "reclamacoes", "causa-raiz", "causa raiz", "assunto",
     )
     if any(term in q for term in analytics_terms):

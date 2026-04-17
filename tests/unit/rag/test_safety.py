@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from src.rag.safety import (
     check_input,
     detect_injection,
+    is_out_of_regional_scope,
     is_out_of_scope,
     mask_pii,
     sanitize_output,
@@ -61,3 +62,9 @@ def test_is_out_of_scope_threshold() -> None:
     assert is_out_of_scope(low, 0.25) is True
     assert is_out_of_scope(high, 0.25) is False
     assert is_out_of_scope([], 0.25) is True
+
+
+def test_is_out_of_regional_scope_detection() -> None:
+    assert is_out_of_regional_scope("E no Rio de Janeiro?") is True
+    assert is_out_of_regional_scope("Qual o volume em CE?") is False
+    assert is_out_of_regional_scope("Compare Rio de Janeiro com CE") is False

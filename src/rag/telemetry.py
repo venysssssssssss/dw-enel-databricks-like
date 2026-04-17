@@ -10,9 +10,11 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 @dataclass(slots=True)
@@ -29,6 +31,10 @@ class TurnTelemetry:
     cache_hit: bool
     latency_first_token_ms: float
     latency_total_ms: float
+    region_detected: str | None = None
+    region_of_passages: list[str] = field(default_factory=list)
+    out_of_regional_scope: bool = False
+    golden_case_id: str | None = None
     cost_usd_estimated: float = 0.0
     feedback: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
@@ -54,7 +60,7 @@ def log_feedback(path: Path, *, question_hash: str, rating: str, comment: str = 
     if rating not in {"up", "down"}:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).isoformat()
+    ts = datetime.now(UTC).isoformat()
     header_needed = not path.exists()
     comment_clean = comment.replace("\n", " ").replace(",", ";")[:300]
     with path.open("a", encoding="utf-8") as fh:
