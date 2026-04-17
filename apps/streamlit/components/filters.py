@@ -12,9 +12,13 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 DEFAULT_FILTERS_KEY = "dashboard_filters"
+PRESET_MANUAL = "Manual"
 PRESET_LAST_30 = "Últimos 30 dias"
 PRESET_CE = "CE · Grupo operacional"
 PRESET_REFAT = "Ordens com refaturamento"
+
+_PRESETS = [PRESET_MANUAL, PRESET_LAST_30, PRESET_CE, PRESET_REFAT]
+_PRESET_CMDS = ["1", "2", "3", "4"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,27 +209,85 @@ def active_filter_chips(filters: DashboardFilters, options: FilterOptions) -> tu
 
 
 def chips_markdown(chips: tuple[str, ...]) -> str:
+    """Render active filter chips using the new graphite chip style."""
     if not chips:
-        return '<span class="enel-chip">Sem filtros restritivos</span>'
-    return "".join(f'<span class="enel-chip">{chip}</span>' for chip in chips)
+        return '<span class="chip">Sem filtros restritivos</span>'
+    return "".join(f'<span class="chip is-accent">{chip}</span>' for chip in chips)
 
 
 def _sidebar_brand(total_rows: int) -> str:
+    rows_fmt = f"{total_rows:,}".replace(",", ".")
     return f"""
-<div class="sidebar-brand">
-  <div class="eyebrow">Controle de escopo</div>
-  <strong>Dashboard CE/SP</strong>
-  <span>{total_rows:,} registros disponíveis para filtros, análise e chat.</span>
+<div class="sb-brand">
+  <div class="sb-brand-mark">D</div>
+  <div class="sb-brand-text">
+    <div class="sb-brand-name">Reclamações · Analítico</div>
+    <div class="sb-brand-sub">{rows_fmt} registros</div>
+  </div>
 </div>
-""".replace(",", ".")
+"""
 
 
-def _section_header(title: str, badge: str | None = None) -> str:
-    badge_html = f'<span class="badge">{badge}</span>' if badge else ""
+def _section_header(title: str, badge: str | None = None, link: str | None = None) -> str:
+    if badge is not None:
+        right = f'<span class="sb-section-badge">{badge}</span>'
+    elif link is not None:
+        right = f'<span class="sb-section-link">{link}</span>'
+    else:
+        right = ""
     return f"""
 <div class="sb-section">
-  <div class="eyebrow">{title}</div>
-  {badge_html}
+  <div class="sb-section-title">{title}</div>
+  {right}
+</div>
+"""
+
+
+def _preset_stack_html(current: str, presets: list[str]) -> str:
+    """Render a visual preset-stack showing which item is active. Decorative only."""
+    items: list[str] = []
+    for idx, name in enumerate(presets):
+        active_cls = "is-active" if name == current else ""
+        cmd = _PRESET_CMDS[idx] if idx < len(_PRESET_CMDS) else str(idx + 1)
+        items.append(
+            f"<div class='preset-item {active_cls}'>"
+            f"<span class='dot'></span>"
+            f"<span>{name}</span>"
+            f"<span class='cmd'>{cmd}</span>"
+            f"</div>"
+        )
+    return f"<div class='preset-stack'>{''.join(items)}</div>"
+
+
+def _toggle_row_html(label: str, sublabel: str) -> str:
+    return f"""
+<div class="toggle-row">
+  <div>
+    <div class="label-main">{label}</div>
+    <div class="label-sub">{sublabel}</div>
+  </div>
+</div>
+"""
+
+
+def _sb_summary_html(filtered_count: int, total_count: int, period_days: int | None) -> str:
+    filtered_fmt = f"{filtered_count:,}".replace(",", ".")
+    total_fmt = f"{total_count:,}".replace(",", ".")
+    period_str = f"{period_days} d" if period_days else "—"
+    return f"""
+<div class="sb-summary" aria-live="polite">
+  <div class="sb-summary-row">
+    <span>Registros filtrados</span>
+    <b class="num">{filtered_fmt}</b>
+  </div>
+  <div class="sb-summary-row">
+    <span>de universo</span>
+    <span>{total_fmt}</span>
+  </div>
+  <div class="sb-summary-row">
+    <span>período</span>
+    <span>{period_str}</span>
+  </div>
 </div>
 """
 
@@ -243,26 +305,60 @@ def render_sidebar_filters(
         current = query_filters
     current = normalize_filters(replace(current, include_total=include_total), options)
 
+    # ── Brand header ────────────────────────────────────────────────────────
     st.sidebar.markdown(_sidebar_brand(len(frame)), unsafe_allow_html=True)
+
+    # ── Presets ─────────────────────────────────────────────────────────────
+    active_preset = _current_preset(current, options)
     st.sidebar.markdown(
-        _section_header("Presets", "atalhos"),
+        _section_header("Presets", badge=str(len(_PRESETS))),
         unsafe_allow_html=True,
     )
+    st.sidebar.markdown(_preset_stack_html(active_preset, _PRESETS), unsafe_allow_html=True)
     preset = st.sidebar.radio(
-        "Presets",
-        ["Manual", PRESET_LAST_30, PRESET_CE, PRESET_REFAT],
-        horizontal=False,
-        help="Atalhos que atualizam o filtro compartilhado entre abas.",
+        "Preset",
+        _PRESETS,
+        index=_PRESETS.index(active_preset),
+        label_visibility="collapsed",
+        key="_preset_radio",
     )
-    if preset != "Manual":
+    if preset != PRESET_MANUAL:
         current = preset_filters(preset, frame, current)
 
+    # ── Period ───────────────────────────────────────────────────────────────
     st.sidebar.markdown(
-        _section_header("Dimensões", f"{len(options.regions)} regiões"),
+        _section_header("Período", link="Resetar"),
+        unsafe_allow_html=True,
+    )
+    date_cols = st.sidebar.columns(2)
+    start = date_cols[0].date_input(
+        "Início",
+        value=current.start_date,
+        min_value=options.min_date,
+        max_value=options.max_date,
+        label_visibility="visible",
+    )
+    end = date_cols[1].date_input(
+        "Fim",
+        value=current.end_date,
+        min_value=options.min_date,
+        max_value=options.max_date,
+        label_visibility="visible",
+    )
+
+    # ── Dimension filters ────────────────────────────────────────────────────
+    active_chips = active_filter_chips(current, options)
+    st.sidebar.markdown(
+        _section_header("Filtros", badge=f"{len(active_chips)} ativos"),
         unsafe_allow_html=True,
     )
     regions = tuple(
-        st.sidebar.multiselect("Região", options.regions, default=list(current.regions))
+        st.sidebar.multiselect(
+            "Região",
+            options.regions,
+            default=list(current.regions),
+            help="Escopo geográfico dos dados.",
+        )
     )
     causes = tuple(
         st.sidebar.multiselect(
@@ -280,28 +376,39 @@ def render_sidebar_filters(
             help="Tópico BERTopic descoberto nos textos livres.",
         )
     )
+
+    # ── Options ──────────────────────────────────────────────────────────────
+    st.sidebar.markdown(_section_header("Opções"), unsafe_allow_html=True)
     st.sidebar.markdown(
-        _section_header("Período", "datas"),
+        _toggle_row_html("Somente refaturamento", "Filtra ordens com flag ACF/ASF"),
         unsafe_allow_html=True,
     )
-    start = st.sidebar.date_input(
-        "Início",
-        value=current.start_date,
-        min_value=options.min_date,
-        max_value=options.max_date,
-    )
-    end = st.sidebar.date_input(
-        "Fim",
-        value=current.end_date,
-        min_value=options.min_date,
-        max_value=options.max_date,
+    only_refat = st.sidebar.toggle(
+        "Somente refaturamento", value=current.only_refaturamento, label_visibility="collapsed"
     )
     st.sidebar.markdown(
-        _section_header("Opções", "sessão"),
+        _toggle_row_html("Incluir reclamação_total", "Tabelas consolidadas CE+SP"),
         unsafe_allow_html=True,
     )
-    only_refat = st.sidebar.toggle("Somente refaturamento", value=current.only_refaturamento)
-    theme_dark = st.sidebar.toggle("Dark mode", value=current.theme == "dark")
+    theme_dark = st.sidebar.toggle(
+        "Dark mode", value=current.theme == "dark", label_visibility="collapsed"
+    )
+
+    # ── Fontes de dados (collapsible) ────────────────────────────────────────
+    with st.sidebar.expander("Fontes de dados"):
+        st.markdown(
+            f"""
+            <div style='font-size:12px; color:var(--text-muted); font-family:var(--font-mono);'>
+              silver/reclamacoes_ce &nbsp;<span style='color:var(--text-faint)'>{len(frame):,}</span>
+            </div>
+            """.replace(",", "."),
+            unsafe_allow_html=True,
+        )
+
+    # ── Summary ──────────────────────────────────────────────────────────────
+    period_days: int | None = None
+    if current.start_date and current.end_date:
+        period_days = (current.end_date - current.start_date).days
 
     updated = normalize_filters(
         DashboardFilters(
@@ -319,17 +426,32 @@ def render_sidebar_filters(
     st.session_state[DEFAULT_FILTERS_KEY] = updated
     st.query_params.update(filters_to_query_params(updated))
 
+    filtered_frame = apply_dashboard_filters(frame, updated)
     st.sidebar.markdown(
-        _section_header("Filtros ativos", str(len(active_filter_chips(updated, options)))),
+        _sb_summary_html(len(filtered_frame), len(frame), period_days),
         unsafe_allow_html=True,
     )
-    st.sidebar.markdown(
-        chips_markdown(active_filter_chips(updated, options)),
-        unsafe_allow_html=True,
-    )
-    if st.sidebar.button("Limpar filtros", use_container_width=True):
+
+    # ── Clear button ──────────────────────────────────────────────────────────
+    if st.sidebar.button("Limpar todos os filtros", use_container_width=True, key="sb_clear"):
         updated = default_filters(options, include_total=include_total)
         st.session_state[DEFAULT_FILTERS_KEY] = updated
         st.query_params.clear()
         st.rerun()
+
     return updated
+
+
+def _current_preset(filters: DashboardFilters, options: FilterOptions) -> str:
+    """Detect which preset best describes the current filter state."""
+    if filters.only_refaturamento:
+        return PRESET_REFAT
+    if set(filters.regions) == {"CE"} and not filters.only_refaturamento:
+        return PRESET_CE
+    if (
+        filters.end_date
+        and filters.start_date
+        and (filters.end_date - filters.start_date).days <= 32
+    ):
+        return PRESET_LAST_30
+    return PRESET_MANUAL

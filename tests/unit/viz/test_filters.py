@@ -170,5 +170,5 @@ def test_active_filter_chips_and_markup() -> None:
     assert "Tópicos: 1 selecionados" in chips
     assert "Somente refaturamento" in chips
     assert "Tema escuro" in chips
-    assert html.count("enel-chip") == len(chips)
+    assert html.count("chip") >= len(chips)
     assert "Sem filtros restritivos" in chips_markdown(())

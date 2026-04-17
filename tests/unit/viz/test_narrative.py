@@ -64,7 +64,7 @@ def test_theme_helpers_return_accessible_assets() -> None:
     template = plotly_template("dark")
 
     assert "--enel-bg" in css
-    assert css_variables("light")["--enel-surface"] == "#FFFFFF"
+    assert "oklch" in css_variables("light")["--enel-surface"]
     assert "Inter" in css
     assert template["paper_bgcolor"] == "rgba(0,0,0,0)"
     assert format_int(12345) == "12.345"
@@ -74,7 +74,7 @@ def test_theme_helpers_return_accessible_assets() -> None:
 def test_hero_markdown_handles_zero_total() -> None:
     html = hero_markdown(total_filtered=5, total_available=0)
 
-    assert "Inteligência operacional de leitura" in html
+    assert "Reclamações CE/SP em análise" in html
     assert "(0.0%)" in html
 
 

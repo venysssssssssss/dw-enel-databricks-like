@@ -70,39 +70,63 @@ SEQUENTIAL_GREEN = [
 
 
 def css_variables(mode: ThemeMode = "light") -> dict[str, str]:
-    """Return CSS variables for the selected visual mode."""
+    """Return CSS variables for the selected visual mode — graphite oklch system."""
     if mode == "dark":
         return {
-            "--enel-bg": "#0F1115",
-            "--enel-bg-soft": "#171A20",
-            "--enel-surface": "#1D2128",
-            "--enel-surface-2": "#252A32",
-            "--enel-text": "#F4F5F7",
-            "--enel-muted": "#BAC1CA",
-            "--enel-border": "#3A414C",
-            "--enel-shadow": "0 14px 34px rgba(0, 0, 0, 0.34)",
+            "--enel-bg":            "oklch(17% 0.006 260)",
+            "--enel-bg-soft":       "oklch(20% 0.006 260)",
+            "--enel-bg-sidebar":    "oklch(14% 0.006 260)",
+            "--enel-surface":       "oklch(20% 0.006 260)",
+            "--enel-surface-2":     "oklch(23% 0.006 260)",
+            "--enel-surface-3":     "oklch(26% 0.006 260)",
+            "--enel-text":          "oklch(96% 0.002 260)",
+            "--enel-muted":         "oklch(70% 0.004 260)",
+            "--enel-text-dim":      "oklch(54% 0.004 260)",
+            "--enel-text-faint":    "oklch(42% 0.004 260)",
+            "--enel-border":        "oklch(28% 0.006 260)",
+            "--enel-border-strong": "oklch(36% 0.006 260)",
+            "--enel-divider":       "oklch(24% 0.006 260)",
+            "--enel-shadow":        "0 20px 48px rgba(0,0,0,0.45)",
+            "--enel-shadow-sm":     "0 1px 2px rgba(0,0,0,0.4)",
+            "--enel-shadow-md":     "0 4px 14px rgba(0,0,0,0.35)",
+            "--enel-accent-graphite": "oklch(58% 0.19 15)",
+            "--enel-accent-hover":  "oklch(64% 0.20 15)",
+            "--enel-accent-soft":   "oklch(58% 0.19 15 / 0.14)",
+            "--enel-accent-ring":   "oklch(58% 0.19 15 / 0.28)",
         }
     return {
-        "--enel-bg": "#F5F6F8",
-        "--enel-bg-soft": "#ECEFF3",
-        "--enel-surface": "#FFFFFF",
-        "--enel-surface-2": "#F0F2F5",
-        "--enel-text": "#1C2026",
-        "--enel-muted": "#5B6470",
-        "--enel-border": "#D8DDE5",
-        "--enel-shadow": "0 12px 28px rgba(31, 36, 43, 0.10)",
+        "--enel-bg":            "oklch(98% 0.002 260)",
+        "--enel-bg-soft":       "oklch(99.5% 0.002 260)",
+        "--enel-bg-sidebar":    "oklch(99.5% 0.002 260)",
+        "--enel-surface":       "oklch(100% 0 0)",
+        "--enel-surface-2":     "oklch(97% 0.003 260)",
+        "--enel-surface-3":     "oklch(94% 0.004 260)",
+        "--enel-text":          "oklch(18% 0.008 260)",
+        "--enel-muted":         "oklch(40% 0.006 260)",
+        "--enel-text-dim":      "oklch(54% 0.005 260)",
+        "--enel-text-faint":    "oklch(68% 0.004 260)",
+        "--enel-border":        "oklch(90% 0.004 260)",
+        "--enel-border-strong": "oklch(82% 0.005 260)",
+        "--enel-divider":       "oklch(93% 0.003 260)",
+        "--enel-shadow":        "0 12px 28px rgba(16,20,28,0.08)",
+        "--enel-shadow-sm":     "0 1px 2px rgba(16,20,28,0.05)",
+        "--enel-shadow-md":     "0 4px 18px rgba(16,20,28,0.08)",
+        "--enel-accent-graphite": "oklch(58% 0.19 15)",
+        "--enel-accent-hover":  "oklch(64% 0.20 15)",
+        "--enel-accent-soft":   "oklch(58% 0.19 15 / 0.10)",
+        "--enel-accent-ring":   "oklch(58% 0.19 15 / 0.22)",
     }
 
 
 def dashboard_css(mode: ThemeMode = "light") -> str:
-    """Build Streamlit CSS with ENEL hierarchy, animation and accessible contrast."""
+    """Build Streamlit CSS with graphite design system, ENEL hierarchy and accessible contrast."""
     variables = "\n".join(f"{key}: {value};" for key, value in css_variables(mode).items())
     dark = mode == "dark"
     glass_bg = "rgba(29, 33, 40, 0.90)" if dark else "rgba(255, 255, 255, 0.92)"
     glass_border = "rgba(255, 255, 255, 0.14)" if dark else "rgba(28, 32, 38, 0.10)"
     return f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 :root {{
   {variables}
@@ -116,25 +140,57 @@ def dashboard_css(mode: ThemeMode = "light") -> str:
   --enel-radius-lg: 8px;
   --enel-radius-md: 6px;
   --enel-radius-sm: 4px;
+
+  /* ── Graphite shorthand aliases (used by new chat + sidebar components) ── */
+  --bg:           var(--enel-bg);
+  --bg-sidebar:   var(--enel-bg-sidebar);
+  --surface:      var(--enel-surface);
+  --surface-2:    var(--enel-surface-2);
+  --surface-3:    var(--enel-surface-3);
+  --border:       var(--enel-border);
+  --border-strong: var(--enel-border-strong);
+  --divider:      var(--enel-divider);
+  --text:         var(--enel-text);
+  --text-muted:   var(--enel-muted);
+  --text-dim:     var(--enel-text-dim);
+  --text-faint:   var(--enel-text-faint);
+  --accent:       var(--enel-accent-graphite);
+  --accent-hover: var(--enel-accent-hover);
+  --accent-soft:  var(--enel-accent-soft);
+  --accent-ring:  var(--enel-accent-ring);
+  --ok:    oklch(70% 0.14 150);
+  --warn:  oklch(74% 0.14 70);
+  --crit:  oklch(64% 0.20 25);
+  --font-display: 'Inter Tight', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-body:    'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --r-xs: 4px; --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px;
+  --shadow-sm: var(--enel-shadow-sm);
+  --shadow-md: var(--enel-shadow-md);
+  --shadow-lg: var(--enel-shadow);
 }}
 
 html, body, [class*="css"] {{
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  font-feature-settings: 'cv11', 'ss01';
+  font-family: var(--font-body);
+  font-feature-settings: 'cv11', 'ss01', 'tnum';
+  -webkit-font-smoothing: antialiased;
 }}
 
 h1, h2, h3, [data-testid="stMetricValue"] {{
-  font-family: 'Inter Tight', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-display);
 }}
 
 code, pre, [data-testid="stMetricValue"], .enel-mono {{
-  font-family: 'JetBrains Mono', 'Menlo', monospace;
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }}
 
 .stApp {{
-  background: var(--enel-bg);
-  color: var(--enel-text);
+  background: var(--bg);
+  color: var(--text);
   scroll-behavior: smooth;
 }}
 
@@ -147,12 +203,12 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 [data-testid="stMetric"], .enel-card {{
   background: var(--enel-glass-bg);
   border: 1px solid var(--enel-glass-border);
-  border-radius: var(--enel-radius-lg);
-  box-shadow: var(--enel-shadow);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
   padding: 1.15rem 1.2rem;
   backdrop-filter: blur(18px) saturate(120%);
   -webkit-backdrop-filter: blur(18px) saturate(120%);
-  transition: transform 220ms cubic-bezier(.2,.8,.2,1),
+  transition: transform 220ms var(--ease),
               box-shadow 220ms ease,
               border-color 220ms ease;
 }}
@@ -164,13 +220,13 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 [data-testid="stMetricLabel"] p {{
   font-size: 0.78rem; font-weight: 600;
   letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--enel-muted);
+  color: var(--text-muted);
 }}
 [data-testid="stMetricValue"] {{
   font-size: 1.55rem !important;
   font-weight: 700 !important;
   letter-spacing: 0;
-  color: var(--enel-text) !important;
+  color: var(--text) !important;
 }}
 [data-testid="stMetricDelta"] {{ font-size: 0.82rem; font-weight: 600; }}
 
@@ -178,14 +234,14 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 .enel-hero {{
   position: relative;
   overflow: hidden;
-  border-radius: var(--enel-radius-lg);
+  border-radius: var(--r-lg);
   padding: 1.25rem 1.35rem;
   margin-bottom: 1.2rem;
-  color: var(--enel-text);
-  background: var(--enel-surface);
-  border: 1px solid var(--enel-border);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-left: 5px solid var(--enel-secondary);
-  box-shadow: var(--enel-shadow);
+  box-shadow: var(--shadow-lg);
 }}
 .enel-hero h1 {{
   position: relative; z-index: 1;
@@ -194,13 +250,13 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   letter-spacing: 0;
   margin: 0 0 0.45rem;
   font-weight: 800;
-  color: var(--enel-text) !important;
+  color: var(--text) !important;
 }}
 .enel-hero p {{
   position: relative; z-index: 1;
   max-width: 880px;
   margin: 0;
-  color: var(--enel-muted) !important;
+  color: var(--text-muted) !important;
   font-size: 0.98rem;
   line-height: 1.5;
 }}
@@ -209,18 +265,18 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   display: inline-flex; gap: 0.5rem; align-items: center;
   margin-top: 0.85rem;
   padding: 0.42rem 0.72rem;
-  background: color-mix(in srgb, var(--enel-secondary) 10%, var(--enel-surface) 90%);
-  border-radius: var(--enel-radius-sm);
+  background: color-mix(in srgb, var(--enel-secondary) 10%, var(--surface) 90%);
+  border-radius: var(--r-sm);
   font-weight: 700; font-size: 0.85rem;
-  border: 1px solid color-mix(in srgb, var(--enel-secondary) 24%, var(--enel-border) 76%);
-  color: var(--enel-text) !important;
+  border: 1px solid color-mix(in srgb, var(--enel-secondary) 24%, var(--border) 76%);
+  color: var(--text) !important;
 }}
 
 /* ===== Intro / chips ===== */
 .enel-intro {{
   border-left: 4px solid var(--enel-secondary);
-  background: color-mix(in srgb, var(--enel-surface) 90%, var(--enel-secondary) 10%);
-  border-radius: var(--enel-radius-lg);
+  background: color-mix(in srgb, var(--surface) 90%, var(--enel-secondary) 10%);
+  border-radius: var(--r-lg);
   padding: 1rem 1.2rem;
   margin: 0.25rem 0 1rem;
   box-shadow: 0 1px 3px rgba(15,76,129,0.04);
@@ -233,10 +289,10 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   gap: 0.35rem;
   padding: 0.35rem 0.7rem;
   margin: 0 0.35rem 0.35rem 0;
-  border-radius: var(--enel-radius-sm);
-  border: 1px solid var(--enel-border);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
   background: var(--enel-glass-bg);
-  color: var(--enel-text);
+  color: var(--text);
   font-size: 0.84rem;
   font-weight: 600;
   backdrop-filter: blur(8px);
@@ -244,15 +300,15 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 }}
 .enel-chip:hover {{
   transform: translateY(-1px);
-  border-color: var(--enel-accent);
+  border-color: var(--accent);
 }}
 
 .enel-empty {{
-  border: 1px dashed var(--enel-border);
+  border: 1px dashed var(--border);
   background: var(--enel-glass-bg);
-  border-radius: var(--enel-radius-lg);
+  border-radius: var(--r-lg);
   padding: 1.6rem;
-  color: var(--enel-muted);
+  color: var(--text-muted);
   text-align: center;
   backdrop-filter: blur(8px);
 }}
@@ -260,85 +316,280 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 /* ===== Tabs ===== */
 .stTabs [data-baseweb="tab-list"] {{
   gap: 0.4rem;
-  border-bottom: 1px solid var(--enel-border);
+  border-bottom: 1px solid var(--divider);
   padding-bottom: 0.2rem;
 }}
 .stTabs [data-baseweb="tab"] {{
   height: 48px;
   background: transparent;
-  border-radius: var(--enel-radius-md) var(--enel-radius-md) 0 0;
+  border-radius: var(--r-md) var(--r-md) 0 0;
   padding: 0 1.1rem;
   font-weight: 600;
-  color: var(--enel-muted);
+  color: var(--text-muted);
   transition: color 180ms ease, background 180ms ease;
 }}
 .stTabs [data-baseweb="tab"]:hover {{
-  color: var(--enel-primary);
-  background: color-mix(in srgb, var(--enel-surface) 68%, var(--enel-secondary) 10%);
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 68%, var(--enel-secondary) 10%);
 }}
 .stTabs [aria-selected="true"] {{
-  color: var(--enel-primary) !important;
+  color: var(--text) !important;
   background: var(--enel-glass-bg) !important;
-  border-bottom: 3px solid var(--enel-secondary) !important;
+  border-bottom: 3px solid var(--accent) !important;
 }}
 
-/* ===== Sidebar ===== */
+/* ===== Sidebar — graphite premium ===== */
 [data-testid="stSidebar"] {{
-  background: var(--enel-glass-bg);
-  backdrop-filter: blur(18px) saturate(140%);
-  border-right: 1px solid var(--enel-glass-border);
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--divider);
 }}
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {{
   margin-bottom: 0.25rem;
 }}
-.sidebar-brand {{
-  border-bottom: 1px solid var(--enel-border);
-  margin: 0 0 0.95rem;
-  padding: 0.25rem 0 0.9rem;
+
+/* Brand */
+.sb-brand {{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--divider);
+  margin-bottom: 18px;
 }}
-.sidebar-brand .eyebrow,
-.sb-section .eyebrow {{
-  color: var(--enel-muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+.sb-brand-mark {{
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--accent) 0%, oklch(45% 0.18 15) 100%);
+  display: grid; place-items: center;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 12px;
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: inset 0 -6px 10px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.3);
+  user-select: none;
+}}
+.sb-brand-text {{ display: flex; flex-direction: column; line-height: 1.15; }}
+.sb-brand-name {{
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13.5px;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}}
+.sb-brand-sub {{
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }}
-.sidebar-brand strong {{
-  display: block;
-  color: var(--enel-text);
-  font-family: 'Inter Tight', 'Inter', sans-serif;
-  font-size: 1.05rem;
-  line-height: 1.2;
-  margin-top: 0.2rem;
-}}
-.sidebar-brand span {{
-  color: var(--enel-muted);
-  display: block;
-  font-size: 0.82rem;
-  line-height: 1.45;
-  margin-top: 0.25rem;
-}}
+
+/* Section headers */
 .sb-section {{
+  display: flex;
   align-items: center;
-  border-top: 1px solid var(--enel-border);
+  justify-content: space-between;
+  gap: 10px;
+  margin: 18px 0 8px;
+}}
+.sb-section-title {{
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}}
+.sb-section-badge {{
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}}
+.sb-section-link {{
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}}
+
+/* Preset stack */
+.preset-stack {{
+  display: grid;
+  gap: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 4px;
+  margin-bottom: 4px;
+}}
+.preset-item {{
+  display: grid;
+  grid-template-columns: 12px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 140ms var(--ease), color 140ms var(--ease);
+  text-align: left;
+  width: 100%;
+  border: none;
+  background: none;
+  font-family: var(--font-body);
+}}
+.preset-item:hover {{ background: var(--surface-2); color: var(--text); }}
+.preset-item .dot {{
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-faint);
+  display: inline-block;
+  flex-shrink: 0;
+}}
+.preset-item .cmd {{
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}}
+.preset-item.is-active {{
+  background: var(--accent-soft);
+  color: var(--text);
+}}
+.preset-item.is-active .dot {{
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}}
+.preset-item.is-active .cmd {{
+  color: var(--accent);
+  background: transparent;
+  border-color: var(--accent-ring);
+}}
+
+/* Hide native radio widget label that sits under the visual preset stack */
+[data-testid="stSidebar"] [data-testid="stRadio"] > label {{
+  display: none !important;
+}}
+[data-testid="stSidebar"] [data-testid="stRadio"] > div {{
+  gap: 2px;
+}}
+[data-testid="stSidebar"] [data-testid="stRadio"] [data-testid="stMarkdownContainer"] p {{
+  font-size: 12px;
+  color: var(--text-muted);
+}}
+
+/* Toggle row */
+.toggle-row {{
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  gap: 10px;
+  margin-bottom: 6px;
+}}
+.toggle-row + .toggle-row {{ margin-top: 0; }}
+.toggle-row .label-main {{
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 500;
+  margin: 0;
+}}
+.toggle-row .label-sub {{
+  font-size: 11.5px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}}
+/* Style native st.toggle to look like the refactor switch */
+[data-testid="stSidebar"] [data-testid="stToggle"] {{
+  margin: 0 !important;
+}}
+[data-testid="stSidebar"] [data-testid="stToggle"] label {{
+  display: none !important;
+}}
+[data-testid="stSidebar"] [data-testid="stToggle"] [role="switch"] {{
+  background-color: var(--surface-3) !important;
+  border-color: var(--border-strong) !important;
+}}
+[data-testid="stSidebar"] [data-testid="stToggle"] [aria-checked="true"] {{
+  background-color: var(--accent) !important;
+  border-color: var(--accent) !important;
+}}
+
+/* Chip */
+.chip {{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  line-height: 1;
+  margin: 2px;
+}}
+.chip.is-accent {{
+  background: var(--accent-soft);
+  border-color: var(--accent-ring);
+  color: var(--text);
+}}
+
+/* Sidebar summary */
+.sb-summary {{
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}}
+.sb-summary b {{ color: var(--text); font-weight: 600; }}
+.sb-summary .num {{
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-weight: 600;
+}}
+.sb-summary-row {{
   display: flex;
   justify-content: space-between;
-  margin: 1rem 0 0.4rem;
-  padding-top: 0.8rem;
+  padding: 3px 0;
 }}
-.sb-section .badge {{
-  border: 1px solid var(--enel-border);
-  border-radius: var(--enel-radius-sm);
-  color: var(--enel-muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 0.14rem 0.42rem;
+.sb-summary-row + .sb-summary-row {{
+  border-top: 1px dashed var(--divider);
+}}
+
+/* Multiselect tags — match chip style */
+[data-baseweb="tag"] {{
+  background-color: var(--accent-soft) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--accent-ring) !important;
+  border-radius: 5px !important;
+  font-family: var(--font-mono) !important;
+  font-size: 11px !important;
 }}
 
 /* ===== Plotly fade-in ===== */
 .js-plotly-plot {{
-  animation: enelFade 320ms cubic-bezier(.2,.8,.2,1) both;
+  animation: enelFade 320ms var(--ease) both;
 }}
 @keyframes enelFade {{
   from {{ opacity: 0; transform: translateY(8px); }}
@@ -347,51 +598,67 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 
 /* ===== Dataframe polish ===== */
 [data-testid="stDataFrame"] {{
-  border-radius: var(--enel-radius-md);
+  border-radius: var(--r-md);
   overflow: hidden;
-  border: 1px solid var(--enel-border);
+  border: 1px solid var(--border);
 }}
 
 /* ===== Buttons ===== */
 .stButton > button {{
   border-radius: 8px !important;
-  border: 1px solid var(--enel-border) !important;
-  background: var(--enel-surface) !important;
-  color: var(--enel-text) !important;
+  border: 1px solid var(--border) !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
   font-weight: 600;
   transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
 }}
 .stButton > button p,
 .stButton > button span {{
-  color: var(--enel-text) !important;
+  color: var(--text) !important;
 }}
 .stButton > button:hover {{
   transform: translateY(-1px);
-  background: color-mix(in srgb, var(--enel-surface) 88%, var(--enel-secondary) 12%)
+  background: color-mix(in srgb, var(--surface) 88%, var(--enel-secondary) 12%)
     !important;
-  color: var(--enel-text) !important;
-  border-color: var(--enel-secondary) !important;
-  box-shadow: 0 8px 18px rgba(200, 16, 46, 0.18);
+  color: var(--text) !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 8px 18px var(--accent-ring);
 }}
 .stButton > button:focus-visible {{
-  outline: 3px solid color-mix(in srgb, var(--enel-secondary) 34%, transparent 66%)
-    !important;
+  outline: 3px solid var(--accent-ring) !important;
   outline-offset: 2px !important;
 }}
 .stButton > button:disabled,
 .stButton > button[disabled] {{
-  background: var(--enel-surface-2) !important;
-  color: var(--enel-muted) !important;
-  border-color: var(--enel-border) !important;
+  background: var(--surface-2) !important;
+  color: var(--text-muted) !important;
+  border-color: var(--border) !important;
   opacity: 0.76 !important;
+}}
+
+/* Clear filters button */
+.stButton[data-key="sb_clear"] > button,
+.sb-clear-btn > button {{
+  width: 100% !important;
+  color: var(--text-dim) !important;
+  border: 1px dashed var(--border-strong) !important;
+  background: transparent !important;
+  text-align: center !important;
+  margin-top: 8px;
+}}
+.stButton[data-key="sb_clear"] > button:hover,
+.sb-clear-btn > button:hover {{
+  color: var(--accent) !important;
+  border-color: var(--accent-ring) !important;
+  background: var(--accent-soft) !important;
 }}
 
 /* ===== Streamlit/BaseWeb contrast hardening ===== */
 .stApp, .stMarkdown, .stText, .stCaption, .stDataFrame, label, p, li, span {{
-  color: var(--enel-text);
+  color: var(--text);
 }}
 [data-testid="stSidebar"] *, [data-testid="stSidebar"] label {{
-  color: var(--enel-text);
+  color: var(--text);
 }}
 [data-baseweb="select"] > div,
 [data-baseweb="popover"] div,
@@ -400,42 +667,35 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 [data-testid="stTextInput"] input,
 [data-testid="stTextArea"] textarea,
 [data-testid="stChatInput"] textarea {{
-  background-color: var(--enel-surface) !important;
-  color: var(--enel-text) !important;
-  border-color: var(--enel-border) !important;
+  background-color: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
 }}
 [data-baseweb="checkbox"] div,
 [data-testid="stCheckbox"] div,
 [data-testid="stToggle"] div {{
-  color: var(--enel-text) !important;
+  color: var(--text) !important;
 }}
 [data-baseweb="checkbox"] [role="checkbox"],
-[data-testid="stCheckbox"] [role="checkbox"],
-[data-testid="stToggle"] [role="checkbox"] {{
-  background-color: var(--enel-surface-2) !important;
-  border-color: var(--enel-border) !important;
+[data-testid="stCheckbox"] [role="checkbox"] {{
+  background-color: var(--surface-2) !important;
+  border-color: var(--border) !important;
 }}
 [data-baseweb="checkbox"] [aria-checked="true"],
-[data-testid="stCheckbox"] [aria-checked="true"],
-[data-testid="stToggle"] [aria-checked="true"] {{
-  background-color: var(--enel-secondary) !important;
-  border-color: var(--enel-secondary) !important;
-}}
-[data-baseweb="tag"] {{
-  background-color: color-mix(in srgb, var(--enel-secondary) 14%, var(--enel-surface) 86%)
-    !important;
-  color: var(--enel-text) !important;
+[data-testid="stCheckbox"] [aria-checked="true"] {{
+  background-color: var(--accent) !important;
+  border-color: var(--accent) !important;
 }}
 [data-testid="stAlert"] {{
-  background: var(--enel-surface) !important;
-  color: var(--enel-text) !important;
-  border: 1px solid var(--enel-border) !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
 }}
 a {{
-  color: var(--enel-secondary);
+  color: var(--accent);
 }}
 a:hover {{
-  color: var(--enel-primary);
+  color: var(--accent-hover);
 }}
 </style>
 """
