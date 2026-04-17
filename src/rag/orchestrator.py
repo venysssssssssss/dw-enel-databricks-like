@@ -130,6 +130,29 @@ _CARD_BOOST_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
         ),
         ("visao-geral",),
     ),
+    # Instalação / UC / cliente individual → cards de top-instalações (MVP)
+    (
+        re.compile(
+            r"\b(instala\w*|\buc\b|ucs|cliente|clientes|consumidor|consumidores|"
+            r"qual .* mais reclam\w*|quem .* mais reclam\w*|medidor)\b",
+            re.IGNORECASE,
+        ),
+        ("ce-top-instalacoes", "sp-n1-top-instalacoes"),
+    ),
+    # Mês específico / ano-mês → cards mensais por assunto/causa
+    (
+        re.compile(
+            r"(\b(janeiro|fevereiro|março|marco|abril|maio|junho|julho|agosto|"
+            r"setembro|outubro|novembro|dezembro)\b|\b20(25|26)-\d{2}\b|"
+            r"\bmês de\b|\bmes de\b|\bno mês\b|\bno mes\b|\bem 20(25|26)\b)",
+            re.IGNORECASE,
+        ),
+        (
+            "ce-reclamacoes-totais-mensal-assuntos",
+            "ce-reclamacoes-totais-mensal-causas",
+            "evolucao-mensal",
+        ),
+    ),
 )
 
 
@@ -168,6 +191,64 @@ _CE_TOTAL_BOOSTS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
         ),
         ("ce-reclamacoes-totais-overview",),
     ),
+    (
+        re.compile(
+            r"\b(instala\w*|\buc\b|ucs|cliente|clientes|consumidor|consumidores|"
+            r"medidor|quem .* mais reclam\w*|qual .* mais reclam\w*)\b",
+            re.IGNORECASE,
+        ),
+        ("ce-top-instalacoes",),
+    ),
+    (
+        re.compile(
+            r"(\b(janeiro|fevereiro|março|marco|abril|maio|junho|julho|agosto|"
+            r"setembro|outubro|novembro|dezembro)\b|\b20(25|26)-\d{2}\b)",
+            re.IGNORECASE,
+        ),
+        (
+            "ce-reclamacoes-totais-mensal-assuntos",
+            "ce-reclamacoes-totais-mensal-causas",
+        ),
+    ),
+)
+
+
+# Boosts dedicados à região SP (universo N1 erro_leitura).
+_SP_BOOSTS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
+    (
+        re.compile(
+            r"\b(assunto|assuntos|causa|causas|motivo|motivos|principal|principais|"
+            r"tipo de reclama|reclama)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-n1-assuntos", "sp-n1-causas"),
+    ),
+    (
+        re.compile(
+            r"\b(mensal|mês|meses|tempo|evolu|série|serie|repete|repetem|"
+            r"ao longo|tendência|tendencia|pico)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-n1-mensal",),
+    ),
+    (
+        re.compile(r"\b(grupo|tarifári|tarifario|\bgb\b|\bga\b)\b", re.IGNORECASE),
+        ("sp-n1-grupo",),
+    ),
+    (
+        re.compile(
+            r"\b(quantas|quantos|total|totais|volume|visão geral|visao geral|resumo|tickets?)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-n1-overview",),
+    ),
+    (
+        re.compile(
+            r"\b(instala\w*|\buc\b|ucs|cliente|clientes|consumidor|consumidores|medidor)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-n1-top-instalacoes",),
+    ),
 )
 
 
@@ -184,6 +265,11 @@ def detect_card_boosts(
     seen: dict[str, None] = {}
     if region == "CE":
         for pattern, anchors in _CE_TOTAL_BOOSTS:
+            if pattern.search(question):
+                for anchor in anchors:
+                    seen.setdefault(anchor, None)
+    if region == "SP":
+        for pattern, anchors in _SP_BOOSTS:
             if pattern.search(question):
                 for anchor in anchors:
                     seen.setdefault(anchor, None)
@@ -359,16 +445,9 @@ class RagOrchestrator:
                 out_of_regional_scope=True,
             )
 
-        if is_individual_client_query(check.sanitized):
-            return RagResponse(
-                text=INDIVIDUAL_CLIENT_MESSAGE,
-                passages=[],
-                intent="individual_client_scope",
-                prompt_tokens=0,
-                completion_tokens=0,
-                latency_ms=timer.total_ms(),
-            )
-
+        # MVP: perguntas sobre instalação/UC agora são roteadas para cards
+        # `*-top-instalacoes` (via boosts). A recusa individual foi removida —
+        # `INDIVIDUAL_CLIENT_MESSAGE` permanece disponível para rollback futuro.
         intent = classify_intent(check.sanitized)
         region = detect_regional_scope(check.sanitized)
         if region is None and intent in ANALYTICAL_INTENTS:
@@ -491,10 +570,6 @@ class RagOrchestrator:
 
         if is_out_of_regional_scope(check.sanitized):
             yield OUT_OF_REGIONAL_SCOPE_MESSAGE
-            return
-
-        if is_individual_client_query(check.sanitized):
-            yield INDIVIDUAL_CLIENT_MESSAGE
             return
 
         intent = classify_intent(check.sanitized)

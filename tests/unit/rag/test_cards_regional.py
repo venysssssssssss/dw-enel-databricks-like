@@ -232,6 +232,35 @@ def test_ce_total_cards_all_tagged_ce_region(tmp_path: Path) -> None:
     assert all(c.region == "CE" for c in ce_total)
 
 
+def test_sp_n1_cards_present_for_sp_scope(tmp_path: Path) -> None:
+    cards = build_data_cards(_store_with_total(tmp_path), regional_scope="SP")
+    anchors = {c.anchor for c in cards}
+    expected = {
+        "sp-n1-overview",
+        "sp-n1-assuntos",
+        "sp-n1-causas",
+        "sp-n1-mensal",
+        "sp-n1-grupo",
+        "sp-n1-top-instalacoes",
+    }
+    assert expected <= anchors
+
+
+def test_sp_n1_cards_tagged_sp_region(tmp_path: Path) -> None:
+    cards = build_data_cards(_store_with_total(tmp_path), regional_scope="CE+SP")
+    sp_cards = [c for c in cards if c.anchor.startswith("sp-n1-")]
+    assert sp_cards
+    assert all(c.region == "SP" for c in sp_cards)
+
+
+def test_ce_top_instalacoes_card_present(tmp_path: Path) -> None:
+    cards = build_data_cards(_store_with_total(tmp_path), regional_scope="CE")
+    anchors = {c.anchor for c in cards}
+    assert "ce-top-instalacoes" in anchors
+    assert "ce-reclamacoes-totais-mensal-assuntos" in anchors
+    assert "ce-reclamacoes-totais-mensal-causas" in anchors
+
+
 def test_ce_total_overview_card_cites_reclamacao_total_universe(tmp_path: Path) -> None:
     cards = build_data_cards(_store_with_total(tmp_path), regional_scope="CE")
     overview = next(c for c in cards if c.anchor == "ce-reclamacoes-totais-overview")

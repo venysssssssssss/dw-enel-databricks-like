@@ -17,14 +17,12 @@ from typing import Any
 from apps.streamlit.components.narrative import LayerNarrative, layer_intro
 from src.rag.config import load_rag_config
 from src.rag.orchestrator import (
-    INDIVIDUAL_CLIENT_MESSAGE,
     OUT_OF_REGIONAL_SCOPE_MESSAGE,
     RagOrchestrator,
     classify_intent,
     detect_regional_scope,
     format_citations,
     greeting_response,
-    is_individual_client_query,
 )
 from src.rag.prompts import SUGGESTED_QUESTIONS
 from src.rag.retriever import check_stub_corpus, route_doc_types
@@ -463,17 +461,8 @@ def _stream_answer(
             "sources": 0,
         }, OUT_OF_REGIONAL_SCOPE_MESSAGE
 
-    if is_individual_client_query(check.sanitized):
-        st.info(INDIVIDUAL_CLIENT_MESSAGE)
-        elapsed = (time.perf_counter() - start) * 1000
-        return {
-            "intent": "individual_client_scope",
-            "prompt_tokens": 0,
-            "completion_tokens": len(INDIVIDUAL_CLIENT_MESSAGE) // 4,
-            "latency_ms": elapsed,
-            "sources": 0,
-        }, INDIVIDUAL_CLIENT_MESSAGE
-
+    # MVP: perguntas sobre instalação/UC não são mais recusadas; o
+    # orchestrator roteia para cards `*-top-instalacoes`.
     intent = classify_intent(check.sanitized)
     if intent in {"saudacao", "cortesia"}:
         text = greeting_response(context_hint)

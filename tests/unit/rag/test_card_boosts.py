@@ -227,14 +227,16 @@ def test_top_passages_respects_regional_filter_on_boosts(tmp_path: Path):
     assert "CE" in regions or not passages
 
 
-def test_answer_refuses_individual_client_query(tmp_path: Path):
+def test_answer_no_longer_refuses_individual_client_query(tmp_path: Path):
+    """MVP: perguntas sobre instalação/cliente não são mais recusadas.
+    O orchestrator roteia para cards `*-top-instalacoes`.
+    """
     cfg = _make_config(tmp_path)
     retriever = _FakeRetriever(semantic=[], by_anchor={})
     orch = RagOrchestrator(cfg, retriever=retriever, provider=StubProvider())  # type: ignore[arg-type]
     resp = orch.answer("Qual cliente abre mais reclamações?")
-    assert resp.intent == "individual_client_scope"
-    assert resp.text == INDIVIDUAL_CLIENT_MESSAGE
-    assert resp.passages == []
+    assert resp.intent != "individual_client_scope"
+    assert resp.text != INDIVIDUAL_CLIENT_MESSAGE
 
 
 @pytest.mark.parametrize(
@@ -262,6 +264,47 @@ def test_detect_card_boosts_ce_region_prioritizes_ce_total_cards(
 def test_detect_card_boosts_without_region_skips_ce_total():
     boosts = detect_card_boosts("Quantas reclamações tem em CE?", region=None)
     assert not any(a.startswith("ce-reclamacoes-totais-") for a in boosts)
+
+
+@pytest.mark.parametrize(
+    "question,expected_anchor",
+    [
+        ("Qual instalação mais gera reclamações em CE?", "ce-top-instalacoes"),
+        ("Qual cliente abre mais reclamações?", "ce-top-instalacoes"),
+        ("UC com mais ordens", "ce-top-instalacoes"),
+    ],
+)
+def test_detect_card_boosts_routes_installation_queries(question: str, expected_anchor: str):
+    boosts = detect_card_boosts(question)
+    assert expected_anchor in boosts
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Quais causas em CE em janeiro de 2026?",
+        "Principais assuntos em 2026-01",
+        "Como foi novembro em CE?",
+    ],
+)
+def test_detect_card_boosts_routes_month_specific_queries(question: str):
+    boosts = detect_card_boosts(question)
+    assert "ce-reclamacoes-totais-mensal-assuntos" in boosts
+    assert "ce-reclamacoes-totais-mensal-causas" in boosts
+
+
+@pytest.mark.parametrize(
+    "question,expected_anchor",
+    [
+        ("Qual o principal assunto em SP?", "sp-n1-assuntos"),
+        ("Evolução mensal de SP", "sp-n1-mensal"),
+        ("Quantos tickets em SP?", "sp-n1-overview"),
+        ("Qual instalação reclama mais em SP?", "sp-n1-top-instalacoes"),
+    ],
+)
+def test_detect_card_boosts_sp_region_uses_sp_anchors(question: str, expected_anchor: str):
+    boosts = detect_card_boosts(question, region="SP")
+    assert expected_anchor in boosts
 
 
 def test_detect_card_boosts_sp_region_skips_ce_total():

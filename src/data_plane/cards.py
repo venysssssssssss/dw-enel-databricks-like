@@ -86,6 +86,9 @@ def build_data_cards(
         # — o usuário pode perguntar sobre o universo completo, não só o subset
         # rotulado de erro_leitura.
         cards.extend(_ce_total_complaints_cards(store))
+        cards.extend(_ce_mvp_extra_cards(store))
+    if scope in {"SP", "CE+SP"}:
+        cards.extend(_sp_n1_cards(store))
 
     source = store.silver_path.as_posix()
     return [
@@ -481,7 +484,21 @@ def _ce_total_overview_card(overview: pd.DataFrame) -> DataCard:
 
 
 def _ce_total_assuntos_card(assuntos: pd.DataFrame) -> DataCard:
+    if assuntos.empty:
+        return DataCard(
+            "ce-reclamacoes-totais-assuntos",
+            "CE — top assuntos (reclamações totais)",
+            "Sem dados de assunto disponíveis.",
+            region="CE",
+        )
+    top = assuntos.iloc[0]
+    header = (
+        f"O principal assunto das reclamações em CE é **{top.assunto}** com "
+        f"**{_fmt_n(top.qtd_ordens)}** ordens ({_fmt_pct(top.percentual)})."
+    )
     lines = [
+        header,
+        "",
         "**Top assuntos das reclamações totais em CE** "
         "(universo de 167,6k ordens):",
         "",
@@ -595,7 +612,14 @@ def _ce_total_causas_card(causas: pd.DataFrame) -> DataCard:
             region="CE",
         )
     total = int(labeled["qtd_ordens"].sum())
+    top = labeled.iloc[0]
+    header = (
+        f"A principal causa-raiz rotulada em CE é **{top.causa_canonica}** com "
+        f"**{_fmt_n(top.qtd_ordens)}** ordens ({_fmt_pct(top.qtd_ordens / total)})."
+    )
     lines = [
+        header,
+        "",
         f"**Causas-raiz rotuladas entre as reclamações totais de CE** "
         f"(~{_fmt_n(total)} ordens com rótulo operacional):",
         "",
@@ -629,6 +653,317 @@ def _data_quality_notes_card(frame: pd.DataFrame) -> DataCard:
         body,
         region="CE+SP",
     )
+
+
+_SP_FILTERS: dict[str, list[str]] = {"regiao": ["SP"]}
+
+
+def _ce_mvp_extra_cards(store: DataStore) -> list[DataCard]:
+    """CE MVP: top instalações + mensal×assunto + mensal×causa."""
+    top_inst = store.aggregate("top_instalacoes", _CE_TOTAL_FILTERS, include_total=True)
+    month_assunto = store.aggregate(
+        "monthly_assunto_breakdown", _CE_TOTAL_FILTERS, include_total=True
+    )
+    month_causa = store.aggregate(
+        "monthly_causa_breakdown", _CE_TOTAL_FILTERS, include_total=True
+    )
+    return [
+        _top_instalacoes_card(
+            top_inst,
+            anchor="ce-top-instalacoes",
+            title="CE — instalações (UCs) com mais reclamações",
+            region="CE",
+            context_label="CE (reclamações totais, ~167,6k ordens)",
+        ),
+        _monthly_assunto_card(
+            month_assunto,
+            anchor="ce-reclamacoes-totais-mensal-assuntos",
+            title="CE — assuntos principais por mês (reclamações totais)",
+            region="CE",
+            context_label="CE",
+        ),
+        _monthly_causa_card(
+            month_causa,
+            anchor="ce-reclamacoes-totais-mensal-causas",
+            title="CE — causas-raiz principais por mês (reclamações totais rotuladas)",
+            region="CE",
+            context_label="CE",
+        ),
+    ]
+
+
+def _sp_n1_cards(store: DataStore) -> list[DataCard]:
+    """Paridade SP dentro do universo N1 (~12,1k tickets erro_leitura)."""
+    overview = store.aggregate("overview", _SP_FILTERS)
+    assuntos = store.aggregate("top_assuntos", _SP_FILTERS)
+    causas = store.aggregate("top_causas", _SP_FILTERS)
+    monthly = store.aggregate("monthly_volume", _SP_FILTERS)
+    groups = store.aggregate("by_group", _SP_FILTERS)
+    top_inst = store.aggregate("top_instalacoes", _SP_FILTERS)
+    return [
+        _sp_overview_card(overview),
+        _sp_assuntos_card(assuntos),
+        _sp_causas_card(causas),
+        _sp_mensal_card(monthly),
+        _sp_grupo_card(groups),
+        _top_instalacoes_card(
+            top_inst,
+            anchor="sp-n1-top-instalacoes",
+            title="SP — instalações (UCs) com mais tickets N1",
+            region="SP",
+            context_label="SP (N1 erro_leitura, ~12,1k tickets)",
+        ),
+    ]
+
+
+def _sp_overview_card(overview: pd.DataFrame) -> DataCard:
+    if overview.empty:
+        return DataCard(
+            "sp-n1-overview",
+            "SP — visão geral (N1 erro_leitura)",
+            "Sem dados disponíveis.",
+            region="SP",
+        )
+    row = overview.iloc[0]
+    body = (
+        f"Em **SP**, o dataset N1 contém **{_fmt_n(row['total_registros'])} tickets** "
+        f"(100% ERRO_LEITURA, cobertura 2025-07 → 2026-03). "
+        f"Taxa de refaturamento resolvido é **{_fmt_pct(float(row['taxa_refaturamento']))}** "
+        f"— viés conhecido (a origem não registra refaturamento em SP).\n\n"
+        "Para análises comparativas, consulte também `data-quality-notes`."
+    )
+    return DataCard(
+        "sp-n1-overview",
+        "SP — visão geral (N1 erro_leitura)",
+        body,
+        region="SP",
+    )
+
+
+def _sp_assuntos_card(assuntos: pd.DataFrame) -> DataCard:
+    if assuntos.empty:
+        return DataCard(
+            "sp-n1-assuntos",
+            "SP — principais assuntos (N1)",
+            "Sem dados de assunto disponíveis.",
+            region="SP",
+        )
+    top = assuntos.iloc[0]
+    header = (
+        f"O principal assunto de reclamação em SP é **{top.assunto}** com "
+        f"**{_fmt_n(top.qtd_ordens)}** tickets ({_fmt_pct(top.percentual)})."
+    )
+    lines = [header, "", "**Top assuntos em SP (N1)**:", ""]
+    for row in assuntos.head(10).itertuples(index=False):
+        lines.append(
+            f"- **{row.assunto}**: {_fmt_n(row.qtd_ordens)} "
+            f"({_fmt_pct(row.percentual)})"
+        )
+    return DataCard(
+        "sp-n1-assuntos",
+        "SP — principais assuntos (N1)",
+        "\n".join(lines),
+        region="SP",
+    )
+
+
+def _sp_causas_card(causas: pd.DataFrame) -> DataCard:
+    if causas.empty:
+        return DataCard(
+            "sp-n1-causas",
+            "SP — principais causas-raiz (N1)",
+            "Sem causas rotuladas disponíveis.",
+            region="SP",
+        )
+    top = causas.iloc[0]
+    header = (
+        f"A principal causa-raiz em SP é **{top.causa_canonica}** com "
+        f"**{_fmt_n(top.qtd_ordens)}** tickets ({_fmt_pct(top.percentual)})."
+    )
+    lines = [header, "", "**Top causas em SP (N1)**:", ""]
+    for row in causas.head(10).itertuples(index=False):
+        lines.append(
+            f"- **{row.causa_canonica}**: {_fmt_n(row.qtd_ordens)} "
+            f"({_fmt_pct(row.percentual)})"
+        )
+    return DataCard(
+        "sp-n1-causas",
+        "SP — principais causas-raiz (N1)",
+        "\n".join(lines),
+        region="SP",
+    )
+
+
+def _sp_mensal_card(monthly: pd.DataFrame) -> DataCard:
+    if monthly.empty:
+        return DataCard(
+            "sp-n1-mensal",
+            "SP — evolução mensal (N1)",
+            "Sem dados mensais disponíveis.",
+            region="SP",
+        )
+    agg = monthly.groupby("mes_ingresso", as_index=False).agg(qtd=("qtd_erros", "sum"))
+    agg = agg.sort_values("mes_ingresso")
+    peak = agg.sort_values("qtd", ascending=False).iloc[0]
+    pm = peak["mes_ingresso"]
+    plabel = pm.strftime("%Y-%m") if hasattr(pm, "strftime") else str(pm)[:7]
+    header = (
+        f"Em SP, o volume mensal tem pico em **{plabel}** "
+        f"com {_fmt_n(peak['qtd'])} tickets; a série cobre {len(agg)} meses."
+    )
+    lines = [header, "", "**Evolução mensal SP (N1)**:", ""]
+    max_val = int(agg["qtd"].max()) or 1
+    for row in agg.itertuples(index=False):
+        m = row.mes_ingresso
+        label = m.strftime("%Y-%m") if hasattr(m, "strftime") else str(m)[:7]
+        bar = "#" * max(1, int(int(row.qtd) / max_val * 18))
+        lines.append(f"- `{label}`: {_fmt_n(row.qtd)} {bar}")
+    return DataCard(
+        "sp-n1-mensal",
+        "SP — evolução mensal (N1)",
+        "\n".join(lines),
+        region="SP",
+    )
+
+
+def _sp_grupo_card(groups: pd.DataFrame) -> DataCard:
+    if groups.empty:
+        return DataCard(
+            "sp-n1-grupo",
+            "SP — grupo tarifário (N1)",
+            "Sem dados de grupo disponíveis.",
+            region="SP",
+        )
+    top = groups.iloc[0]
+    header = (
+        f"Em SP, o grupo tarifário dominante é **{top.grupo}** com "
+        f"**{_fmt_n(top.qtd_ordens)}** tickets ({_fmt_pct(top.percentual)})."
+    )
+    lines = [header, "", "**Distribuição por grupo em SP (N1)**:", ""]
+    for row in groups.itertuples(index=False):
+        lines.append(
+            f"- **{row.grupo}**: {_fmt_n(row.qtd_ordens)} ({_fmt_pct(row.percentual)})"
+        )
+    return DataCard(
+        "sp-n1-grupo",
+        "SP — grupo tarifário (N1)",
+        "\n".join(lines),
+        region="SP",
+    )
+
+
+def _top_instalacoes_card(
+    top_inst: pd.DataFrame,
+    *,
+    anchor: str,
+    title: str,
+    region: str,
+    context_label: str,
+) -> DataCard:
+    if top_inst.empty:
+        return DataCard(
+            anchor,
+            title,
+            "Sem dados de instalação disponíveis.",
+            region=region,
+        )
+    top = top_inst.iloc[0]
+    inst_id = str(top.instalacao)
+    assunto_top = str(top.assunto_top) if top.assunto_top else "(não informado)"
+    header = (
+        f"A instalação (UC) com mais reclamações em {context_label} é "
+        f"**{inst_id}** com **{_fmt_n(top.qtd_ordens)} ordens** "
+        f"(assunto dominante: {assunto_top}, taxa refatur "
+        f"{_fmt_pct(float(top.taxa_refaturamento))})."
+    )
+    lines = [
+        header,
+        "",
+        "**Top 20 instalações por volume** (ID técnico anonimizado):",
+        "",
+    ]
+    for row in top_inst.head(20).itertuples(index=False):
+        assunto = str(row.assunto_top) if row.assunto_top else "(n/d)"
+        lines.append(
+            f"- `{row.instalacao}`: {_fmt_n(row.qtd_ordens)} ordens — "
+            f"{assunto} (refatur {_fmt_pct(float(row.taxa_refaturamento))})"
+        )
+    return DataCard(anchor, title, "\n".join(lines), region=region)
+
+
+def _monthly_assunto_card(
+    breakdown: pd.DataFrame,
+    *,
+    anchor: str,
+    title: str,
+    region: str,
+    context_label: str,
+) -> DataCard:
+    if breakdown.empty:
+        return DataCard(
+            anchor,
+            title,
+            "Sem dados mensais disponíveis.",
+            region=region,
+        )
+    by_month: dict[str, list[tuple[str, int]]] = {}
+    for row in breakdown.itertuples(index=False):
+        m = row.mes_ingresso
+        label = m.strftime("%Y-%m") if hasattr(m, "strftime") else str(m)[:7]
+        by_month.setdefault(label, []).append((str(row.assunto), int(row.qtd_ordens)))
+    last_label = sorted(by_month)[-1]
+    first = by_month[last_label][0]
+    header = (
+        f"Em {context_label}, no mês mais recente (**{last_label}**) o principal "
+        f"assunto foi **{first[0]}** com {_fmt_n(first[1])} ordens."
+    )
+    lines = [header, "", f"**Top-3 assuntos por mês em {context_label}**:", ""]
+    for label in sorted(by_month):
+        items = by_month[label]
+        rendered = "; ".join(f"{a} ({_fmt_n(q)})" for a, q in items[:3])
+        lines.append(f"- `{label}`: {rendered}")
+    return DataCard(anchor, title, "\n".join(lines), region=region)
+
+
+def _monthly_causa_card(
+    breakdown: pd.DataFrame,
+    *,
+    anchor: str,
+    title: str,
+    region: str,
+    context_label: str,
+) -> DataCard:
+    if breakdown.empty:
+        return DataCard(
+            anchor,
+            title,
+            "Sem dados mensais de causa-raiz rotulada.",
+            region=region,
+        )
+    by_month: dict[str, list[tuple[str, int]]] = {}
+    for row in breakdown.itertuples(index=False):
+        m = row.mes_ingresso
+        label = m.strftime("%Y-%m") if hasattr(m, "strftime") else str(m)[:7]
+        by_month.setdefault(label, []).append(
+            (str(row.causa_canonica), int(row.qtd_ordens))
+        )
+    last_label = sorted(by_month)[-1]
+    first = by_month[last_label][0]
+    header = (
+        f"Em {context_label}, no mês mais recente (**{last_label}**) a principal "
+        f"causa-raiz rotulada foi **{first[0]}** com {_fmt_n(first[1])} ordens."
+    )
+    lines = [
+        header,
+        "",
+        f"**Top-3 causas-raiz rotuladas por mês em {context_label}**:",
+        "",
+    ]
+    for label in sorted(by_month):
+        items = by_month[label]
+        rendered = "; ".join(f"{c} ({_fmt_n(q)})" for c, q in items[:3])
+        lines.append(f"- `{label}`: {rendered}")
+    return DataCard(anchor, title, "\n".join(lines), region=region)
 
 
 def _coverage_window(frame: pd.DataFrame, region: str) -> dict[str, str | int]:

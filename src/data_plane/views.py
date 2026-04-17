@@ -127,6 +127,100 @@ def refaturamento_summary_view(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def top_instalacoes_view(frame: pd.DataFrame, *, limit: int = 20) -> pd.DataFrame:
+    cols = ["instalacao", "qtd_ordens", "assunto_top", "causa_top", "taxa_refaturamento"]
+    if frame.empty or "instalacao" not in frame.columns:
+        return pd.DataFrame(columns=cols)
+    sub = frame.loc[frame["instalacao"].notna()].copy()
+    sub["instalacao"] = sub["instalacao"].astype(str)
+    sub = sub.loc[sub["instalacao"].str.strip().ne("") & sub["instalacao"].str.lower().ne("nan")]
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    flag = sub["flag_resolvido_com_refaturamento"].fillna(False).astype(bool)
+    sub = sub.assign(_refat=flag)
+
+    def _mode(series: pd.Series) -> str:
+        series = series.dropna().astype(str)
+        series = series.loc[series.str.strip().ne("")]
+        if series.empty:
+            return ""
+        return series.value_counts().index[0]
+
+    grouped = (
+        sub.groupby("instalacao", as_index=False)
+        .agg(
+            qtd_ordens=("ordem", "nunique"),
+            assunto_top=("assunto", _mode),
+            causa_top=("causa_canonica", _mode),
+            taxa_refaturamento=("_refat", "mean"),
+        )
+        .sort_values("qtd_ordens", ascending=False)
+        .head(limit)
+        .reset_index(drop=True)
+    )
+    return grouped[cols]
+
+
+def monthly_assunto_breakdown_view(
+    frame: pd.DataFrame, *, top_per_month: int = 3, max_months: int = 18
+) -> pd.DataFrame:
+    cols = ["mes_ingresso", "assunto", "qtd_ordens", "rank"]
+    if frame.empty or "mes_ingresso" not in frame.columns or "assunto" not in frame.columns:
+        return pd.DataFrame(columns=cols)
+    sub = frame.loc[frame["mes_ingresso"].notna() & frame["assunto"].notna()]
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    grouped = (
+        sub.groupby(["mes_ingresso", "assunto"], as_index=False)
+        .agg(qtd_ordens=("ordem", "nunique"))
+    )
+    grouped["rank"] = (
+        grouped.sort_values(["mes_ingresso", "qtd_ordens"], ascending=[True, False])
+        .groupby("mes_ingresso")
+        .cumcount()
+        + 1
+    )
+    grouped = grouped.loc[grouped["rank"] <= top_per_month]
+    months = sorted(grouped["mes_ingresso"].dropna().unique())[-max_months:]
+    grouped = grouped.loc[grouped["mes_ingresso"].isin(months)]
+    return grouped.sort_values(["mes_ingresso", "rank"]).reset_index(drop=True)[cols]
+
+
+def monthly_causa_breakdown_view(
+    frame: pd.DataFrame, *, top_per_month: int = 3, max_months: int = 18
+) -> pd.DataFrame:
+    cols = ["mes_ingresso", "causa_canonica", "qtd_ordens", "rank"]
+    if (
+        frame.empty
+        or "mes_ingresso" not in frame.columns
+        or "causa_canonica" not in frame.columns
+    ):
+        return pd.DataFrame(columns=cols)
+    sub = frame.loc[frame["mes_ingresso"].notna() & frame["causa_canonica"].notna()]
+    if "has_causa_raiz_label" in sub.columns:
+        label = sub["has_causa_raiz_label"].fillna(False).astype(bool)
+        sub = sub.loc[label]
+    sub = sub.loc[
+        ~sub["causa_canonica"].astype(str).str.lower().str.contains("sem_causa", na=False)
+    ]
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    grouped = (
+        sub.groupby(["mes_ingresso", "causa_canonica"], as_index=False)
+        .agg(qtd_ordens=("ordem", "nunique"))
+    )
+    grouped["rank"] = (
+        grouped.sort_values(["mes_ingresso", "qtd_ordens"], ascending=[True, False])
+        .groupby("mes_ingresso")
+        .cumcount()
+        + 1
+    )
+    grouped = grouped.loc[grouped["rank"] <= top_per_month]
+    months = sorted(grouped["mes_ingresso"].dropna().unique())[-max_months:]
+    grouped = grouped.loc[grouped["mes_ingresso"].isin(months)]
+    return grouped.sort_values(["mes_ingresso", "rank"]).reset_index(drop=True)[cols]
+
+
 def by_group_view(frame: pd.DataFrame, *, limit: int = 6) -> pd.DataFrame:
     if frame.empty or "grupo" not in frame.columns:
         return pd.DataFrame(columns=["grupo", "qtd_ordens", "percentual"])
@@ -224,6 +318,27 @@ VIEW_REGISTRY: dict[str, ViewSpec] = {
     ),
     "taxonomy_reference": ViewSpec(
         "taxonomy_reference", ("Categoria",), ("Peso",), (), lambda _frame: taxonomy_reference()
+    ),
+    "top_instalacoes": ViewSpec(
+        "top_instalacoes",
+        ("instalacao",),
+        ("qtd_ordens", "taxa_refaturamento"),
+        FILTER_FIELDS,
+        top_instalacoes_view,
+    ),
+    "monthly_assunto_breakdown": ViewSpec(
+        "monthly_assunto_breakdown",
+        ("mes_ingresso", "assunto"),
+        ("qtd_ordens", "rank"),
+        FILTER_FIELDS,
+        monthly_assunto_breakdown_view,
+    ),
+    "monthly_causa_breakdown": ViewSpec(
+        "monthly_causa_breakdown",
+        ("mes_ingresso", "causa_canonica"),
+        ("qtd_ordens", "rank"),
+        FILTER_FIELDS,
+        monthly_causa_breakdown_view,
     ),
 }
 
