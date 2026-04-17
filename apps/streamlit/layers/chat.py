@@ -1,20 +1,10 @@
-"""Aba '💬 Assistente ENEL' — chat RAG embarcado no dashboard.
-
-UX:
-- Layout full-width com hero state, chips categorizados e bolhas ENEL-themed.
-- Streaming token-a-token via `st.write_stream` (stream_answer do orchestrator).
-- Citações como expander "Fontes (N)" ao final.
-- Indicadores de provider, modelo, tokens, intent e latência.
-- Feedback 👍/👎 por resposta em `data/rag/feedback.csv`.
-- Greeting dinâmica com hora + último contexto do dashboard.
-"""
+"""Aba '💬 Assistente ENEL' — chat RAG embarcado no dashboard."""
 
 from __future__ import annotations
 
 import time
 from typing import Any
 
-from apps.streamlit.components.narrative import LayerNarrative, layer_intro
 from src.rag.config import load_rag_config
 from src.rag.orchestrator import (
     OUT_OF_REGIONAL_SCOPE_MESSAGE,
@@ -53,20 +43,142 @@ _DATA_QUESTIONS: list[tuple[str, str]] = [
 
 _CHAT_CSS = """
 <style>
+/* ===== Refactor reference: operational chat surface ===== */
+.chat-shell {
+  border: 1px solid var(--enel-border);
+  border-left: 5px solid var(--enel-secondary);
+  border-radius: var(--enel-radius-lg, 8px);
+  background: var(--enel-surface);
+  box-shadow: var(--enel-shadow);
+  margin-bottom: 1rem;
+  padding: 1.05rem 1.15rem;
+}
+.chat-shell h2 {
+  color: var(--enel-text);
+  font-family: 'Inter Tight', 'Inter', sans-serif;
+  font-size: clamp(1.45rem, 2.5vw, 2.1rem);
+  letter-spacing: 0;
+  line-height: 1.05;
+  margin: 0 0 0.4rem;
+}
+.chat-shell p {
+  color: var(--enel-muted);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 860px;
+}
+.chat-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.85rem 0 0;
+}
+.chat-status-chip,
+.meta-row .pill {
+  align-items: center;
+  background: color-mix(in srgb, var(--enel-surface-2) 78%, var(--enel-surface) 22%);
+  border: 1px solid var(--enel-border);
+  border-radius: var(--enel-radius-sm, 4px);
+  color: var(--enel-text);
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 700;
+  gap: 0.35rem;
+  line-height: 1.2;
+  padding: 0.34rem 0.52rem;
+}
+.chat-status-chip .label {
+  color: var(--enel-muted);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.chat-intro {
+  background: color-mix(in srgb, var(--enel-secondary) 8%, var(--enel-surface) 92%);
+  border: 1px solid color-mix(in srgb, var(--enel-secondary) 20%, var(--enel-border) 80%);
+  border-radius: var(--enel-radius-lg, 8px);
+  color: var(--enel-text);
+  margin: 0 0 0.85rem;
+  padding: 0.95rem 1rem;
+}
+.chat-intro strong {
+  color: var(--enel-text);
+  display: block;
+  font-family: 'Inter Tight', 'Inter', sans-serif;
+  font-size: 1.02rem;
+  margin-bottom: 0.25rem;
+}
+.chat-intro span {
+  color: var(--enel-muted);
+  display: block;
+  line-height: 1.5;
+}
+.chat-suggest-title {
+  color: var(--enel-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  margin: 0.25rem 0 0.45rem;
+  text-transform: uppercase;
+}
+.meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  margin-top: 0.55rem;
+}
+.meta-row .pill code {
+  background: transparent;
+  color: var(--enel-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  padding: 0;
+}
+.meta-row .pill.ok {
+  border-color: rgba(30,123,85,0.34);
+  color: #1E7B55;
+}
+.meta-row .pill.warn {
+  border-color: rgba(154,88,0,0.34);
+  color: #8A5200;
+}
+.meta-row .pill.crit {
+  border-color: rgba(228,0,43,0.34);
+  color: #B8001F;
+}
+.typing-shimmer {
+  background: var(--enel-surface);
+  border: 1px solid var(--enel-border);
+  border-radius: var(--enel-radius-lg, 8px);
+  color: var(--enel-muted);
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+  padding: 0.72rem 0.85rem;
+  position: relative;
+  width: fit-content;
+}
+.typing-shimmer::after {
+  animation: shimmerMove 1.35s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, rgba(200,16,46,0.18), transparent);
+  content: "";
+  inset: 0;
+  position: absolute;
+  transform: translateX(-100%);
+}
+@keyframes shimmerMove {
+  to { transform: translateX(100%); }
+}
 /* ===== Chat hero (gradient ENEL) ===== */
 .chat-hero {
   position: relative;
   overflow: hidden;
-  background:
-    linear-gradient(135deg,
-      rgba(135,10,60,0.98) 0%,
-      rgba(200,16,46,0.96) 58%,
-      rgba(228,0,43,0.94) 100%);
-  color: #fff;
+  background: var(--enel-surface);
+  color: var(--enel-text);
   padding: 1.45rem 1.7rem;
-  border-radius: var(--enel-radius-lg, 22px);
+  border-radius: var(--enel-radius-lg, 8px);
   margin-bottom: 1rem;
-  box-shadow: 0 18px 45px rgba(15, 76, 129, 0.22);
+  border: 1px solid var(--enel-border);
+  box-shadow: var(--enel-shadow);
   animation: chatHeroIn 360ms cubic-bezier(.2,.8,.2,1) both;
 }
 .chat-hero::after {
@@ -83,12 +195,12 @@ _CHAT_CSS = """
   font-size: 1.35rem;
   font-weight: 800;
   letter-spacing: 0;
-  color: #fff;
+  color: var(--enel-text);
 }
 .chat-hero p {
   position: relative; z-index: 1;
   margin: 0;
-  opacity: 0.94;
+  color: var(--enel-muted);
   font-size: 0.95rem;
   line-height: 1.5;
   max-width: 720px;
@@ -102,7 +214,7 @@ _CHAT_CSS = """
 .chat-status {
   background: var(--enel-glass-bg, rgba(255,255,255,0.72));
   border: 1px solid var(--enel-glass-border, rgba(15,76,129,0.10));
-  border-radius: var(--enel-radius-md, 14px);
+  border-radius: var(--enel-radius-md, 6px);
   padding: 1rem 1.1rem;
   font-size: 0.85rem;
   line-height: 1.55;
@@ -146,7 +258,7 @@ _CHAT_CSS = """
 }
 .chat-metadata .pill {
   padding: 0.22rem 0.6rem;
-  border-radius: 999px;
+  border-radius: var(--enel-radius-sm, 4px);
   background: var(--enel-glass-bg, rgba(247,249,252,0.85));
   border: 1px solid var(--enel-border, #E6ECF2);
   font-weight: 600;
@@ -188,7 +300,7 @@ _CHAT_CSS = """
   padding: 0.4rem 0.8rem;
   background: var(--enel-glass-bg, rgba(255,255,255,0.7));
   border: 1px solid var(--enel-glass-border, rgba(15,76,129,0.12));
-  border-radius: 999px;
+  border-radius: var(--enel-radius-sm, 4px);
   backdrop-filter: blur(10px);
   width: fit-content;
 }
@@ -242,7 +354,7 @@ _CHAT_CSS = """
 
 /* ===== Chat input refinement ===== */
 [data-testid="stChatInput"] textarea {
-  border-radius: 14px !important;
+  border-radius: 8px !important;
   border-color: var(--enel-border, #DCE7F1) !important;
   font-family: 'Inter', sans-serif !important;
 }
@@ -258,37 +370,57 @@ def render(st: Any, *, theme: str = "light", context_hint: str | None = None) ->
     del theme
     st.markdown(_CHAT_CSS, unsafe_allow_html=True)
 
-    layer_intro(
-        st,
-        LayerNarrative(
-            icon="💬",
-            title="Assistente ENEL",
-            question="O que você precisa entender sobre a plataforma analítica?",
-            method=(
-                "RAG open-source CPU-only: ChromaDB + Qwen2.5-3B-Instruct Q4_K_M (GGUF). "
-                "Corpus indexa `docs/**` + data cards reais CE/SP (184.690 ordens do silver)."
-            ),
-            action=(
-                "Use os chips por categoria ou digite sua pergunta. "
-                "As respostas trazem citações clicáveis ao final."
-            ),
-        ),
-    )
-
     orch = _build_orchestrator(st)
     config = st.session_state["rag_config"]
     corpus_ready = check_stub_corpus(config.chromadb_path)
     provider_name = getattr(orch.provider, "name", "stub")
     model_name = getattr(orch.provider, "model", "?")
 
-    col_chat, col_side = st.columns([2.4, 1])
+    _render_chat_header(st, provider_name, model_name, corpus_ready)
+    _render_suggested_panel(st)
+    _render_chat_area(st, orch, config, context_hint)
 
-    with col_side:
-        _render_status_panel(st, provider_name, model_name, corpus_ready)
-        _render_suggested_panel(st)
 
-    with col_chat:
-        _render_chat_area(st, orch, config, context_hint)
+def _render_chat_header(
+    st: Any, provider: str, model: str, corpus_ready: bool
+) -> None:
+    corpus_state = "pronto" if corpus_ready else "vazio"
+    provider_state = "local" if provider == "llama_cpp" else "stub"
+    status_chips = "\n".join(
+        [
+            f'<span class="chat-status-chip"><span class="label">Modelo</span>{model}</span>',
+            (
+                '<span class="chat-status-chip"><span class="label">Provider</span>'
+                f"{provider} · {provider_state}</span>"
+            ),
+            (
+                '<span class="chat-status-chip"><span class="label">Índice</span>'
+                f"{corpus_state}</span>"
+            ),
+        ]
+    )
+    st.markdown(
+        f"""
+        <section class="chat-shell" aria-label="Assistente RAG">
+          <h2>Assistente RAG operacional</h2>
+          <p>
+            Pergunte sobre regras, dados CE/SP, arquitetura e sprints. As respostas usam
+            o índice local e mantêm as fontes no fim da mensagem.
+          </p>
+          <div class="chat-status-strip">
+            {status_chips}
+          </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+    if not corpus_ready:
+        st.caption("Rode `python scripts/build_rag_corpus.py --rebuild` para indexar.")
+    if provider == "stub":
+        st.caption(
+            "Sem LLM ativo. Instale `llama-cpp-python` e baixe o GGUF via "
+            "`scripts/build_rag_corpus.py --download-model`."
+        )
 
 
 def _build_orchestrator(st: Any) -> RagOrchestrator:
@@ -337,20 +469,24 @@ def _render_status_panel(
 
 def _render_suggested_panel(st: Any) -> None:
     st.markdown(
-        "<div class='chat-chip-label'>Comece por aqui:</div>",
+        "<div class='chat-suggest-title'>Perguntas prontas</div>",
         unsafe_allow_html=True,
     )
     all_questions: list[tuple[str, str]] = list(SUGGESTED_QUESTIONS) + _DATA_QUESTIONS
-    by_cat: dict[str, list[str]] = {}
-    for q, tag in all_questions:
-        by_cat.setdefault(tag, []).append(q)
+    priority = all_questions[:8]
+    rows = [priority[index : index + 2] for index in range(0, len(priority), 2)]
 
-    for tag, items in by_cat.items():
-        label = _CHIP_CATEGORIES.get(tag, tag)
-        with st.expander(f"{label} ({len(items)})", expanded=(tag == "data")):
-            for i, q in enumerate(items):
-                if st.button(q, key=f"chip_{tag}_{i}", use_container_width=True):
-                    st.session_state["pending_question"] = q
+    for row_idx, row in enumerate(rows):
+        cols = st.columns(len(row))
+        for col_idx, (question, tag) in enumerate(row):
+            label = _CHIP_CATEGORIES.get(tag, tag)
+            with cols[col_idx]:
+                if st.button(
+                    f"{label}\n{question}",
+                    key=f"chip_{tag}_{row_idx}_{col_idx}",
+                    use_container_width=True,
+                ):
+                    st.session_state["pending_question"] = question
                     st.rerun()
 
 
@@ -368,9 +504,9 @@ def _render_chat_area(
         hero_msg = greeting_response(context_hint)
         st.markdown(
             f"""
-            <div class='chat-hero'>
-              <h3>⚡ Assistente ENEL</h3>
-              <p>{hero_msg}</p>
+            <div class='chat-intro'>
+              <strong>Pronto para investigar.</strong>
+              <span>{hero_msg}</span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -387,14 +523,14 @@ def _render_chat_area(
                 _render_feedback_row(st, turn, idx=i)
 
     pending = st.session_state.pop("pending_question", None)
-    user_input = st.chat_input("Pergunte sobre a plataforma ENEL…") or pending
+    user_input = st.chat_input("Pergunte sobre dados, regras, arquitetura ou sprints") or pending
     if user_input:
         _handle_user_turn(st, orch, config, user_input, context_hint)
 
     bottom_cols = st.columns([1, 1, 4])
     with bottom_cols[0]:
         if st.session_state["chat_history"] and st.button(
-            "🧹 Limpar", use_container_width=True
+            "Limpar", use_container_width=True
         ):
             st.session_state["chat_history"] = []
             st.session_state["chat_first_open"] = True
@@ -509,10 +645,7 @@ def _stream_answer(
     placeholder = st.empty()
     typing_slot = st.empty()
     typing_slot.markdown(
-        "<div class='chat-typing'>"
-        "<span>⚡ Assistente ENEL pensando</span>"
-        "<span class='chat-typing-dots'><span></span><span></span><span></span></span>"
-        "</div>",
+        "<div class='typing-shimmer'>Assistente consultando o índice local</div>",
         unsafe_allow_html=True,
     )
 
@@ -551,16 +684,16 @@ def _format_metadata(meta: dict[str, Any]) -> str:
     cls = "ok" if total_tokens < 2000 else ("warn" if total_tokens < 4000 else "crit")
     first_tok = meta.get("first_token_ms")
     first_tok_html = (
-        f"<span class='pill'>⚡ {first_tok:.0f} ms (1º token)</span>"
+        f"<span class='pill'>{first_tok:.0f} ms primeiro token</span>"
         if first_tok else ""
     )
     return (
-        "<div class='chat-metadata'>"
+        "<div class='meta-row'>"
         f"<span class='pill'>intent: <code>{meta.get('intent', '?')}</code></span>"
         f"<span class='pill {cls}'>{total_tokens} tokens</span>"
-        f"<span class='pill'>⏱ {meta.get('latency_ms', 0):.0f} ms total</span>"
+        f"<span class='pill'>{meta.get('latency_ms', 0):.0f} ms total</span>"
         f"{first_tok_html}"
-        f"<span class='pill'>📎 {meta.get('sources', 0)} fontes</span>"
+        f"<span class='pill'>{meta.get('sources', 0)} fontes</span>"
         "</div>"
     )
 

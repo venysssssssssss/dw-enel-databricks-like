@@ -20,13 +20,13 @@ def hero_markdown(*, total_filtered: int, total_available: int) -> str:
     coverage = total_filtered / total_available if total_available else 0.0
     return f"""
 <section class="enel-hero" aria-label="Resumo executivo do dashboard">
-  <h1>Inteligência operacional de leitura</h1>
+  <h1>Reclamações CE/SP em análise</h1>
   <p>
-    IA, taxonomia viva e reclamações CE/SP em uma única narrativa: do volume ao padrão,
-    do padrão ao impacto, do impacto à ação operacional.
+    Base filtrada, métricas operacionais e assistente RAG no mesmo fluxo de investigação.
+    Ajuste o escopo na lateral e acompanhe os impactos nos indicadores.
   </p>
   <span class="enel-hero-meta" aria-live="polite">
-    📊 Escopo: {format_int(total_filtered)} de
+    Escopo ativo: {format_int(total_filtered)} de
     {format_int(total_available)} ({format_pct(coverage)})
   </span>
 </section>

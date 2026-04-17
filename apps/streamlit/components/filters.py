@@ -210,6 +210,26 @@ def chips_markdown(chips: tuple[str, ...]) -> str:
     return "".join(f'<span class="enel-chip">{chip}</span>' for chip in chips)
 
 
+def _sidebar_brand(total_rows: int) -> str:
+    return f"""
+<div class="sidebar-brand">
+  <div class="eyebrow">Controle de escopo</div>
+  <strong>Dashboard CE/SP</strong>
+  <span>{total_rows:,} registros disponíveis para filtros, análise e chat.</span>
+</div>
+""".replace(",", ".")
+
+
+def _section_header(title: str, badge: str | None = None) -> str:
+    badge_html = f'<span class="badge">{badge}</span>' if badge else ""
+    return f"""
+<div class="sb-section">
+  <div class="eyebrow">{title}</div>
+  {badge_html}
+</div>
+"""
+
+
 def render_sidebar_filters(
     st: Any,
     frame: pd.DataFrame,
@@ -223,7 +243,11 @@ def render_sidebar_filters(
         current = query_filters
     current = normalize_filters(replace(current, include_total=include_total), options)
 
-    st.sidebar.subheader("Filtros persistentes")
+    st.sidebar.markdown(_sidebar_brand(len(frame)), unsafe_allow_html=True)
+    st.sidebar.markdown(
+        _section_header("Presets", "atalhos"),
+        unsafe_allow_html=True,
+    )
     preset = st.sidebar.radio(
         "Presets",
         ["Manual", PRESET_LAST_30, PRESET_CE, PRESET_REFAT],
@@ -233,6 +257,10 @@ def render_sidebar_filters(
     if preset != "Manual":
         current = preset_filters(preset, frame, current)
 
+    st.sidebar.markdown(
+        _section_header("Dimensões", f"{len(options.regions)} regiões"),
+        unsafe_allow_html=True,
+    )
     regions = tuple(
         st.sidebar.multiselect("Região", options.regions, default=list(current.regions))
     )
@@ -252,6 +280,10 @@ def render_sidebar_filters(
             help="Tópico BERTopic descoberto nos textos livres.",
         )
     )
+    st.sidebar.markdown(
+        _section_header("Período", "datas"),
+        unsafe_allow_html=True,
+    )
     start = st.sidebar.date_input(
         "Início",
         value=current.start_date,
@@ -263,6 +295,10 @@ def render_sidebar_filters(
         value=current.end_date,
         min_value=options.min_date,
         max_value=options.max_date,
+    )
+    st.sidebar.markdown(
+        _section_header("Opções", "sessão"),
+        unsafe_allow_html=True,
     )
     only_refat = st.sidebar.toggle("Somente refaturamento", value=current.only_refaturamento)
     theme_dark = st.sidebar.toggle("Dark mode", value=current.theme == "dark")
@@ -283,7 +319,10 @@ def render_sidebar_filters(
     st.session_state[DEFAULT_FILTERS_KEY] = updated
     st.query_params.update(filters_to_query_params(updated))
 
-    st.sidebar.markdown("**Filtros ativos**")
+    st.sidebar.markdown(
+        _section_header("Filtros ativos", str(len(active_filter_chips(updated, options)))),
+        unsafe_allow_html=True,
+    )
     st.sidebar.markdown(
         chips_markdown(active_filter_chips(updated, options)),
         unsafe_allow_html=True,

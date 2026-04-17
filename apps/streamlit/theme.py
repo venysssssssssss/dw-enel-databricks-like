@@ -7,9 +7,9 @@ from typing import Literal
 ThemeMode = Literal["light", "dark"]
 
 PALETTE = {
-    "primary": "#870A3C",
-    "primary_dark": "#5F072A",
-    "primary_light": "#A70D49",
+    "primary": "#2B2F36",
+    "primary_dark": "#191C21",
+    "primary_light": "#4A515B",
     "secondary": "#C8102E",
     "secondary_light": "#E4002B",
     "accent": "#1E7B55",
@@ -73,24 +73,24 @@ def css_variables(mode: ThemeMode = "light") -> dict[str, str]:
     """Return CSS variables for the selected visual mode."""
     if mode == "dark":
         return {
-            "--enel-bg": "#111318",
-            "--enel-bg-soft": "#191B20",
-            "--enel-surface": "#20232A",
-            "--enel-surface-2": "#282C34",
-            "--enel-text": "#F8F9FB",
-            "--enel-muted": "#C7CDD6",
-            "--enel-border": "#424854",
-            "--enel-shadow": "0 18px 45px rgba(0, 0, 0, 0.38)",
+            "--enel-bg": "#0F1115",
+            "--enel-bg-soft": "#171A20",
+            "--enel-surface": "#1D2128",
+            "--enel-surface-2": "#252A32",
+            "--enel-text": "#F4F5F7",
+            "--enel-muted": "#BAC1CA",
+            "--enel-border": "#3A414C",
+            "--enel-shadow": "0 14px 34px rgba(0, 0, 0, 0.34)",
         }
     return {
-        "--enel-bg": "#F7F8FA",
-        "--enel-bg-soft": "#EEF1F5",
+        "--enel-bg": "#F5F6F8",
+        "--enel-bg-soft": "#ECEFF3",
         "--enel-surface": "#FFFFFF",
-        "--enel-surface-2": "#F1F3F6",
-        "--enel-text": "#1D1F24",
-        "--enel-muted": "#59616D",
-        "--enel-border": "#DDE2EA",
-        "--enel-shadow": "0 18px 45px rgba(135, 10, 60, 0.10)",
+        "--enel-surface-2": "#F0F2F5",
+        "--enel-text": "#1C2026",
+        "--enel-muted": "#5B6470",
+        "--enel-border": "#D8DDE5",
+        "--enel-shadow": "0 12px 28px rgba(31, 36, 43, 0.10)",
     }
 
 
@@ -98,11 +98,11 @@ def dashboard_css(mode: ThemeMode = "light") -> str:
     """Build Streamlit CSS with ENEL hierarchy, animation and accessible contrast."""
     variables = "\n".join(f"{key}: {value};" for key, value in css_variables(mode).items())
     dark = mode == "dark"
-    glass_bg = "rgba(32, 35, 42, 0.82)" if dark else "rgba(255, 255, 255, 0.86)"
-    glass_border = "rgba(255, 255, 255, 0.14)" if dark else "rgba(135, 10, 60, 0.12)"
+    glass_bg = "rgba(29, 33, 40, 0.90)" if dark else "rgba(255, 255, 255, 0.92)"
+    glass_border = "rgba(255, 255, 255, 0.14)" if dark else "rgba(28, 32, 38, 0.10)"
     return f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
 
 :root {{
   {variables}
@@ -113,14 +113,18 @@ def dashboard_css(mode: ThemeMode = "light") -> str:
   --enel-warning: {PALETTE["warning"]};
   --enel-glass-bg: {glass_bg};
   --enel-glass-border: {glass_border};
-  --enel-radius-lg: 22px;
-  --enel-radius-md: 14px;
-  --enel-radius-sm: 10px;
+  --enel-radius-lg: 8px;
+  --enel-radius-md: 6px;
+  --enel-radius-sm: 4px;
 }}
 
 html, body, [class*="css"] {{
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   font-feature-settings: 'cv11', 'ss01';
+}}
+
+h1, h2, h3, [data-testid="stMetricValue"] {{
+  font-family: 'Inter Tight', 'Inter', system-ui, -apple-system, sans-serif;
 }}
 
 code, pre, [data-testid="stMetricValue"], .enel-mono {{
@@ -129,7 +133,7 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 }}
 
 .stApp {{
-  background: linear-gradient(180deg, var(--enel-bg) 0%, var(--enel-bg-soft) 100%);
+  background: var(--enel-bg);
   color: var(--enel-text);
   scroll-behavior: smooth;
 }}
@@ -170,63 +174,53 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 }}
 [data-testid="stMetricDelta"] {{ font-size: 0.82rem; font-weight: 600; }}
 
-/* ===== Hero ===== */
+/* ===== Operational header ===== */
 .enel-hero {{
   position: relative;
   overflow: hidden;
-  border-radius: 30px;
-  padding: 2.1rem 2.2rem;
+  border-radius: var(--enel-radius-lg);
+  padding: 1.25rem 1.35rem;
   margin-bottom: 1.2rem;
-  color: #FFFFFF;
-  background:
-    linear-gradient(135deg, #870A3C 0%, #C8102E 62%, #E4002B 100%);
-  box-shadow: 0 28px 80px rgba(135, 10, 60, 0.26);
-}}
-.enel-hero,
-.enel-hero * {{
-  color: #FFFFFF !important;
-}}
-.enel-hero::after {{
-  content: ""; position: absolute; inset: 0;
-  background-image:
-    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
-  background-size: 28px 28px;
-  pointer-events: none; opacity: 0.5;
+  color: var(--enel-text);
+  background: var(--enel-surface);
+  border: 1px solid var(--enel-border);
+  border-left: 5px solid var(--enel-secondary);
+  box-shadow: var(--enel-shadow);
 }}
 .enel-hero h1 {{
   position: relative; z-index: 1;
-  font-size: clamp(2.15rem, 4vw, 3.6rem);
-  line-height: 0.98;
+  font-size: clamp(1.65rem, 3vw, 2.35rem);
+  line-height: 1.03;
   letter-spacing: 0;
-  margin: 0 0 0.7rem;
+  margin: 0 0 0.45rem;
   font-weight: 800;
+  color: var(--enel-text) !important;
 }}
 .enel-hero p {{
   position: relative; z-index: 1;
   max-width: 880px;
   margin: 0;
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 1.05rem;
-  line-height: 1.55;
+  color: var(--enel-muted) !important;
+  font-size: 0.98rem;
+  line-height: 1.5;
 }}
 .enel-hero .enel-hero-meta {{
   position: relative; z-index: 1;
   display: inline-flex; gap: 0.5rem; align-items: center;
-  margin-top: 1rem;
-  padding: 0.45rem 0.85rem;
-  background: rgba(255,255,255,0.14);
-  backdrop-filter: blur(14px);
-  border-radius: 999px;
+  margin-top: 0.85rem;
+  padding: 0.42rem 0.72rem;
+  background: color-mix(in srgb, var(--enel-secondary) 10%, var(--enel-surface) 90%);
+  border-radius: var(--enel-radius-sm);
   font-weight: 700; font-size: 0.85rem;
-  border: 1px solid rgba(255,255,255,0.22);
+  border: 1px solid color-mix(in srgb, var(--enel-secondary) 24%, var(--enel-border) 76%);
+  color: var(--enel-text) !important;
 }}
 
 /* ===== Intro / chips ===== */
 .enel-intro {{
-  border-left: 5px solid var(--enel-secondary);
+  border-left: 4px solid var(--enel-secondary);
   background: color-mix(in srgb, var(--enel-surface) 90%, var(--enel-secondary) 10%);
-  border-radius: 18px;
+  border-radius: var(--enel-radius-lg);
   padding: 1rem 1.2rem;
   margin: 0.25rem 0 1rem;
   box-shadow: 0 1px 3px rgba(15,76,129,0.04);
@@ -239,7 +233,7 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   gap: 0.35rem;
   padding: 0.35rem 0.7rem;
   margin: 0 0.35rem 0.35rem 0;
-  border-radius: 999px;
+  border-radius: var(--enel-radius-sm);
   border: 1px solid var(--enel-border);
   background: var(--enel-glass-bg);
   color: var(--enel-text);
@@ -256,7 +250,7 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 .enel-empty {{
   border: 1px dashed var(--enel-border);
   background: var(--enel-glass-bg);
-  border-radius: 22px;
+  border-radius: var(--enel-radius-lg);
   padding: 1.6rem;
   color: var(--enel-muted);
   text-align: center;
@@ -272,7 +266,7 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 .stTabs [data-baseweb="tab"] {{
   height: 48px;
   background: transparent;
-  border-radius: 12px 12px 0 0;
+  border-radius: var(--enel-radius-md) var(--enel-radius-md) 0 0;
   padding: 0 1.1rem;
   font-weight: 600;
   color: var(--enel-muted);
@@ -293,6 +287,53 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   background: var(--enel-glass-bg);
   backdrop-filter: blur(18px) saturate(140%);
   border-right: 1px solid var(--enel-glass-border);
+}}
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {{
+  margin-bottom: 0.25rem;
+}}
+.sidebar-brand {{
+  border-bottom: 1px solid var(--enel-border);
+  margin: 0 0 0.95rem;
+  padding: 0.25rem 0 0.9rem;
+}}
+.sidebar-brand .eyebrow,
+.sb-section .eyebrow {{
+  color: var(--enel-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}}
+.sidebar-brand strong {{
+  display: block;
+  color: var(--enel-text);
+  font-family: 'Inter Tight', 'Inter', sans-serif;
+  font-size: 1.05rem;
+  line-height: 1.2;
+  margin-top: 0.2rem;
+}}
+.sidebar-brand span {{
+  color: var(--enel-muted);
+  display: block;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin-top: 0.25rem;
+}}
+.sb-section {{
+  align-items: center;
+  border-top: 1px solid var(--enel-border);
+  display: flex;
+  justify-content: space-between;
+  margin: 1rem 0 0.4rem;
+  padding-top: 0.8rem;
+}}
+.sb-section .badge {{
+  border: 1px solid var(--enel-border);
+  border-radius: var(--enel-radius-sm);
+  color: var(--enel-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.14rem 0.42rem;
 }}
 
 /* ===== Plotly fade-in ===== */
