@@ -67,6 +67,9 @@ _INDIVIDUAL_CLIENT_RE = re.compile(
 
 # Boosts determinísticos: cada regra casa a query e injeta cards canônicos na
 # retrieval. Ordem importa — primeiros anchors têm prioridade visual no prompt.
+# CE tem dois universos: (a) cards CE-total com 167k ordens reais e (b) cards
+# CE+SP de erro_leitura rotulado. As regras abaixo casam primeiro os genéricos
+# e depois a extensão CE-total é aplicada separadamente quando região=CE.
 _CARD_BOOST_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
     # Causas-raiz / motivos principais
     (
@@ -130,9 +133,60 @@ _CARD_BOOST_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
 )
 
 
-def detect_card_boosts(question: str) -> list[str]:
-    """Retorna anchors canônicos a forçar em top-N, respeitando ordem de prioridade."""
+# Mapa query-keyword → card CE-total. Aplicado ADICIONALMENTE aos boosts
+# genéricos quando a região detectada é CE (para priorizar o universo de 167k
+# reclamações totais em vez do subset rotulado de erro_leitura).
+_CE_TOTAL_BOOSTS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
+    (
+        re.compile(
+            r"\b(causa|causas|motivo|motivos|principal|principais|assunto|"
+            r"assuntos|tipo de reclama|reclama)\b",
+            re.IGNORECASE,
+        ),
+        ("ce-reclamacoes-totais-assuntos", "ce-reclamacoes-totais-causas"),
+    ),
+    (
+        re.compile(r"\b(refatur\w*|maior taxa|mais refatur\w*|taxa de refatur\w*)\b", re.IGNORECASE),
+        ("ce-reclamacoes-totais-refaturamento",),
+    ),
+    (
+        re.compile(
+            r"\b(mensal|mês|meses|tempo|evolu|série|serie|repete|repetem|"
+            r"ao longo|tendência|tendencia|pico)\b",
+            re.IGNORECASE,
+        ),
+        ("ce-reclamacoes-totais-evolucao",),
+    ),
+    (
+        re.compile(r"\b(grupo|tarifári|tarifario|\bgb\b|\bga\b)\b", re.IGNORECASE),
+        ("ce-reclamacoes-totais-grupo",),
+    ),
+    (
+        re.compile(
+            r"\b(quantas|total|totais|volume|visão geral|visao geral|resumo)\b",
+            re.IGNORECASE,
+        ),
+        ("ce-reclamacoes-totais-overview",),
+    ),
+)
+
+
+def detect_card_boosts(
+    question: str,
+    *,
+    region: Literal["CE", "SP", "CE+SP"] | None = None,
+) -> list[str]:
+    """Retorna anchors canônicos a forçar em top-N, respeitando ordem de prioridade.
+
+    Quando a região detectada é CE, aplica boost CE-total PRIMEIRO para
+    priorizar o universo completo de 167k reclamações sobre o subset rotulado.
+    """
     seen: dict[str, None] = {}
+    if region == "CE":
+        for pattern, anchors in _CE_TOTAL_BOOSTS:
+            if pattern.search(question):
+                for anchor in anchors:
+                    seen.setdefault(anchor, None)
     for pattern, anchors in _CARD_BOOST_RULES:
         if pattern.search(question):
             for anchor in anchors:
@@ -529,7 +583,7 @@ class RagOrchestrator:
 
         # Segundo passo: boost determinístico — cards canônicos forçados no topo
         # quando a intenção da query é claramente identificável por keyword.
-        forced_anchors = detect_card_boosts(query)
+        forced_anchors = detect_card_boosts(query, region=region)
         if forced_anchors:
             forced = self.retriever.get_by_anchors(
                 forced_anchors, dataset_version=dataset_version

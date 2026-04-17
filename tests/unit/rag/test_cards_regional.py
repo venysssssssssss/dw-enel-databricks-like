@@ -144,6 +144,102 @@ def test_regiao_sp_card_mentions_bias_note(tmp_path: Path) -> None:
     assert "viés" in sp.text.lower()
 
 
+def _store_with_total(tmp_path: Path) -> DataStore:
+    silver_path = tmp_path / "silver_total.csv"
+    rows = []
+    for i in range(10):
+        rows.append(
+            {
+                "ordem": f"T{i}",
+                "_source_region": "CE",
+                "_data_type": "reclamacao_total",
+                "dt_ingresso": "2025-06-01",
+                "causa_raiz": "reclamacao_total_sem_causa",
+                "texto_completo": "reclamacao total ce",
+                "flag_resolvido_com_refaturamento": "True" if i < 2 else "False",
+                "has_causa_raiz_label": "False",
+                "instalacao": f"T{i}",
+                "status": "PROCEDENTE",
+                "assunto": "REFATURAMENTO PRODUTOS" if i < 5 else "VARIACAO CONSUMO",
+                "grupo": "B" if i < 9 else "A",
+            }
+        )
+    rows.append(
+        {
+            "ordem": "E1",
+            "_source_region": "CE",
+            "_data_type": "erro_leitura",
+            "dt_ingresso": "2025-06-02",
+            "causa_raiz": "Erro leitura",
+            "texto_completo": "erro",
+            "flag_resolvido_com_refaturamento": "True",
+            "has_causa_raiz_label": "True",
+            "instalacao": "E1",
+            "status": "PROCEDENTE",
+            "assunto": "ERRO LEITURA",
+            "grupo": "B",
+        }
+    )
+    rows.append(
+        {
+            "ordem": "S1",
+            "_source_region": "SP",
+            "_data_type": "base_n1_sp",
+            "dt_ingresso": "2025-07-01",
+            "causa_raiz": "ERRO_LEITURA",
+            "texto_completo": "sp",
+            "flag_resolvido_com_refaturamento": "False",
+            "has_causa_raiz_label": "False",
+            "instalacao": "S1",
+            "status": "ABERTO",
+            "assunto": "ERRO DE LEITURA",
+            "grupo": "B",
+        }
+    )
+    pd.DataFrame(rows).to_csv(silver_path, index=False)
+    return DataStore(
+        silver_path=silver_path,
+        topic_assignments_path=tmp_path / "missing_assignments.csv",
+        topic_taxonomy_path=tmp_path / "missing_taxonomy.json",
+        cache_dir=tmp_path / "cache",
+    )
+
+
+def test_ce_total_cards_present_for_ce_scope(tmp_path: Path) -> None:
+    cards = build_data_cards(_store_with_total(tmp_path), regional_scope="CE")
+    anchors = {c.anchor for c in cards}
+    expected = {
+        "ce-reclamacoes-totais-overview",
+        "ce-reclamacoes-totais-assuntos",
+        "ce-reclamacoes-totais-refaturamento",
+        "ce-reclamacoes-totais-evolucao",
+        "ce-reclamacoes-totais-grupo",
+        "ce-reclamacoes-totais-causas",
+    }
+    assert expected <= anchors
+
+
+def test_ce_total_cards_absent_for_sp_scope(tmp_path: Path) -> None:
+    cards = build_data_cards(_store_with_total(tmp_path), regional_scope="SP")
+    anchors = {c.anchor for c in cards}
+    assert not any(a.startswith("ce-reclamacoes-totais-") for a in anchors)
+
+
+def test_ce_total_cards_all_tagged_ce_region(tmp_path: Path) -> None:
+    cards = build_data_cards(_store_with_total(tmp_path), regional_scope="CE+SP")
+    ce_total = [c for c in cards if c.anchor.startswith("ce-reclamacoes-totais-")]
+    assert ce_total
+    assert all(c.region == "CE" for c in ce_total)
+
+
+def test_ce_total_overview_card_cites_reclamacao_total_universe(tmp_path: Path) -> None:
+    cards = build_data_cards(_store_with_total(tmp_path), regional_scope="CE")
+    overview = next(c for c in cards if c.anchor == "ce-reclamacoes-totais-overview")
+    # O overview de reclamações totais deve cobrir 10 linhas reclamacao_total,
+    # não o subset erro_leitura (1 linha).
+    assert "10" in overview.text
+
+
 def test_ce_sp_scope_cards_have_expected_regions(tmp_path: Path) -> None:
     cards = build_data_cards(_store(tmp_path), regional_scope="CE+SP")
     by_anchor = {card.anchor: card.region for card in cards}

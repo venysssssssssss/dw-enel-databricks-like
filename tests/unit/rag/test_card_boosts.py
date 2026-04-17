@@ -237,6 +237,38 @@ def test_answer_refuses_individual_client_query(tmp_path: Path):
     assert resp.passages == []
 
 
+@pytest.mark.parametrize(
+    "question,expected_anchor",
+    [
+        ("Qual a principal causa de reclamação em CE?", "ce-reclamacoes-totais-assuntos"),
+        ("Quantas reclamações tem em CE?", "ce-reclamacoes-totais-overview"),
+        ("Qual a taxa de refaturamento em CE?", "ce-reclamacoes-totais-refaturamento"),
+        ("Como evoluiu o volume em CE ao longo dos meses?", "ce-reclamacoes-totais-evolucao"),
+        ("Distribuição por grupo tarifário em CE", "ce-reclamacoes-totais-grupo"),
+    ],
+)
+def test_detect_card_boosts_ce_region_prioritizes_ce_total_cards(
+    question: str, expected_anchor: str
+):
+    boosts = detect_card_boosts(question, region="CE")
+    assert expected_anchor in boosts
+    # CE-total boosts devem vir antes dos genéricos
+    ce_total_positions = [i for i, a in enumerate(boosts) if a.startswith("ce-reclamacoes-totais-")]
+    generic_positions = [i for i, a in enumerate(boosts) if not a.startswith("ce-reclamacoes-totais-")]
+    if ce_total_positions and generic_positions:
+        assert max(ce_total_positions) < min(generic_positions)
+
+
+def test_detect_card_boosts_without_region_skips_ce_total():
+    boosts = detect_card_boosts("Quantas reclamações tem em CE?", region=None)
+    assert not any(a.startswith("ce-reclamacoes-totais-") for a in boosts)
+
+
+def test_detect_card_boosts_sp_region_skips_ce_total():
+    boosts = detect_card_boosts("Qual a principal causa em SP?", region="SP")
+    assert not any(a.startswith("ce-reclamacoes-totais-") for a in boosts)
+
+
 def test_answer_budget_caps_tokens_for_latency_sla(tmp_path: Path):
     cfg = _make_config(tmp_path)
     retriever = _FakeRetriever(semantic=[], by_anchor={})

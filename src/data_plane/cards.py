@@ -81,6 +81,11 @@ def build_data_cards(
                 _ce_vs_sp_mensal_card(store.aggregate("monthly_volume")),
             ]
         )
+    if scope in {"CE", "CE+SP"}:
+        # Cards dedicados às reclamações TOTAIS de CE (167k ordens, 20+ assuntos)
+        # — o usuário pode perguntar sobre o universo completo, não só o subset
+        # rotulado de erro_leitura.
+        cards.extend(_ce_total_complaints_cards(store))
 
     source = store.silver_path.as_posix()
     return [
@@ -417,6 +422,194 @@ def _ce_vs_sp_mensal_card(monthly: pd.DataFrame) -> DataCard:
         "Série mensal CE vs SP",
         "\n".join(lines),
         region="CE+SP",
+    )
+
+
+_CE_TOTAL_FILTERS: dict[str, list[str]] = {
+    "regiao": ["CE"],
+    "tipo_origem": ["reclamacao_total"],
+}
+
+
+def _ce_total_complaints_cards(store: DataStore) -> list[DataCard]:
+    """Cards sobre o universo completo de reclamações CE (reclamacao_total).
+
+    O dataset CE tem duas camadas: (a) 4,9k registros rotulados de erro de
+    leitura (usados no dashboard/ML) e (b) 167k reclamações totais 2025-01 →
+    2026-03 cobrindo 20+ assuntos reais (REFATURAMENTO PRODUTOS, CRITICA GRUPO
+    B, VARIAÇÃO DE CONSUMO etc.). Estes cards expõem (b) — que é o que o
+    usuário pergunta quando cita "reclamações em CE".
+    """
+    overview = store.aggregate("overview", _CE_TOTAL_FILTERS, include_total=True)
+    assuntos = store.aggregate("top_assuntos", _CE_TOTAL_FILTERS, include_total=True)
+    refat = store.aggregate("refaturamento_summary", _CE_TOTAL_FILTERS, include_total=True)
+    monthly = store.aggregate("monthly_volume", _CE_TOTAL_FILTERS, include_total=True)
+    groups = store.aggregate("by_group", _CE_TOTAL_FILTERS, include_total=True)
+    causas = store.aggregate("top_causas", _CE_TOTAL_FILTERS, include_total=True)
+
+    return [
+        _ce_total_overview_card(overview),
+        _ce_total_assuntos_card(assuntos),
+        _ce_total_refaturamento_card(refat, assuntos),
+        _ce_total_evolucao_card(monthly),
+        _ce_total_grupo_card(groups),
+        _ce_total_causas_card(causas),
+    ]
+
+
+def _ce_total_overview_card(overview: pd.DataFrame) -> DataCard:
+    if overview.empty:
+        return DataCard(
+            "ce-reclamacoes-totais-overview",
+            "Reclamações totais CE — visão geral",
+            "Sem dados disponíveis.",
+            region="CE",
+        )
+    row = overview.iloc[0]
+    body = (
+        f"Em **CE**, o dataset contém **{_fmt_n(row['total_registros'])} reclamações totais** "
+        f"(tipo_origem=reclamacao_total, cobertura 2025-01 → 2026-03). "
+        f"**{_fmt_pct(float(row['taxa_refaturamento']))}** foram resolvidas com refaturamento. "
+        f"**{_fmt_pct(float(row['taxa_rotulo_origem']))}** têm causa-raiz rotulada pela operação."
+    )
+    return DataCard(
+        "ce-reclamacoes-totais-overview",
+        "Reclamações totais CE — visão geral",
+        body,
+        region="CE",
+    )
+
+
+def _ce_total_assuntos_card(assuntos: pd.DataFrame) -> DataCard:
+    lines = [
+        "**Top assuntos das reclamações totais em CE** "
+        "(universo de 167,6k ordens):",
+        "",
+    ]
+    for row in assuntos.itertuples(index=False):
+        lines.append(
+            f"- **{row.assunto}**: {_fmt_n(row.qtd_ordens)} "
+            f"({_fmt_pct(row.percentual)})"
+        )
+    return DataCard(
+        "ce-reclamacoes-totais-assuntos",
+        "CE — top assuntos (reclamações totais)",
+        "\n".join(lines),
+        region="CE",
+    )
+
+
+def _ce_total_refaturamento_card(
+    summary: pd.DataFrame, assuntos: pd.DataFrame
+) -> DataCard:
+    if summary.empty:
+        return DataCard(
+            "ce-reclamacoes-totais-refaturamento",
+            "CE — refaturamento nas reclamações totais",
+            "Sem dados disponíveis.",
+            region="CE",
+        )
+    row = summary.iloc[0]
+    lines = [
+        f"Em CE, **{_fmt_n(row['refaturadas'])}** "
+        f"({_fmt_pct(float(row['taxa_refaturamento']))}) "
+        f"das {_fmt_n(row['total'])} reclamações totais foram "
+        "**resolvidas com refaturamento**.",
+        "",
+        "**Assuntos com maior volume associado ao tema**:",
+    ]
+    refat_like = assuntos[
+        assuntos["assunto"].astype(str).str.contains("REFAT", case=False, na=False)
+    ].head(6)
+    for row in refat_like.itertuples(index=False):
+        lines.append(
+            f"- {row.assunto}: {_fmt_n(row.qtd_ordens)} "
+            f"({_fmt_pct(row.percentual)})"
+        )
+    return DataCard(
+        "ce-reclamacoes-totais-refaturamento",
+        "CE — refaturamento nas reclamações totais",
+        "\n".join(lines),
+        region="CE",
+    )
+
+
+def _ce_total_evolucao_card(monthly: pd.DataFrame) -> DataCard:
+    if monthly.empty:
+        return DataCard(
+            "ce-reclamacoes-totais-evolucao",
+            "CE — evolução mensal das reclamações totais",
+            "Sem dados mensais disponíveis.",
+            region="CE",
+        )
+    agg = monthly.groupby("mes_ingresso", as_index=False).agg(
+        qtd=("qtd_erros", "sum")
+    )
+    max_val = int(agg["qtd"].max()) or 1
+    lines = ["**Evolução mensal das reclamações totais em CE**:", ""]
+    for row in agg.sort_values("mes_ingresso").itertuples(index=False):
+        month = row.mes_ingresso
+        label = (
+            month.strftime("%Y-%m") if hasattr(month, "strftime") else str(month)[:7]
+        )
+        bar = "#" * max(1, int(int(row.qtd) / max_val * 20))
+        lines.append(f"- `{label}`: {_fmt_n(row.qtd)} {bar}")
+    peak = agg.sort_values("qtd", ascending=False).iloc[0]
+    pm = peak["mes_ingresso"]
+    plabel = pm.strftime("%Y-%m") if hasattr(pm, "strftime") else str(pm)[:7]
+    lines.append("")
+    lines.append(
+        f"Pico em **{plabel}** com {_fmt_n(peak['qtd'])} ordens; "
+        f"série cobre {len(agg)} meses."
+    )
+    return DataCard(
+        "ce-reclamacoes-totais-evolucao",
+        "CE — evolução mensal das reclamações totais",
+        "\n".join(lines),
+        region="CE",
+    )
+
+
+def _ce_total_grupo_card(groups: pd.DataFrame) -> DataCard:
+    lines = ["**Distribuição por grupo tarifário em CE** (reclamações totais):", ""]
+    for row in groups.itertuples(index=False):
+        lines.append(
+            f"- **{row.grupo}**: {_fmt_n(row.qtd_ordens)} "
+            f"({_fmt_pct(row.percentual)})"
+        )
+    return DataCard(
+        "ce-reclamacoes-totais-grupo",
+        "CE — grupo tarifário (reclamações totais)",
+        "\n".join(lines),
+        region="CE",
+    )
+
+
+def _ce_total_causas_card(causas: pd.DataFrame) -> DataCard:
+    labeled = causas[causas["causa_canonica"].astype(str) != "reclamacao_total_sem_causa"]
+    if labeled.empty:
+        return DataCard(
+            "ce-reclamacoes-totais-causas",
+            "CE — causas rotuladas (reclamações totais)",
+            "Sem causas rotuladas no universo total.",
+            region="CE",
+        )
+    total = int(labeled["qtd_ordens"].sum())
+    lines = [
+        f"**Causas-raiz rotuladas entre as reclamações totais de CE** "
+        f"(~{_fmt_n(total)} ordens com rótulo operacional):",
+        "",
+    ]
+    for row in labeled.head(10).itertuples(index=False):
+        lines.append(
+            f"- **{row.causa_canonica}**: {_fmt_n(row.qtd_ordens)} "
+            f"({_fmt_pct(row.qtd_ordens / total)})"
+        )
+    return DataCard(
+        "ce-reclamacoes-totais-causas",
+        "CE — causas rotuladas (reclamações totais)",
+        "\n".join(lines),
+        region="CE",
     )
 
 
