@@ -37,6 +37,12 @@ def build_data_cards(
     refaturamento = store.aggregate("refaturamento_summary", scope_filters)
     monthly = store.aggregate("monthly_volume", scope_filters)
     groups = store.aggregate("by_group", scope_filters)
+    top_installations_regional = store.aggregate("top_instalacoes_por_regional", scope_filters)
+    sazonalidade = store.aggregate("sazonalidade_reclamacoes", scope_filters)
+    reincidencia_assunto = store.aggregate("reincidencia_por_assunto", scope_filters)
+    playbook = store.aggregate("playbook_dificuldade_acoes", scope_filters)
+    sp_causa_obs = store.aggregate("sp_causa_observacoes", {"regiao": ["SP"]})
+    sp_profile = store.aggregate("sp_perfil_assunto_lider", {"regiao": ["SP"]})
     frame = store.load_silver(include_total=False)
 
     cards = [
@@ -51,6 +57,10 @@ def build_data_cards(
         ),
         _monthly_card(monthly, region=scope),
         _grupo_card(groups, region=scope),
+        _instalacoes_por_regional_card(top_installations_regional, region=scope),
+        _sazonalidade_card(sazonalidade, region=scope),
+        _reincidencia_por_assunto_card(reincidencia_assunto, region=scope),
+        _playbook_card(playbook, region=scope),
         _data_quality_notes_card(frame),
     ]
     if scope in {"CE", "CE+SP"}:
@@ -89,6 +99,8 @@ def build_data_cards(
         cards.extend(_ce_mvp_extra_cards(store))
     if scope in {"SP", "CE+SP"}:
         cards.extend(_sp_n1_cards(store))
+        cards.append(_sp_causa_observacoes_card(sp_causa_obs))
+        cards.append(_sp_perfil_assunto_lider_card(sp_profile))
 
     source = store.silver_path.as_posix()
     return [
@@ -288,6 +300,103 @@ def _grupo_card(groups: pd.DataFrame, *, region: str) -> DataCard:
         "grupo-tarifario",
         "Distribuição por grupo tarifário",
         "\n".join(lines),
+        region=region,
+    )
+
+
+def _instalacoes_por_regional_card(data: pd.DataFrame, *, region: str) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "instalacoes-por-regional",
+            "Instalações com mais reclamações por regional",
+            "Sem dados de instalação disponíveis por regional.",
+            region=region,
+        )
+    lines = ["Instalações com maior volume de reclamações por regional:", ""]
+    for reg, group in data.groupby("regiao"):
+        lines.append(f"**{reg}**")
+        for row in group.itertuples(index=False):
+            meter = (
+                f" | medidor: {row.tipo_medidor_dominante}"
+                if getattr(row, "tipo_medidor_dominante", "")
+                else ""
+            )
+            lines.append(
+                f"- `{row.instalacao}`: {_fmt_n(row.qtd_ordens)} ordens "
+                f"(assunto líder: {row.assunto_top}){meter}"
+            )
+        lines.append("")
+    return DataCard(
+        "instalacoes-por-regional",
+        "Instalações com mais reclamações por regional",
+        "\n".join(lines).strip(),
+        region=region,
+    )
+
+
+def _sazonalidade_card(data: pd.DataFrame, *, region: str) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "sazonalidade-ce-sp",
+            "Sazonalidade das reclamações",
+            "Sem dados mensais suficientes para sazonalidade.",
+            region=region,
+        )
+    lines = ["Sazonalidade por regional (pico mensal vs média):", ""]
+    for row in data.itertuples(index=False):
+        lines.append(
+            f"- {row.regiao}: pico em **{row.mes_pico}** com {_fmt_n(row.qtd_pico)} ordens "
+            f"(índice sazonal {row.indice_sazonal_pico:.2f}x da média)."
+        )
+    return DataCard(
+        "sazonalidade-ce-sp",
+        "Sazonalidade das reclamações",
+        "\n".join(lines),
+        region=region,
+    )
+
+
+def _reincidencia_por_assunto_card(data: pd.DataFrame, *, region: str) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "reincidencia-por-assunto",
+            "Reincidência de reclamações por assunto",
+            "Sem dados de reincidência por assunto.",
+            region=region,
+        )
+    lines = ["Reincidência de instalações por assunto (top):", ""]
+    for row in data.head(12).itertuples(index=False):
+        lines.append(
+            f"- **{row.assunto}**: {_fmt_n(row.qtd_instalacoes_reincidentes)} instalações "
+            f"reincidentes de {_fmt_n(row.qtd_instalacoes)} "
+            f"({100.0 * float(row.taxa_reincidencia):.1f}%)."
+        )
+    return DataCard(
+        "reincidencia-por-assunto",
+        "Reincidência de reclamações por assunto",
+        "\n".join(lines),
+        region=region,
+    )
+
+
+def _playbook_card(data: pd.DataFrame, *, region: str) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "playbook-acoes-cliente",
+            "Dificuldade principal e medidas recomendadas",
+            "Sem sinal suficiente para sugerir medidas operacionais.",
+            region=region,
+        )
+    row = data.iloc[0]
+    body = (
+        f"Dificuldade principal observada: **{row['dificuldade_principal']}**.\n\n"
+        f"Medida recomendada: **{row['medida_recomendada']}**.\n"
+        f"Prioridade sugerida: **{row['prioridade']}**."
+    )
+    return DataCard(
+        "playbook-acoes-cliente",
+        "Dificuldade principal e medidas recomendadas",
+        body,
         region=region,
     )
 
@@ -852,6 +961,55 @@ def _sp_grupo_card(groups: pd.DataFrame) -> DataCard:
     )
 
 
+def _sp_causa_observacoes_card(data: pd.DataFrame) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "sp-causa-observacoes",
+            "SP — causa-raiz evidenciada nas observações",
+            "Sem evidência textual disponível para inferência de causa em SP.",
+            region="SP",
+        )
+    row = data.iloc[0]
+    body = (
+        f"Em SP, a causa-raiz mais evidenciada nas observações é **{row['causa_lider']}** "
+        f"com {_fmt_n(row['qtd_ordens'])} ordens ({_fmt_pct(float(row['percentual']))}).\n\n"
+        f"Assunto associado mais frequente: **{row['assunto_top']}**.\n"
+        f"Exemplos de observação: {row['observacoes_exemplo'] or '(não disponível)'}"
+    )
+    return DataCard(
+        "sp-causa-observacoes",
+        "SP — causa-raiz evidenciada nas observações",
+        body,
+        region="SP",
+    )
+
+
+def _sp_perfil_assunto_lider_card(data: pd.DataFrame) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "sp-perfil-assunto-lider",
+            "SP — perfil do assunto mais reclamado",
+            "Sem dados suficientes para perfil detalhado do assunto líder em SP.",
+            region="SP",
+        )
+    row = data.iloc[0]
+    body = (
+        f"No assunto líder de SP (**{row['assunto_lider']}**, {_fmt_n(row['qtd_ordens'])} ordens), "
+        f"o perfil agregado indica: mês de fatura mais reclamado **{row['fat_reclamada_top'] or 'n/d'}**, "
+        f"tempo médio emissão→reclamação **{float(row['dias_emissao_ate_reclamacao_medio']):.1f} dias**, "
+        f"tipo de medidor predominante **{row['tipo_medidor_dominante'] or 'n/d'}**, "
+        f"valor médio da fatura reclamada **R$ {float(row['valor_fatura_reclamada_medio']):.2f}**.\n\n"
+        f"Cobertura do perfil: fatura {100.0 * float(row['cobertura_fatura_pct']):.1f}% "
+        f"| medidor {100.0 * float(row['cobertura_medidor_pct']):.1f}%."
+    )
+    return DataCard(
+        "sp-perfil-assunto-lider",
+        "SP — perfil do assunto mais reclamado",
+        body,
+        region="SP",
+    )
+
+
 def _top_instalacoes_card(
     top_inst: pd.DataFrame,
     *,
@@ -884,9 +1042,14 @@ def _top_instalacoes_card(
     ]
     for row in top_inst.head(20).itertuples(index=False):
         assunto = str(row.assunto_top) if row.assunto_top else "(n/d)"
+        meter = (
+            f", medidor {row.tipo_medidor_dominante}"
+            if hasattr(row, "tipo_medidor_dominante") and row.tipo_medidor_dominante
+            else ""
+        )
         lines.append(
             f"- `{row.instalacao}`: {_fmt_n(row.qtd_ordens)} ordens — "
-            f"{assunto} (refatur {_fmt_pct(float(row.taxa_refaturamento))})"
+            f"{assunto}{meter} (refatur {_fmt_pct(float(row.taxa_refaturamento))})"
         )
     return DataCard(anchor, title, "\n".join(lines), region=region)
 

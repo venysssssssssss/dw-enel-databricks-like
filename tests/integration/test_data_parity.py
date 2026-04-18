@@ -48,6 +48,8 @@ def _store(tmp_path: Path) -> DataStore:
         silver_path=silver_path,
         topic_assignments_path=tmp_path / "missing_assignments.csv",
         topic_taxonomy_path=tmp_path / "missing_taxonomy.json",
+        medidor_sp_path=tmp_path / "missing_medidor.csv",
+        fatura_sp_path=tmp_path / "missing_fatura.xlsx",
         cache_dir=tmp_path / "cache",
     )
 
@@ -64,5 +66,5 @@ def test_bi_aggregations_and_rag_cards_share_numbers_and_version(tmp_path: Path)
     assert {row["regiao"]: row["qtd_ordens"] for row in by_region} == {"CE": 1, "SP": 1}
     assert {card.dataset_version for card in cards} == {version.hash}
     assert "2 ordens" in card_text
-    assert "Região **CE** concentra **1 ordens**" in card_text
-    assert "Região **SP** concentra **1 ordens**" in card_text
+    assert "Reclamações na região CE" in card_text
+    assert "Reclamações na região SP" in card_text

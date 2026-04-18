@@ -66,6 +66,8 @@ def test_data_store_aggregates_from_prepared_silver(tmp_path: Path) -> None:
         silver_path=silver_path,
         topic_assignments_path=tmp_path / "missing_assignments.csv",
         topic_taxonomy_path=tmp_path / "missing_taxonomy.json",
+        medidor_sp_path=tmp_path / "missing_medidor.csv",
+        fatura_sp_path=tmp_path / "missing_fatura.xlsx",
         cache_dir=tmp_path / "cache",
     )
 
@@ -92,6 +94,8 @@ def test_data_store_cards_share_dataset_version(tmp_path: Path) -> None:
         silver_path=silver_path,
         topic_assignments_path=tmp_path / "missing_assignments.csv",
         topic_taxonomy_path=tmp_path / "missing_taxonomy.json",
+        medidor_sp_path=tmp_path / "missing_medidor.csv",
+        fatura_sp_path=tmp_path / "missing_fatura.xlsx",
         cache_dir=tmp_path / "cache",
     )
 

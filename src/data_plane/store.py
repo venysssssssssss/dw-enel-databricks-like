@@ -10,11 +10,17 @@ from typing import Any
 
 import pandas as pd
 
+from src.data_plane.enrichment import (
+    build_fatura_profile,
+    build_medidor_profile,
+)
 from src.data_plane.versioning import DatasetVersion
 from src.data_plane.views import get_view
 from src.viz.cache import load_or_build_disk_cache
 from src.viz.erro_leitura_dashboard_data import (
     DASHBOARD_SILVER_COLUMNS,
+    DEFAULT_FATURA_SP_PATH,
+    DEFAULT_MEDIDOR_SP_PATH,
     DEFAULT_SILVER_PATH,
     DEFAULT_TOPIC_ASSIGNMENTS_PATH,
     DEFAULT_TOPIC_TAXONOMY_PATH,
@@ -28,6 +34,8 @@ class DataStore:
     silver_path: Path = DEFAULT_SILVER_PATH
     topic_assignments_path: Path = DEFAULT_TOPIC_ASSIGNMENTS_PATH
     topic_taxonomy_path: Path = DEFAULT_TOPIC_TAXONOMY_PATH
+    medidor_sp_path: Path = DEFAULT_MEDIDOR_SP_PATH
+    fatura_sp_path: Path = DEFAULT_FATURA_SP_PATH
     cache_dir: Path = Path(".streamlit/cache")
     default_regions: tuple[str, ...] = ("CE", "SP")
 
@@ -37,6 +45,8 @@ class DataStore:
                 self.silver_path,
                 self.topic_assignments_path,
                 self.topic_taxonomy_path,
+                self.medidor_sp_path,
+                self.fatura_sp_path,
             )
         )
 
@@ -86,8 +96,15 @@ class DataStore:
             low_memory=False,
             usecols=lambda column: column in DASHBOARD_SILVER_COLUMNS,
         )
+        medidor_profile = build_medidor_profile(self.medidor_sp_path)
+        fatura_profile = build_fatura_profile(self.fatura_sp_path)
         if include_total:
-            training_frame = self._prepare_frame(silver, include_total=False)
+            training_frame = self._prepare_frame(
+                silver,
+                include_total=False,
+                medidor_profile=medidor_profile,
+                fatura_profile=fatura_profile,
+            )
             total_silver = silver.loc[~silver["_data_type"].isin(TRAINING_DATA_TYPES)].copy()
             if total_silver.empty:
                 return training_frame
@@ -95,16 +112,32 @@ class DataStore:
                 total_silver,
                 topic_assignments=None,
                 topic_taxonomy=None,
+                medidor_profile=medidor_profile,
+                fatura_profile=fatura_profile,
                 include_total=True,
             )
             return pd.concat([training_frame, total_frame], ignore_index=True)
-        return self._prepare_frame(silver, include_total=False)
+        return self._prepare_frame(
+            silver,
+            include_total=False,
+            medidor_profile=medidor_profile,
+            fatura_profile=fatura_profile,
+        )
 
-    def _prepare_frame(self, silver: pd.DataFrame, *, include_total: bool) -> pd.DataFrame:
+    def _prepare_frame(
+        self,
+        silver: pd.DataFrame,
+        *,
+        include_total: bool,
+        medidor_profile: pd.DataFrame | None = None,
+        fatura_profile: pd.DataFrame | None = None,
+    ) -> pd.DataFrame:
         return prepare_dashboard_frame(
             silver,
             topic_assignments=_read_optional_csv(self.topic_assignments_path),
             topic_taxonomy=_read_optional_json(self.topic_taxonomy_path),
+            medidor_profile=medidor_profile,
+            fatura_profile=fatura_profile,
             include_total=include_total,
         )
 

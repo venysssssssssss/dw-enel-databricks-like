@@ -1,0 +1,21 @@
+source:
+  name: medidor_sp
+  type: csv
+  path: DESCRICOES_ENEL/medidor_20260417_20260416T090000.csv
+  encoding: utf-8
+  delimiter: ","
+  has_header: true
+schema:
+  - {name: instalacao, type: string, nullable: false}
+  - {name: equipamento, type: string, nullable: true}
+  - {name: grp_reg, type: string, nullable: true}
+  - {name: tipo, type: string, nullable: true}
+ingestion:
+  strategy: snapshot
+  partition_by: grp_reg
+  dedup_key: [instalacao, equipamento]
+  dedup_order: _ingested_at
+quality:
+  min_rows: 1
+  max_null_pct: 0.3
+  critical_columns: [instalacao]

@@ -55,6 +55,14 @@ FILTER_FIELDS = (
 )
 
 
+def _mode_text(series: pd.Series) -> str:
+    values = series.dropna().astype(str).str.strip()
+    values = values.loc[values.ne("")]
+    if values.empty:
+        return ""
+    return values.value_counts().index[0]
+
+
 def kpis_view(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame([asdict(compute_kpis(frame))])
 
@@ -128,7 +136,15 @@ def refaturamento_summary_view(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def top_instalacoes_view(frame: pd.DataFrame, *, limit: int = 20) -> pd.DataFrame:
-    cols = ["instalacao", "qtd_ordens", "assunto_top", "causa_top", "taxa_refaturamento"]
+    cols = [
+        "instalacao",
+        "qtd_ordens",
+        "assunto_top",
+        "causa_top",
+        "taxa_refaturamento",
+        "tipo_medidor_dominante",
+        "instalacao_multi_tipo",
+    ]
     if frame.empty or "instalacao" not in frame.columns:
         return pd.DataFrame(columns=cols)
     sub = frame.loc[frame["instalacao"].notna()].copy()
@@ -139,26 +155,49 @@ def top_instalacoes_view(frame: pd.DataFrame, *, limit: int = 20) -> pd.DataFram
     flag = sub["flag_resolvido_com_refaturamento"].fillna(False).astype(bool)
     sub = sub.assign(_refat=flag)
 
-    def _mode(series: pd.Series) -> str:
-        series = series.dropna().astype(str)
-        series = series.loc[series.str.strip().ne("")]
-        if series.empty:
-            return ""
-        return series.value_counts().index[0]
-
     grouped = (
         sub.groupby("instalacao", as_index=False)
         .agg(
             qtd_ordens=("ordem", "nunique"),
-            assunto_top=("assunto", _mode),
-            causa_top=("causa_canonica", _mode),
+            assunto_top=("assunto", _mode_text),
+            causa_top=("causa_canonica", _mode_text),
             taxa_refaturamento=("_refat", "mean"),
+            tipo_medidor_dominante=("tipo_medidor_dominante", _mode_text),
+            instalacao_multi_tipo=("instalacao_multi_tipo", "max"),
         )
         .sort_values("qtd_ordens", ascending=False)
         .head(limit)
         .reset_index(drop=True)
     )
     return grouped[cols]
+
+
+def top_instalacoes_por_regional_view(
+    frame: pd.DataFrame, *, limit_per_region: int = 5
+) -> pd.DataFrame:
+    cols = ["regiao", "instalacao", "qtd_ordens", "assunto_top", "tipo_medidor_dominante"]
+    if frame.empty or "instalacao" not in frame.columns or "regiao" not in frame.columns:
+        return pd.DataFrame(columns=cols)
+    sub = frame.copy()
+    sub["instalacao"] = sub["instalacao"].fillna("").astype(str).str.strip()
+    sub = sub.loc[sub["instalacao"].ne("")]
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    grouped = (
+        sub.groupby(["regiao", "instalacao"], as_index=False)
+        .agg(
+            qtd_ordens=("ordem", "nunique"),
+            assunto_top=("assunto", _mode_text),
+            tipo_medidor_dominante=("tipo_medidor_dominante", _mode_text),
+        )
+        .sort_values(["regiao", "qtd_ordens"], ascending=[True, False])
+    )
+    top = (
+        grouped.groupby("regiao", as_index=False, group_keys=False)
+        .head(limit_per_region)
+        .reset_index(drop=True)
+    )
+    return top[cols]
 
 
 def monthly_assunto_breakdown_view(
@@ -219,6 +258,245 @@ def monthly_causa_breakdown_view(
     months = sorted(grouped["mes_ingresso"].dropna().unique())[-max_months:]
     grouped = grouped.loc[grouped["mes_ingresso"].isin(months)]
     return grouped.sort_values(["mes_ingresso", "rank"]).reset_index(drop=True)[cols]
+
+
+def sp_causa_observacoes_view(frame: pd.DataFrame, *, sample_size: int = 3) -> pd.DataFrame:
+    cols = [
+        "regiao",
+        "causa_lider",
+        "qtd_ordens",
+        "percentual",
+        "assunto_top",
+        "observacoes_exemplo",
+    ]
+    if frame.empty or "regiao" not in frame.columns or "causa_canonica" not in frame.columns:
+        return pd.DataFrame(columns=cols)
+    sp = frame.loc[frame["regiao"].astype(str) == "SP"].copy()
+    if sp.empty:
+        return pd.DataFrame(columns=cols)
+    counts = (
+        sp.groupby("causa_canonica", as_index=False)
+        .agg(qtd_ordens=("ordem", "nunique"))
+        .sort_values("qtd_ordens", ascending=False)
+    )
+    labeled = counts.loc[~counts["causa_canonica"].astype(str).str.casefold().eq("indefinido")]
+    chosen = labeled.iloc[0] if not labeled.empty else counts.iloc[0]
+    cause = str(chosen["causa_canonica"])
+    qtd = int(chosen["qtd_ordens"])
+    total = max(int(sp["ordem"].nunique()), 1)
+    cause_rows = sp.loc[sp["causa_canonica"].astype(str) == cause]
+    assunto_top = _mode_text(cause_rows.get("assunto", pd.Series(dtype=str)))
+    obs = (
+        cause_rows.get("texto_completo", pd.Series(dtype=str))
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+    obs = obs.loc[obs.ne("")].drop_duplicates().head(sample_size)
+    snippets = " | ".join(text[:180] for text in obs.tolist()) if not obs.empty else ""
+    return pd.DataFrame(
+        [
+            {
+                "regiao": "SP",
+                "causa_lider": cause,
+                "qtd_ordens": qtd,
+                "percentual": qtd / total,
+                "assunto_top": assunto_top,
+                "observacoes_exemplo": snippets,
+            }
+        ]
+    )
+
+
+def sp_perfil_assunto_lider_view(frame: pd.DataFrame) -> pd.DataFrame:
+    cols = [
+        "regiao",
+        "assunto_lider",
+        "qtd_ordens",
+        "percentual",
+        "fat_reclamada_top",
+        "dias_emissao_ate_reclamacao_medio",
+        "tipo_medidor_dominante",
+        "valor_fatura_reclamada_medio",
+        "cobertura_fatura_pct",
+        "cobertura_medidor_pct",
+    ]
+    if frame.empty or "regiao" not in frame.columns or "assunto" not in frame.columns:
+        return pd.DataFrame(columns=cols)
+    sp = frame.loc[frame["regiao"].astype(str) == "SP"].copy()
+    if sp.empty:
+        return pd.DataFrame(columns=cols)
+    topic = (
+        sp.groupby("assunto", as_index=False)
+        .agg(qtd_ordens=("ordem", "nunique"))
+        .sort_values("qtd_ordens", ascending=False)
+    )
+    if topic.empty:
+        return pd.DataFrame(columns=cols)
+    lead = topic.iloc[0]
+    assunto = str(lead["assunto"])
+    qtd = int(lead["qtd_ordens"])
+    total = max(int(sp["ordem"].nunique()), 1)
+    sub = sp.loc[sp["assunto"].astype(str) == assunto]
+    return pd.DataFrame(
+        [
+            {
+                "regiao": "SP",
+                "assunto_lider": assunto,
+                "qtd_ordens": qtd,
+                "percentual": qtd / total,
+                "fat_reclamada_top": _mode_text(sub.get("fat_reclamada_top", pd.Series(dtype=str))),
+                "dias_emissao_ate_reclamacao_medio": float(
+                    pd.to_numeric(
+                        sub.get("dias_emissao_ate_reclamacao_medio", pd.Series(dtype=float)),
+                        errors="coerce",
+                    ).mean()
+                )
+                if not sub.empty
+                else 0.0,
+                "tipo_medidor_dominante": _mode_text(
+                    sub.get("tipo_medidor_dominante", pd.Series(dtype=str))
+                ),
+                "valor_fatura_reclamada_medio": float(
+                    pd.to_numeric(
+                        sub.get("valor_fatura_reclamada_medio", pd.Series(dtype=float)),
+                        errors="coerce",
+                    ).mean()
+                )
+                if not sub.empty
+                else 0.0,
+                "cobertura_fatura_pct": float(sub.get("perfil_fatura_disponivel", pd.Series(False)).mean()),
+                "cobertura_medidor_pct": float(sub.get("perfil_medidor_disponivel", pd.Series(False)).mean()),
+            }
+        ]
+    )
+
+
+def sazonalidade_reclamacoes_view(frame: pd.DataFrame) -> pd.DataFrame:
+    cols = [
+        "regiao",
+        "mes_pico",
+        "qtd_pico",
+        "media_mensal",
+        "indice_sazonal_pico",
+    ]
+    if frame.empty or "mes_ingresso" not in frame.columns or "regiao" not in frame.columns:
+        return pd.DataFrame(columns=cols)
+    monthly = (
+        frame.dropna(subset=["mes_ingresso"])
+        .groupby(["regiao", "mes_ingresso"], as_index=False)
+        .agg(qtd_ordens=("ordem", "nunique"))
+    )
+    if monthly.empty:
+        return pd.DataFrame(columns=cols)
+    rows: list[dict[str, object]] = []
+    for region, group in monthly.groupby("regiao"):
+        group = group.sort_values("mes_ingresso")
+        peak = group.sort_values("qtd_ordens", ascending=False).iloc[0]
+        mean = float(group["qtd_ordens"].mean()) if not group.empty else 0.0
+        peak_month = peak["mes_ingresso"]
+        label = peak_month.strftime("%Y-%m") if hasattr(peak_month, "strftime") else str(peak_month)[:7]
+        rows.append(
+            {
+                "regiao": region,
+                "mes_pico": label,
+                "qtd_pico": int(peak["qtd_ordens"]),
+                "media_mensal": mean,
+                "indice_sazonal_pico": (int(peak["qtd_ordens"]) / mean) if mean else 0.0,
+            }
+        )
+    return pd.DataFrame(rows, columns=cols).sort_values("regiao").reset_index(drop=True)
+
+
+def reincidencia_por_assunto_view(frame: pd.DataFrame, *, limit: int = 12) -> pd.DataFrame:
+    cols = [
+        "assunto",
+        "qtd_ordens",
+        "qtd_instalacoes",
+        "qtd_instalacoes_reincidentes",
+        "taxa_reincidencia",
+    ]
+    if frame.empty or "assunto" not in frame.columns or "instalacao" not in frame.columns:
+        return pd.DataFrame(columns=cols)
+    sub = frame.copy()
+    sub["instalacao"] = sub["instalacao"].fillna("").astype(str).str.strip()
+    sub["assunto"] = sub["assunto"].fillna("").astype(str).str.strip()
+    sub = sub.loc[sub["instalacao"].ne("") & sub["assunto"].ne("")]
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+
+    counts = (
+        sub.groupby(["assunto", "instalacao"], as_index=False)
+        .agg(qtd_ordens_instalacao=("ordem", "nunique"))
+    )
+    agg = (
+        counts.groupby("assunto", as_index=False)
+        .agg(
+            qtd_instalacoes=("instalacao", "nunique"),
+            qtd_instalacoes_reincidentes=("qtd_ordens_instalacao", lambda s: int((s >= 2).sum())),
+        )
+    )
+    ordens = sub.groupby("assunto", as_index=False).agg(qtd_ordens=("ordem", "nunique"))
+    out = ordens.merge(agg, on="assunto", how="left")
+    out["taxa_reincidencia"] = (
+        out["qtd_instalacoes_reincidentes"] / out["qtd_instalacoes"].replace(0, 1)
+    )
+    return (
+        out.sort_values(["taxa_reincidencia", "qtd_instalacoes_reincidentes"], ascending=[False, False])
+        .head(limit)
+        .reset_index(drop=True)[cols]
+    )
+
+
+_ACTION_PLAYBOOK: tuple[tuple[str, str, str], ...] = (
+    ("refatur", "Revisar regra e comunicação de faturamento", "Alta"),
+    ("leitura", "Priorizar inspeção de medição e tratativa de leitura", "Alta"),
+    ("grupo", "Auditar enquadramento tarifário e histórico de mudanças", "Média"),
+    ("estimativa", "Reduzir estimativas com coleta e validação adicional", "Média"),
+    ("fatura", "Aprimorar jornada de emissão/entrega e contestação", "Média"),
+)
+
+
+def playbook_dificuldade_acoes_view(frame: pd.DataFrame) -> pd.DataFrame:
+    cols = ["dificuldade_principal", "medida_recomendada", "prioridade"]
+    if frame.empty or "assunto" not in frame.columns or "causa_canonica" not in frame.columns:
+        return pd.DataFrame(columns=cols)
+    top_assunto = (
+        frame.groupby("assunto", as_index=False)
+        .agg(qtd=("ordem", "nunique"))
+        .sort_values("qtd", ascending=False)
+    )
+    top_causa = (
+        frame.groupby("causa_canonica", as_index=False)
+        .agg(qtd=("ordem", "nunique"))
+        .sort_values("qtd", ascending=False)
+    )
+    assunto = str(top_assunto.iloc[0]["assunto"]) if not top_assunto.empty else ""
+    causa = str(top_causa.iloc[0]["causa_canonica"]) if not top_causa.empty else ""
+    text = f"{assunto} {causa}".lower()
+
+    for pattern, action, priority in _ACTION_PLAYBOOK:
+        if pattern in text:
+            return pd.DataFrame(
+                [
+                    {
+                        "dificuldade_principal": f"{assunto} / {causa}".strip(" /"),
+                        "medida_recomendada": action,
+                        "prioridade": priority,
+                    }
+                ],
+                columns=cols,
+            )
+    return pd.DataFrame(
+        [
+            {
+                "dificuldade_principal": f"{assunto} / {causa}".strip(" /"),
+                "medida_recomendada": "Investigar raiz operacional e ajustar playbook local",
+                "prioridade": "Média",
+            }
+        ],
+        columns=cols,
+    )
 
 
 def by_group_view(frame: pd.DataFrame, *, limit: int = 6) -> pd.DataFrame:
@@ -326,6 +604,13 @@ VIEW_REGISTRY: dict[str, ViewSpec] = {
         FILTER_FIELDS,
         top_instalacoes_view,
     ),
+    "top_instalacoes_por_regional": ViewSpec(
+        "top_instalacoes_por_regional",
+        ("regiao", "instalacao"),
+        ("qtd_ordens",),
+        FILTER_FIELDS,
+        top_instalacoes_por_regional_view,
+    ),
     "monthly_assunto_breakdown": ViewSpec(
         "monthly_assunto_breakdown",
         ("mes_ingresso", "assunto"),
@@ -339,6 +624,41 @@ VIEW_REGISTRY: dict[str, ViewSpec] = {
         ("qtd_ordens", "rank"),
         FILTER_FIELDS,
         monthly_causa_breakdown_view,
+    ),
+    "sp_causa_observacoes": ViewSpec(
+        "sp_causa_observacoes",
+        ("regiao", "causa_lider"),
+        ("qtd_ordens", "percentual"),
+        FILTER_FIELDS,
+        sp_causa_observacoes_view,
+    ),
+    "sp_perfil_assunto_lider": ViewSpec(
+        "sp_perfil_assunto_lider",
+        ("regiao", "assunto_lider"),
+        ("qtd_ordens", "percentual"),
+        FILTER_FIELDS,
+        sp_perfil_assunto_lider_view,
+    ),
+    "sazonalidade_reclamacoes": ViewSpec(
+        "sazonalidade_reclamacoes",
+        ("regiao", "mes_pico"),
+        ("qtd_pico", "indice_sazonal_pico"),
+        FILTER_FIELDS,
+        sazonalidade_reclamacoes_view,
+    ),
+    "reincidencia_por_assunto": ViewSpec(
+        "reincidencia_por_assunto",
+        ("assunto",),
+        ("qtd_instalacoes_reincidentes", "taxa_reincidencia"),
+        FILTER_FIELDS,
+        reincidencia_por_assunto_view,
+    ),
+    "playbook_dificuldade_acoes": ViewSpec(
+        "playbook_dificuldade_acoes",
+        ("dificuldade_principal",),
+        ("prioridade",),
+        FILTER_FIELDS,
+        playbook_dificuldade_acoes_view,
     ),
 }
 

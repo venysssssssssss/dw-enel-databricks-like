@@ -1,0 +1,24 @@
+source:
+  name: fatura_reclamada_sp
+  type: excel
+  path: DESCRICOES_ENEL/DADOS_FATURA_SP_ORDENS001.XLSX
+  encoding: utf-8
+  delimiter: ";"
+  has_header: true
+schema:
+  - {name: id_reclamacao, source_name: ID_RECLAMACAO, type: string, nullable: false}
+  - {name: doc_impressao, source_name: DOC_IMPRESSAO, type: string, nullable: true}
+  - {name: valor_fat_reclamada, source_name: VALOR_FAT RECLMADA, type: decimal(12,2), nullable: true}
+  - {name: fat_reclamada, source_name: FAT_RECLAMADA, type: string, nullable: true}
+  - {name: data_emissao_fat, source_name: DATA_EMISSSAO_FAT, type: timestamp, nullable: true}
+  - {name: data_vencimento, source_name: DATA_VENCIMENTO, type: timestamp, nullable: true}
+  - {name: data_reclamacao, source_name: DATA RECLAMACAO, type: timestamp, nullable: true}
+ingestion:
+  strategy: snapshot
+  partition_by: fat_reclamada
+  dedup_key: [id_reclamacao, doc_impressao]
+  dedup_order: _ingested_at
+quality:
+  min_rows: 1
+  max_null_pct: 0.4
+  critical_columns: [id_reclamacao]

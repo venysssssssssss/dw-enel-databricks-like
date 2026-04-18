@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.data_plane.enrichment import apply_enrichment
 from src.ml.models.erro_leitura_classifier import (
     KeywordErroLeituraClassifier,
     canonical_label,
@@ -20,6 +21,8 @@ from src.ml.models.erro_leitura_classifier import (
 DEFAULT_SILVER_PATH = Path("data/silver/erro_leitura_normalizado.csv")
 DEFAULT_TOPIC_ASSIGNMENTS_PATH = Path("data/model_registry/erro_leitura/topic_assignments.csv")
 DEFAULT_TOPIC_TAXONOMY_PATH = Path("data/model_registry/erro_leitura/topic_taxonomy.json")
+DEFAULT_MEDIDOR_SP_PATH = Path("DESCRICOES_ENEL/medidor_20260417_20260416T090000.csv")
+DEFAULT_FATURA_SP_PATH = Path("DESCRICOES_ENEL/DADOS_FATURA_SP_ORDENS001.XLSX")
 TRAINING_DATA_TYPES = {"erro_leitura", "base_n1_sp"}
 KEYWORD_LABEL_CACHE_VERSION = "keyword-v1"
 MAX_TAXONOMY_EXAMPLE_CHARS = 420
@@ -36,6 +39,8 @@ DASHBOARD_SILVER_COLUMNS = {
     "status",
     "assunto",
     "grupo",
+    "observacao_ordem",
+    "devolutiva",
 }
 
 
@@ -131,6 +136,8 @@ def prepare_dashboard_frame(
     *,
     topic_assignments: pd.DataFrame | None = None,
     topic_taxonomy: pd.DataFrame | None = None,
+    medidor_profile: pd.DataFrame | None = None,
+    fatura_profile: pd.DataFrame | None = None,
     include_total: bool = False,
 ) -> pd.DataFrame:
     required = {"ordem", "_source_region", "_data_type", "dt_ingresso"}
@@ -153,6 +160,10 @@ def prepare_dashboard_frame(
     frame["has_causa_raiz_label"] = _to_bool(
         frame.get("has_causa_raiz_label", pd.Series(False, index=frame.index))
     )
+    frame["instalacao"] = frame.get(
+        "instalacao",
+        pd.Series("", index=frame.index),
+    ).fillna("").astype(str)
     frame["instalacao_hash"] = frame.get(
         "instalacao",
         pd.Series("", index=frame.index),
@@ -177,6 +188,12 @@ def prepare_dashboard_frame(
         frame["topic_name"] = "sem_topico"
         frame["topic_keywords"] = ""
 
+    frame = apply_enrichment(
+        frame,
+        medidor_profile=medidor_profile,
+        fatura_profile=fatura_profile,
+    )
+
     frame["topic_name"] = frame["topic_name"].fillna("sem_topico")
     frame["topic_keywords"] = frame["topic_keywords"].fillna("")
     columns = [
@@ -189,9 +206,25 @@ def prepare_dashboard_frame(
         "status",
         "assunto",
         "grupo",
+        "instalacao",
         "flag_resolvido_com_refaturamento",
         "has_causa_raiz_label",
         "instalacao_hash",
+        "texto_completo",
+        "observacao_ordem",
+        "devolutiva",
+        "tipo_medidor_dominante",
+        "instalacao_multi_tipo",
+        "equipamentos_unicos",
+        "tipos_distintos",
+        "valor_fatura_reclamada_medio",
+        "valor_fatura_reclamada_max",
+        "dias_emissao_ate_reclamacao_medio",
+        "dias_vencimento_ate_reclamacao_medio",
+        "fat_reclamada_top",
+        "qtd_faturas_reclamadas",
+        "perfil_fatura_disponivel",
+        "perfil_medidor_disponivel",
         "topic_id",
         "topic_name",
         "topic_keywords",
