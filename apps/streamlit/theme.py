@@ -679,12 +679,14 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   filter: brightness(1.06);
   transform: translateY(-1px);
 }}
-/* Disabled — nítido (fix: "botão sumindo") */
+/* Disabled — nítido em light+dark.
+   Uses transparent background + dashed border so it reads as "not interactive"
+   without disappearing into the page background in dark mode. */
 .stButton > button:disabled,
 .stButton > button[disabled] {{
-  background: var(--surface-3) !important;
-  color: var(--text-dim) !important;
-  border: 1px solid var(--border-strong) !important;
+  background: transparent !important;
+  color: var(--text-faint) !important;
+  border: 1px dashed var(--border-strong) !important;
   opacity: 1 !important;
   box-shadow: none !important;
   cursor: not-allowed !important;
@@ -692,7 +694,8 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 }}
 .stButton > button:disabled p,
 .stButton > button:disabled span {{
-  color: var(--text-dim) !important;
+  color: var(--text-faint) !important;
+  font-weight: 500 !important;
 }}
 
 /* Download + form submit inherit from stButton */
