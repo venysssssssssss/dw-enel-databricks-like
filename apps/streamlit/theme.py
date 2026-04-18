@@ -587,13 +587,22 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   font-size: 11px !important;
 }}
 
-/* ===== Plotly fade-in ===== */
-.js-plotly-plot {{
+/* ===== Animations — Sprint 17.3 ===== */
+.js-plotly-plot,
+[data-testid="stMetric"],
+[data-baseweb="tab-panel"] > div {{
   animation: enelFade 320ms var(--ease) both;
 }}
 @keyframes enelFade {{
   from {{ opacity: 0; transform: translateY(8px); }}
   to {{ opacity: 1; transform: translateY(0); }}
+}}
+@media (prefers-reduced-motion: reduce) {{
+  *, *::before, *::after {{
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }}
 }}
 
 /* ===== Dataframe polish ===== */
@@ -603,37 +612,97 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   border: 1px solid var(--border);
 }}
 
-/* ===== Buttons ===== */
+/* ===== Buttons — reforçados (Sprint 17.3) ===== */
 .stButton > button {{
-  border-radius: 8px !important;
-  border: 1px solid var(--border) !important;
+  border-radius: var(--r-md) !important;
+  border: 1px solid var(--border-strong) !important;
   background: var(--surface) !important;
   color: var(--text) !important;
-  font-weight: 600;
-  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+  font-weight: 600 !important;
+  font-family: var(--font-body) !important;
+  letter-spacing: 0.01em;
+  padding: 0.55rem 1.05rem !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: transform 160ms var(--ease),
+              box-shadow 180ms var(--ease),
+              border-color 160ms var(--ease),
+              background 160ms var(--ease);
 }}
 .stButton > button p,
-.stButton > button span {{
+.stButton > button span,
+.stButton > button div {{
   color: var(--text) !important;
+  font-weight: 600 !important;
 }}
 .stButton > button:hover {{
   transform: translateY(-1px);
-  background: color-mix(in srgb, var(--surface) 88%, var(--enel-secondary) 12%)
-    !important;
+  background: var(--accent-soft) !important;
   color: var(--text) !important;
   border-color: var(--accent) !important;
-  box-shadow: 0 8px 18px var(--accent-ring);
+  box-shadow: 0 10px 22px var(--accent-ring) !important;
+}}
+.stButton > button:hover p,
+.stButton > button:hover span,
+.stButton > button:hover div {{
+  color: var(--accent) !important;
+}}
+.stButton > button:active {{
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm) !important;
 }}
 .stButton > button:focus-visible {{
   outline: 3px solid var(--accent-ring) !important;
   outline-offset: 2px !important;
 }}
+/* Primary CTA (kind="primary") */
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="baseButton-primary"] {{
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%) !important;
+  border-color: var(--accent) !important;
+  color: #fff !important;
+  box-shadow: 0 6px 18px var(--accent-ring) !important;
+}}
+.stButton > button[kind="primary"] p,
+.stButton > button[kind="primary"] span,
+.stButton > button[data-testid="baseButton-primary"] p,
+.stButton > button[data-testid="baseButton-primary"] span {{
+  color: #fff !important;
+}}
+.stButton > button[kind="primary"]:hover {{
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}}
+/* Disabled — nítido (fix: "botão sumindo") */
 .stButton > button:disabled,
 .stButton > button[disabled] {{
-  background: var(--surface-2) !important;
-  color: var(--text-muted) !important;
-  border-color: var(--border) !important;
-  opacity: 0.76 !important;
+  background: var(--surface-3) !important;
+  color: var(--text-dim) !important;
+  border: 1px solid var(--border-strong) !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+}}
+.stButton > button:disabled p,
+.stButton > button:disabled span {{
+  color: var(--text-dim) !important;
+}}
+
+/* Download + form submit inherit from stButton */
+[data-testid="stDownloadButton"] > button {{
+  border-radius: var(--r-md) !important;
+  border: 1px solid var(--border-strong) !important;
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  font-weight: 600 !important;
+  box-shadow: var(--shadow-sm) !important;
+  transition: transform 160ms var(--ease), border-color 160ms var(--ease), background 160ms var(--ease);
+}}
+[data-testid="stDownloadButton"] > button:hover {{
+  background: var(--accent-soft) !important;
+  border-color: var(--accent) !important;
+  transform: translateY(-1px);
+  color: var(--accent) !important;
 }}
 
 /* Clear filters button */
@@ -645,13 +714,378 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   background: transparent !important;
   text-align: center !important;
   margin-top: 8px;
+  box-shadow: none !important;
 }}
 .stButton[data-key="sb_clear"] > button:hover,
 .sb-clear-btn > button:hover {{
   color: var(--accent) !important;
   border-color: var(--accent-ring) !important;
   background: var(--accent-soft) !important;
+  border-style: solid !important;
 }}
+
+/* ═══════ Premium components (Sprint 17.3 — Aconchegante absorbed) ═══════ */
+
+/* ── Story block (onboarding por tela) ── */
+.enel-story {{
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: flex-start;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--accent-soft) 60%, var(--surface) 40%) 0%,
+    var(--surface) 100%);
+  border: 1px solid var(--accent-ring);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--r-lg);
+  padding: 16px 20px;
+  margin: 0 0 18px;
+  box-shadow: var(--shadow-sm);
+  animation: enelFade 420ms var(--ease) both;
+}}
+.enel-story-icon {{
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  display: grid; place-items: center;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  box-shadow: inset 0 -6px 10px rgba(0,0,0,0.2), 0 2px 4px rgba(0,0,0,0.2);
+  user-select: none;
+}}
+.enel-story-body {{ font-size: 13.5px; color: var(--text-muted); line-height: 1.55; }}
+.enel-story-body b {{ color: var(--text); font-weight: 600; }}
+.enel-story-lead {{
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin-bottom: 6px;
+  line-height: 1.3;
+}}
+.enel-story-steps {{ display: flex; gap: 20px; margin-top: 12px; flex-wrap: wrap; }}
+.enel-story-step {{ display: flex; gap: 8px; font-size: 12px; color: var(--text-dim); }}
+.enel-story-step .n {{
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 14px;
+}}
+
+/* ── Insight callout (dentro de cards) ── */
+.enel-insight {{
+  margin-top: 14px;
+  padding: 12px 14px 12px 16px;
+  background: var(--surface-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: 12.8px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}}
+.enel-insight b {{ color: var(--text); font-weight: 600; }}
+.enel-insight .label {{
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-right: 6px;
+}}
+
+/* ── KPI strip + dominant variant ── */
+.enel-kpis {{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}}
+.enel-kpi {{
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 200ms var(--ease), box-shadow 200ms var(--ease), border-color 200ms var(--ease);
+  position: relative;
+  overflow: hidden;
+  animation: enelFade 360ms var(--ease) both;
+}}
+.enel-kpi:hover {{
+  transform: translateY(-3px);
+  border-color: var(--accent-ring);
+  box-shadow: 0 14px 30px rgba(16,20,28,0.09);
+}}
+.enel-kpi-head {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }}
+.enel-kpi-label {{
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}}
+.enel-kpi-tag {{
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}}
+.enel-kpi-val {{
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--text);
+}}
+.enel-kpi-sub {{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}}
+.enel-kpi-sub .d-up {{ color: var(--crit); font-weight: 700; }}
+.enel-kpi-sub .d-dn {{ color: var(--ok); font-weight: 700; }}
+.enel-kpi.is-dominant {{
+  background: linear-gradient(135deg, var(--accent-soft) 0%, var(--surface) 70%);
+  border-color: var(--accent-ring);
+}}
+.enel-kpi.is-dominant .enel-kpi-val {{
+  font-size: 20px;
+  line-height: 1.2;
+  color: var(--accent);
+}}
+
+/* ── DOM Pareto (nativo, sem plotly) ── */
+.enel-pareto {{ display: grid; gap: 6px; }}
+.enel-pareto-row {{
+  display: grid;
+  grid-template-columns: minmax(140px, 210px) 1fr 72px 54px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 140ms var(--ease);
+}}
+.enel-pareto-row:hover {{ background: var(--surface-2); }}
+.enel-pareto-name {{
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}}
+.enel-pareto-bar {{
+  position: relative;
+  height: 22px;
+  background: var(--surface-3);
+  border-radius: 4px;
+  overflow: hidden;
+}}
+.enel-pareto-fill {{
+  position: absolute; top: 0; left: 0; height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hover) 100%);
+  border-radius: 4px;
+  transform-origin: left center;
+  animation: enelParetoGrow 620ms var(--ease) both;
+}}
+.enel-pareto-row.is-active .enel-pareto-fill {{
+  background: linear-gradient(90deg, var(--accent-hover) 0%, var(--accent) 100%);
+  box-shadow: 0 0 0 1px var(--accent-ring);
+}}
+.enel-pareto-row.is-active {{ background: var(--accent-soft); }}
+.enel-pareto-val {{
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  text-align: right;
+  font-weight: 700;
+}}
+.enel-pareto-pct {{
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-align: right;
+}}
+@keyframes enelParetoGrow {{
+  from {{ transform: scaleX(0); }}
+  to   {{ transform: scaleX(1); }}
+}}
+
+/* ── Health cards (Governança) ── */
+.enel-health-grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}}
+.enel-health-card {{
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px 16px 16px 20px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  animation: enelFade 360ms var(--ease) both;
+  transition: transform 200ms var(--ease), box-shadow 200ms var(--ease);
+}}
+.enel-health-card:hover {{
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}}
+.enel-health-card::before {{
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: var(--ok);
+}}
+.enel-health-card.is-warn::before {{ background: var(--warn); }}
+.enel-health-card.is-crit::before {{ background: var(--crit); }}
+.enel-health-label {{
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}}
+.enel-health-value {{
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  margin: 6px 0 4px;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}}
+.enel-health-sub {{
+  font-size: 11.5px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}}
+
+/* ── Topic pills ── */
+.enel-topics {{ display: flex; flex-wrap: wrap; gap: 4px 6px; }}
+.enel-topic-pill {{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  cursor: default;
+  transition: border-color 140ms var(--ease), color 140ms var(--ease), background 140ms var(--ease), transform 140ms var(--ease);
+}}
+.enel-topic-pill:hover {{
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--surface);
+  transform: translateY(-1px);
+}}
+.enel-topic-pill .n {{ font-weight: 700; color: var(--text); }}
+.enel-topic-pill:hover .n {{ color: var(--accent); }}
+
+/* ── Segmented control ── */
+.enel-seg {{
+  display: inline-flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 3px;
+  gap: 2px;
+}}
+.enel-seg button {{
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 5px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: all 140ms var(--ease);
+}}
+.enel-seg button:hover {{ color: var(--text); }}
+.enel-seg button.is-on {{
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}}
+
+/* ── Topbar status (pulse) ── */
+.enel-topbar {{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0 16px;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+}}
+.enel-crumbs b {{ color: var(--text); font-weight: 700; }}
+.enel-status {{ display: inline-flex; align-items: center; gap: 10px; }}
+.enel-pulse {{
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 50%, transparent);
+  animation: enelPulse 2.4s infinite;
+}}
+@keyframes enelPulse {{
+  0%   {{ box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); }}
+  70%  {{ box-shadow: 0 0 0 10px color-mix(in srgb, var(--ok) 0%, transparent); }}
+  100% {{ box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 0%, transparent); }}
+}}
+
+/* ── Skeleton (consolidado e theme-aware) ── */
+.enel-skeleton {{
+  min-height: 96px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(100deg,
+    var(--surface-2) 20%,
+    var(--surface-3) 40%,
+    var(--surface-2) 60%);
+  background-size: 220% 100%;
+  border: 1px solid var(--border);
+  animation: enelShimmer 1.2s ease-in-out infinite;
+}}
+@keyframes enelShimmer {{
+  0%   {{ background-position: 120% 0; }}
+  100% {{ background-position: -120% 0; }}
+}}
+
+/* ── Expander polish ── */
+[data-testid="stExpander"] {{
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-md) !important;
+  background: var(--surface) !important;
+  box-shadow: var(--shadow-sm);
+}}
+[data-testid="stExpander"] summary {{
+  font-weight: 600;
+  color: var(--text) !important;
+}}
+[data-testid="stExpander"] summary:hover {{ color: var(--accent) !important; }}
 
 /* ===== Streamlit/BaseWeb contrast hardening ===== */
 .stApp, .stMarkdown, .stText, .stCaption, .stDataFrame, label, p, li, span {{

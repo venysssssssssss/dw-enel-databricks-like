@@ -84,8 +84,11 @@ def main() -> None:
         ),
     )
 
-    with st.spinner("Preparando dados analíticos..."):
+    st.markdown(dashboard_css("light"), unsafe_allow_html=True)
+    skeleton_slot = st.empty()
+    with skeleton_slot.container():
         render_skeleton(st, height_px=96)
+    with st.spinner("Preparando dados analíticos..."):
         frame = _load_frame(
             str(silver_path),
             str(assignments_path),
@@ -95,9 +98,9 @@ def main() -> None:
             path_fingerprint(assignments_path),
             path_fingerprint(taxonomy_path),
         )
+    skeleton_slot.empty()
 
     if frame.empty:
-        st.markdown(dashboard_css("light"), unsafe_allow_html=True)
         render_empty_state(
             st,
             title="Nenhum registro disponível",
@@ -106,10 +109,8 @@ def main() -> None:
         return
 
     filters = render_sidebar_filters(st, frame, include_total=include_total)
-    st.markdown(
-        dashboard_css("dark" if filters.theme == "dark" else "light"),
-        unsafe_allow_html=True,
-    )
+    if filters.theme == "dark":
+        st.markdown(dashboard_css("dark"), unsafe_allow_html=True)
     filtered = apply_dashboard_filters(frame, filters)
     _render_tour(st)
 

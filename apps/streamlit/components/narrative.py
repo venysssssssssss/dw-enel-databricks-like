@@ -20,13 +20,22 @@ class LayerNarrative:
 
 
 def build_intro_markdown(narrative: LayerNarrative) -> str:
-    """Return a compact, testable HTML block for a dashboard layer intro."""
+    """Return the layer intro as a premium story-style HTML block (Sprint 17.3).
+
+    Keeps the original contract strings — ``Pergunta de negócio``, ``Como lemos``
+    and ``Próximo passo`` — so downstream tests and screen-readers still see the
+    same semantic anchors, while the visual language aligns with
+    ``.enel-story`` components from the Aconchegante absorption.
+    """
     return f"""
-<section class="enel-intro" aria-label="Contexto da camada {narrative.title}">
-  <h2>{narrative.icon} {narrative.title}</h2>
-  <p><strong>Pergunta de negócio:</strong> {narrative.question}</p>
-  <p><strong>Como lemos:</strong> {narrative.method}</p>
-  <p><strong>Próximo passo:</strong> {narrative.action}</p>
+<section class="enel-story enel-intro" aria-label="Contexto da camada {narrative.title}">
+  <div class="enel-story-icon" aria-hidden="true">{narrative.icon}</div>
+  <div class="enel-story-body">
+    <span class="enel-story-lead">{narrative.title}</span>
+    <p><strong>Pergunta de negócio:</strong> {narrative.question}</p>
+    <p><strong>Como lemos:</strong> {narrative.method}</p>
+    <p><strong>Próximo passo:</strong> {narrative.action}</p>
+  </div>
 </section>
 """
 
