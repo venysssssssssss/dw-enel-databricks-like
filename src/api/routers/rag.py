@@ -2,17 +2,38 @@
 
 from __future__ import annotations
 
+import os
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from threading import Lock
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from src.api.services.rag_stream import RagStreamRequest, stream_rag_events
+from src.api.services.rag_stream import (
+    RagStreamRequest,
+    get_rag_orchestrator,
+    stream_rag_events,
+)
 from src.data_plane import DataStore
 from src.rag.telemetry import log_feedback
 
 router = APIRouter()
+
+_DATASET_CACHE_LOCK = Lock()
+
+
+@dataclass(slots=True)
+class _DatasetVersionCache:
+    dataset_hash: str = ""
+    fingerprint: tuple[tuple[str, int, int], ...] = ()
+    ts: float = 0.0
+
+
+_DATASET_VERSION_CACHE = _DatasetVersionCache()
 
 
 class RagStreamBody(BaseModel):
@@ -48,10 +69,12 @@ def rag_cards() -> dict[str, Any]:
 
 @router.post("/rag/stream")
 def rag_stream(
+    http_request: Request,
     body: RagStreamBody,
     x_dataset_version: Annotated[str | None, Header(alias="X-Dataset-Version")] = None,
 ) -> StreamingResponse:
-    current = DataStore().version().hash
+    store = DataStore()
+    current = _current_dataset_hash(store)
     if x_dataset_version and x_dataset_version != current:
         raise HTTPException(
             status_code=409,
@@ -60,14 +83,15 @@ def rag_stream(
                 "current_dataset_version": current,
             },
         )
-    request = RagStreamRequest(
+    rag_request = RagStreamRequest(
         question=body.question,
         history=body.history,
         context_hint=body.context_hint,
         dataset_version=current,
     )
+    orchestrator = get_rag_orchestrator(app=http_request.app)
     return StreamingResponse(
-        stream_rag_events(request),
+        stream_rag_events(rag_request, orchestrator=orchestrator),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -85,3 +109,52 @@ def rag_feedback(body: FeedbackBody) -> dict[str, bool]:
         comment=body.comment,
     )
     return {"ok": True}
+
+
+def _dataset_cache_ttl_sec() -> float:
+    raw = os.getenv("RAG_DATASET_VERSION_CACHE_TTL_SEC", "5").strip()
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return 5.0
+
+
+def _store_fingerprint(store: Any) -> tuple[tuple[str, int, int], ...]:
+    attrs = (
+        "silver_path",
+        "topic_assignments_path",
+        "topic_taxonomy_path",
+        "medidor_sp_path",
+        "fatura_sp_path",
+    )
+    out: list[tuple[str, int, int]] = []
+    for attr in attrs:
+        path = getattr(store, attr, None)
+        if not isinstance(path, Path):
+            continue
+        if not path.exists():
+            continue
+        stat = path.stat()
+        out.append((str(path), int(stat.st_size), int(stat.st_mtime_ns)))
+    out.sort()
+    return tuple(out)
+
+
+def _current_dataset_hash(store: Any) -> str:
+    ttl = _dataset_cache_ttl_sec()
+    fingerprint = _store_fingerprint(store)
+    now = time.monotonic()
+    with _DATASET_CACHE_LOCK:
+        if (
+            _DATASET_VERSION_CACHE.dataset_hash
+            and _DATASET_VERSION_CACHE.fingerprint == fingerprint
+            and (now - _DATASET_VERSION_CACHE.ts) <= ttl
+        ):
+            return _DATASET_VERSION_CACHE.dataset_hash
+
+    current = str(store.version().hash)
+    with _DATASET_CACHE_LOCK:
+        _DATASET_VERSION_CACHE.dataset_hash = current
+        _DATASET_VERSION_CACHE.fingerprint = fingerprint
+        _DATASET_VERSION_CACHE.ts = now
+    return current

@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 from dataclasses import dataclass, field
+from threading import Lock
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 from src.rag.config import load_rag_config
 from src.rag.orchestrator import RagOrchestrator
+
+_ORCHESTRATOR_LOCK = Lock()
+_GLOBAL_ORCHESTRATOR: RagOrchestrator | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,9 +25,30 @@ class RagStreamRequest:
     dataset_version: str | None = None
 
 
-def stream_rag_events(request: RagStreamRequest) -> Iterator[str]:
-    config = load_rag_config()
-    orchestrator = RagOrchestrator(config)
+def get_rag_orchestrator(*, app: Any | None = None) -> RagOrchestrator:
+    """Retorna orquestrador singleton (app state preferencial, fallback global)."""
+    state = getattr(app, "state", None) if app is not None else None
+    current = getattr(state, "rag_orchestrator", None) if state is not None else None
+    if isinstance(current, RagOrchestrator):
+        return current
+
+    global _GLOBAL_ORCHESTRATOR
+    if _GLOBAL_ORCHESTRATOR is not None:
+        return _GLOBAL_ORCHESTRATOR
+
+    with _ORCHESTRATOR_LOCK:
+        if _GLOBAL_ORCHESTRATOR is None:
+            config = load_rag_config()
+            _GLOBAL_ORCHESTRATOR = RagOrchestrator(config)
+        return _GLOBAL_ORCHESTRATOR
+
+
+def stream_rag_events(
+    request: RagStreamRequest,
+    *,
+    orchestrator: RagOrchestrator | None = None,
+) -> Iterator[str]:
+    orchestrator = orchestrator or get_rag_orchestrator()
     try:
         for token in orchestrator.stream_answer(
             request.question,

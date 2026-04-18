@@ -292,9 +292,43 @@ def test_format_citations_dedups_and_links() -> None:
     assert "docs/b.md#sec-b" in block
     citation_lines = [line for line in block.splitlines() if line.startswith("- ")]
     assert citation_lines == [
-        "- [docs/a.md#sec-a](docs/a.md#sec-a)",
-        "- [docs/b.md#sec-b](docs/b.md#sec-b)",
+        "- [fonte: docs/a.md#sec-a]",
+        "- [fonte: docs/b.md#sec-b]",
     ]
+
+
+def test_orchestrator_appends_deterministic_citations_for_analytical_intent(
+    tmp_path: Path,
+) -> None:
+    cfg = _make_config(tmp_path)
+    passages = [
+        Passage("c1", "dados CE", "data/silver/erro.csv", "s", "data", "", "regiao-ce", 0.9),
+        Passage("c2", "dados SP", "data/silver/erro.csv", "s", "data", "", "regiao-sp", 0.8),
+    ]
+    provider = RecordingProvider()
+    orch = RagOrchestrator(cfg, retriever=FakeRetriever(passages), provider=provider)
+    resp = orch.answer("Qual o volume de reclamações em CE e SP?")
+    assert "- [fonte: data/silver/erro.csv#regiao-ce]" in resp.text
+    assert "- [fonte: data/silver/erro.csv#regiao-sp]" in resp.text
+
+
+def test_orchestrator_includes_history_summary_when_history_is_long(tmp_path: Path) -> None:
+    cfg = _make_config(tmp_path)
+    passages = [
+        Passage("c1", "dados", "docs/a.md", "s", "data", "", "a", 0.9),
+    ]
+    provider = RecordingProvider()
+    orch = RagOrchestrator(cfg, retriever=FakeRetriever(passages), provider=provider)
+    history = [
+        {"role": "user", "content": f"pergunta {idx}"}
+        if idx % 2 == 0
+        else {"role": "assistant", "content": f"resposta {idx}"}
+        for idx in range(10)
+    ]
+    orch.answer("Qual o total em CE?", history=history)
+    assert provider.calls
+    context_system = provider.calls[0][1]["content"]
+    assert "RESUMO DA CONVERSA ANTERIOR:" in context_system
 
 
 def test_orchestrator_records_telemetry(tmp_path: Path) -> None:

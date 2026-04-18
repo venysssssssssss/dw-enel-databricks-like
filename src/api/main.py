@@ -26,6 +26,8 @@ from src.api.middleware.timing import TimingMiddleware
 from src.api.routers import dashboard, rag
 from src.api.routers.v1 import admin, erro_leitura, exports, health, metrics, scores
 from src.common.minio_client import MinIOClient
+from src.rag.config import load_rag_config
+from src.rag.orchestrator import RagOrchestrator
 
 
 @asynccontextmanager
@@ -42,6 +44,14 @@ async def lifespan(app: FastAPI):
         access_key=settings.minio_access_key,
         secret_key=settings.minio_secret_key,
     )
+    # Warm singleton do RAG para reduzir overhead de cold-start por request SSE.
+    try:
+        rag_config = load_rag_config()
+        app.state.rag_config = rag_config
+        app.state.rag_orchestrator = RagOrchestrator(rag_config)
+    except Exception:
+        # Nunca quebrar boot da API por falha de inicialização do RAG.
+        app.state.rag_orchestrator = None
     yield
     await app.state.trino.close()
 
@@ -63,7 +73,10 @@ def create_app(
         openapi_url="/api/openapi.json",
         lifespan=lifespan if enable_lifespan else None,
     )
-    app.state.limiter = Limiter(key_func=get_remote_address, default_limits=[settings.rate_limit_default])
+    app.state.limiter = Limiter(
+        key_func=get_remote_address,
+        default_limits=[settings.rate_limit_default],
+    )
     app.add_exception_handler(TrinoError, trino_error_handler)
     app.add_exception_handler(ValueError, validation_error_handler)
     app.add_exception_handler(RequestValidationError, request_validation_error_handler)
@@ -83,7 +96,11 @@ def create_app(
     app.include_router(health.router, prefix="/api/v1/health", tags=["Health"])
     app.include_router(exports.router, prefix="/api/v1/exports", tags=["Exports"])
     app.include_router(scores.router, prefix="/api/v1/scores", tags=["Scores"])
-    app.include_router(erro_leitura.router, prefix="/api/v1/erros-leitura", tags=["Erros de Leitura"])
+    app.include_router(
+        erro_leitura.router,
+        prefix="/api/v1/erros-leitura",
+        tags=["Erros de Leitura"],
+    )
     app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["Metrics"])
     app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
     app.include_router(dashboard.router, prefix="/v1", tags=["Unified Data Plane"])

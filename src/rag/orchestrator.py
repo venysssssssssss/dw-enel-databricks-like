@@ -11,6 +11,7 @@ Economia de tokens (ordem de impacto em CPU local):
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from dataclasses import dataclass, field, replace
@@ -18,7 +19,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from src.common.llm_gateway import build_provider
-from src.rag.prompts import SYSTEM_STATIC, build_messages
+from src.rag.prompts import (
+    SYSTEM_STATIC,
+    build_messages,
+    build_summarize_history_prompt,
+)
 from src.rag.retriever import HybridRetriever, Passage, route_doc_types
 from src.rag.safety import (
     OUT_OF_SCOPE_MESSAGE,
@@ -44,6 +49,7 @@ _CE_RE = re.compile(r"(ceará|cearense|fortaleza|\bce\b)", re.IGNORECASE)
 _SP_RE = re.compile(r"(são paulo|paulista|\bsp\b)", re.IGNORECASE)
 
 ANALYTICAL_INTENTS = {"analise_dados"}
+_SUMMARY_MAX_CHARS = 800
 
 OUT_OF_REGIONAL_SCOPE_MESSAGE = (
     "Este assistente responde apenas sobre as regionais **Ceará (CE)** e "
@@ -607,6 +613,77 @@ class RagOrchestrator:
         self.retriever = retriever or HybridRetriever(config)
         self.provider = provider or build_provider(config)
 
+    def _history_summary_enabled(self) -> bool:
+        raw = os.getenv("RAG_HISTORY_SUMMARY_ENABLED", "1").strip().lower()
+        return raw in {"1", "true", "yes", "on"}
+
+    def _history_summary_max_turns(self) -> int:
+        raw = os.getenv("RAG_HISTORY_SUMMARY_MAX_TURNS", "8").strip()
+        try:
+            return max(4, int(raw))
+        except ValueError:
+            return 8
+
+    def _build_history_summary(self, history: list[dict[str, str]] | None) -> str | None:
+        if not self._history_summary_enabled():
+            return None
+        turns = [
+            {
+                "role": str(turn.get("role", "")),
+                "content": str(turn.get("content", "")).strip(),
+            }
+            for turn in (history or [])
+            if str(turn.get("role", "")) in {"user", "assistant"}
+            and str(turn.get("content", "")).strip()
+        ]
+        if len(turns) <= self._history_summary_max_turns():
+            return None
+        # Resumo cobre o histórico antigo, preservando os 4 últimos turnos íntegros.
+        older = turns[:-4]
+        if not older:
+            return None
+        text = ""
+        try:
+            provider_name = str(getattr(self.provider, "name", "")).lower()
+            if provider_name not in {"", "stub"}:
+                summary_prompt = build_summarize_history_prompt(older)
+                response = self.provider.complete(
+                    summary_prompt,
+                    max_tokens=96,
+                    temperature=0.0,
+                    top_p=1.0,
+                )
+                text = sanitize_output(response.text).strip()
+        except Exception:
+            text = ""
+        if not text:
+            text = self._local_history_summary(older)
+        if not text:
+            return None
+        return text[:_SUMMARY_MAX_CHARS].strip()
+
+    @staticmethod
+    def _local_history_summary(history: list[dict[str, str]]) -> str:
+        user_signals: list[str] = []
+        assistant_signals: list[str] = []
+        for turn in history:
+            content = str(turn.get("content", "")).replace("\n", " ").strip()
+            if not content:
+                continue
+            snippet = content[:120]
+            if turn.get("role") == "user":
+                user_signals.append(snippet)
+            elif turn.get("role") == "assistant":
+                assistant_signals.append(snippet)
+        parts: list[str] = []
+        if user_signals:
+            parts.append(f"Usuário já perguntou sobre: {' | '.join(user_signals[-3:])}.")
+        if assistant_signals:
+            parts.append(
+                f"Assistente já respondeu com foco em: {' | '.join(assistant_signals[-3:])}."
+            )
+        return " ".join(parts).strip()
+
     def answer(
         self,
         question: str,
@@ -746,22 +823,25 @@ class RagOrchestrator:
                 region_detected=region,
             )
 
+        history_summary = self._build_history_summary(history)
         passages = self._enforce_budget(
             passages,
             question=check.sanitized,
             history=history,
+            history_summary=history_summary,
         )
         messages = build_messages(
             question=check.sanitized,
             passages=passages,
             history=history,
-            history_summary=None,
+            history_summary=history_summary,
         )
         resp = self.provider.complete(
             messages,
             max_tokens=self._answer_budget(
                 question=check.sanitized,
                 history=history,
+                history_summary=history_summary,
             ),
             temperature=self.config.temperature,
             top_p=self.config.top_p,
@@ -769,13 +849,14 @@ class RagOrchestrator:
         timer.mark_first_token()
         text = sanitize_output(resp.text).strip()
         text = self._guardrail_not_found(text, passages=passages, intent=intent)
+        text = self._append_deterministic_citations(text, passages=passages, intent=intent)
 
         self._record(
             question=check.sanitized,
             intent=intent,
             passages=passages,
             prompt_tokens=resp.prompt_tokens,
-            completion_tokens=resp.completion_tokens,
+            completion_tokens=len(text) // 4,
             first_token_ms=timer.first_token_ms,
             total_ms=timer.total_ms(),
             region_detected=region,
@@ -850,13 +931,18 @@ class RagOrchestrator:
             yield OUT_OF_SCOPE_MESSAGE
             return
 
+        history_summary = self._build_history_summary(history)
         passages = self._enforce_budget(
             passages,
             question=check.sanitized,
             history=history,
+            history_summary=history_summary,
         )
         messages = build_messages(
-            question=check.sanitized, passages=passages, history=history
+            question=check.sanitized,
+            passages=passages,
+            history=history,
+            history_summary=history_summary,
         )
         acc_text = []
         for chunk in self.provider.stream(
@@ -864,6 +950,7 @@ class RagOrchestrator:
             max_tokens=self._answer_budget(
                 question=check.sanitized,
                 history=history,
+                history_summary=history_summary,
             ),
             temperature=self.config.temperature,
             top_p=self.config.top_p,
@@ -872,17 +959,31 @@ class RagOrchestrator:
             acc_text.append(chunk)
             yield chunk
         joined = "".join(acc_text)
-        sanitized = sanitize_output(joined)
-        if sanitized != joined:
+        sanitized = sanitize_output(joined).strip()
+        final_text = self._guardrail_not_found(sanitized, passages=passages, intent=intent)
+        final_text = self._append_deterministic_citations(
+            final_text,
+            passages=passages,
+            intent=intent,
+        )
+        if sanitized != joined.strip():
             # PII detectada pós-geração: emite correção clara (não silencia).
             yield "\n\n_[saída sanitizada — PII removida]_"
+        if final_text != sanitized:
+            suffix = (
+                final_text[len(sanitized):]
+                if final_text.startswith(sanitized)
+                else f"\n\n{format_citations(passages)}"
+            )
+            if suffix:
+                yield suffix
 
         self._record(
             question=check.sanitized,
             intent=intent,
             passages=passages,
             prompt_tokens=0,
-            completion_tokens=len(joined) // 4,
+            completion_tokens=len(final_text) // 4,
             first_token_ms=timer.first_token_ms,
             total_ms=timer.total_ms(),
             region_detected=region,
@@ -1033,6 +1134,25 @@ class RagOrchestrator:
         return summary.strip()
 
     @staticmethod
+    def _append_deterministic_citations(
+        text: str,
+        *,
+        passages: list[Passage],
+        intent: str,
+    ) -> str:
+        if intent not in ANALYTICAL_INTENTS:
+            return text
+        cite_block = format_citations(passages)
+        if not cite_block:
+            return text
+        if cite_block.strip() in text:
+            return text
+        base = text.rstrip()
+        if not base:
+            return cite_block.strip()
+        return f"{base}\n{cite_block}"
+
+    @staticmethod
     def _best_drilldown_passage(passages: list[Passage]) -> Passage | None:
         for passage in passages:
             if passage.anchor in _DRILLDOWN_CANONICAL_ANCHORS:
@@ -1056,6 +1176,7 @@ class RagOrchestrator:
         *,
         question: str = "",
         history: list[dict[str, str]] | None = None,
+        history_summary: str | None = None,
     ) -> int:
         """Teto de tokens de resposta para SLA de ~35s em CPU (Qwen 2.5 3B Q4).
 
@@ -1064,7 +1185,11 @@ class RagOrchestrator:
         """
         sla_cap = min(400, self.config.max_turn_tokens // 2)
         context_limit = min(self.config.n_ctx, self.config.max_context_tokens)
-        fixed = self._fixed_prompt_tokens(question=question, history=history)
+        fixed = self._fixed_prompt_tokens(
+            question=question,
+            history=history,
+            history_summary=history_summary,
+        )
         # Mantém folga mínima para ao menos 1 passagem curta no contexto.
         available = context_limit - fixed - 64
         return max(64, min(sla_cap, available))
@@ -1075,10 +1200,19 @@ class RagOrchestrator:
         *,
         question: str = "",
         history: list[dict[str, str]] | None = None,
+        history_summary: str | None = None,
     ) -> list[Passage]:
         context_limit = min(self.config.n_ctx, self.config.max_context_tokens)
-        answer_budget = self._answer_budget(question=question, history=history)
-        fixed = self._fixed_prompt_tokens(question=question, history=history)
+        answer_budget = self._answer_budget(
+            question=question,
+            history=history,
+            history_summary=history_summary,
+        )
+        fixed = self._fixed_prompt_tokens(
+            question=question,
+            history=history,
+            history_summary=history_summary,
+        )
         turn_cap = self.config.max_turn_tokens - 600
         # Reserva espaço para conclusão + overhead do render de contexto.
         budget = min(turn_cap, context_limit - fixed - answer_budget - 32)
@@ -1117,16 +1251,19 @@ class RagOrchestrator:
         *,
         question: str,
         history: list[dict[str, str]] | None,
+        history_summary: str | None = None,
     ) -> int:
         history_tokens = sum(
             self._approx_tokens(str(turn.get("content", "")))
             for turn in (history or [])[-4:]
         )
+        summary_tokens = self._approx_tokens(history_summary) if history_summary else 0
         # Prefixo estático + envelope ChatML + pergunta atual.
         return (
             self._approx_tokens(SYSTEM_STATIC)
             + self._approx_tokens(question)
             + history_tokens
+            + summary_tokens
             + 80
         )
 
@@ -1179,7 +1316,7 @@ class RagOrchestrator:
 
 
 def format_citations(passages: list[Any]) -> str:
-    """Renderiza bloco final com links markdown para as fontes."""
+    """Renderiza bloco final com citações normalizadas no formato `[fonte: ...]`."""
     if not passages:
         return ""
     lines = ["", "---", "**Fontes:**"]
@@ -1190,5 +1327,5 @@ def format_citations(passages: list[Any]) -> str:
             continue
         seen.add(key)
         anchor = f"#{p.anchor}" if p.anchor else ""
-        lines.append(f"- [{p.source_path}{anchor}]({p.source_path}{anchor})")
+        lines.append(f"- [fonte: {p.source_path}{anchor}]")
     return "\n".join(lines)

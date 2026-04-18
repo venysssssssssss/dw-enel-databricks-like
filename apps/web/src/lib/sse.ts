@@ -6,11 +6,17 @@ export type RagEventHandlers = {
   onError: (message: string) => void;
 };
 
+export type RagHistoryTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export async function streamRagAnswer(
   question: string,
   datasetHash: string,
   handlers: RagEventHandlers,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  history: RagHistoryTurn[] = []
 ): Promise<void> {
   await fetchEventSource("/v1/rag/stream", {
     method: "POST",
@@ -19,7 +25,7 @@ export async function streamRagAnswer(
       "Content-Type": "application/json",
       "X-Dataset-Version": datasetHash
     },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, history }),
     onmessage(event) {
       const payload = JSON.parse(event.data || "{}") as { text?: string; message?: string };
       if (event.event === "token" && payload.text) {

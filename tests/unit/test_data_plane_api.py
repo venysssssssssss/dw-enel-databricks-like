@@ -3,11 +3,14 @@ from __future__ import annotations
 import base64
 import json
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from src.api.main import create_app
 from src.api.routers import dashboard, rag
@@ -160,6 +163,79 @@ async def test_rag_stream_rejects_stale_dataset_version(data_plane_client: Async
 
     assert response.status_code == 409
     assert response.json()["detail"]["current_dataset_version"] == "dataset-123"
+
+
+@pytest.mark.asyncio
+async def test_rag_stream_forwards_history_to_stream_service(
+    data_plane_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_stream(request_obj, *, orchestrator=None):  # noqa: ANN001
+        captured["history"] = request_obj.history
+        captured["orchestrator"] = orchestrator
+        yield "event: done\ndata: {\"ok\": true}\n\n"
+
+    monkeypatch.setattr(rag, "stream_rag_events", fake_stream)
+    monkeypatch.setattr(rag, "get_rag_orchestrator", lambda app=None: "orch-singleton")
+    response = await data_plane_client.post(
+        "/v1/rag/stream",
+        json={
+            "question": "Pergunta de follow-up",
+            "history": [
+                {"role": "user", "content": "Qual a taxa em CE?"},
+                {"role": "assistant", "content": "A taxa é 11,8%."},
+            ],
+        },
+        headers={"X-Dataset-Version": "dataset-123"},
+    )
+    assert response.status_code == 200
+    await response.aread()
+    assert captured["history"] == [
+        {"role": "user", "content": "Qual a taxa em CE?"},
+        {"role": "assistant", "content": "A taxa é 11,8%."},
+    ]
+    assert captured["orchestrator"] == "orch-singleton"
+
+
+def test_rag_dataset_version_cache_reuses_hash_when_fingerprint_is_unchanged(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    file_path = tmp_path / "silver.csv"
+    file_path.write_text("a,b\n1,2\n", encoding="utf-8")
+
+    class CountingStore:
+        silver_path = file_path
+        topic_assignments_path = tmp_path / "missing.csv"
+        topic_taxonomy_path = tmp_path / "missing.json"
+        medidor_sp_path = tmp_path / "missing_medidor.csv"
+        fatura_sp_path = tmp_path / "missing_fatura.xlsx"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def version(self) -> DatasetVersion:
+            self.calls += 1
+            return DatasetVersion(
+                hash="dataset-abc",
+                sources=(str(self.silver_path),),
+                generated_at="2026-01-01T00:00:00Z",
+            )
+
+    monkeypatch.setenv("RAG_DATASET_VERSION_CACHE_TTL_SEC", "30")
+    rag._DATASET_VERSION_CACHE.dataset_hash = ""
+    rag._DATASET_VERSION_CACHE.fingerprint = ()
+    rag._DATASET_VERSION_CACHE.ts = 0.0
+    store = CountingStore()
+
+    first = rag._current_dataset_hash(store)
+    second = rag._current_dataset_hash(store)
+
+    assert first == "dataset-abc"
+    assert second == "dataset-abc"
+    assert store.calls == 1
 
 
 @pytest.mark.asyncio
