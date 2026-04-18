@@ -11,12 +11,18 @@ lock-in e mantém todo o código RAG agnóstico de provider.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 Message = dict[str, str]
+_CTX_OVERFLOW_RE = re.compile(
+    r"Requested tokens \((?P<requested>\d+)\) exceed context window of (?P<context>\d+)"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +137,7 @@ class LlamaCppProvider:
     """
 
     name = "llama_cpp"
+    _MIN_COMPLETION_TOKENS = 16
 
     def __init__(
         self,
@@ -173,12 +180,12 @@ class LlamaCppProvider:
         top_p: float = 0.9,
         stop: list[str] | None = None,
     ) -> LLMResponse:
-        out = self._llama.create_chat_completion(
+        out = self._chat_completion_with_retry(
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
-            stop=stop or [],
+            stop=stop,
             stream=False,
         )
         text = out["choices"][0]["message"]["content"]
@@ -200,18 +207,78 @@ class LlamaCppProvider:
         top_p: float = 0.9,
         stop: list[str] | None = None,
     ) -> Iterator[str]:
-        it = self._llama.create_chat_completion(
+        it = self._chat_completion_with_retry(
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
-            stop=stop or [],
+            stop=stop,
             stream=True,
         )
         for chunk in it:
             delta = chunk["choices"][0]["delta"].get("content", "")
             if delta:
                 yield delta
+
+    def _chat_completion_with_retry(
+        self,
+        *,
+        messages: list[Message],
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        stop: list[str] | None,
+        stream: bool,
+    ):
+        effective_max = max(self._MIN_COMPLETION_TOKENS, int(max_tokens))
+        # Até 3 tentativas para absorver pequenos estouros de contexto.
+        for _ in range(3):
+            try:
+                return self._llama.create_chat_completion(
+                    messages=messages,
+                    max_tokens=effective_max,
+                    temperature=temperature,
+                    top_p=top_p,
+                    stop=stop or [],
+                    stream=stream,
+                )
+            except ValueError as exc:
+                reduced = self._reduce_tokens_from_context_error(
+                    exc, current_max=effective_max
+                )
+                if reduced is None:
+                    raise
+                if reduced == effective_max:
+                    break
+                effective_max = reduced
+        # Última tentativa: mínimo para aumentar chance de sucesso.
+        return self._llama.create_chat_completion(
+            messages=messages,
+            max_tokens=self._MIN_COMPLETION_TOKENS,
+            temperature=temperature,
+            top_p=top_p,
+            stop=stop or [],
+            stream=stream,
+        )
+
+    def _reduce_tokens_from_context_error(
+        self,
+        exc: ValueError,
+        *,
+        current_max: int,
+    ) -> int | None:
+        match = _CTX_OVERFLOW_RE.search(str(exc))
+        if not match:
+            return None
+        requested = int(match.group("requested"))
+        context = int(match.group("context"))
+        overflow = requested - context
+        if overflow <= 0:
+            return None
+        # Reserva extra para evitar nova colisão por variações de tokenização.
+        cushion = 16
+        reduced = current_max - overflow - cushion
+        return max(self._MIN_COMPLETION_TOKENS, reduced)
 
 
 class OllamaProvider:

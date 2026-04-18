@@ -101,6 +101,7 @@ class RecordingProvider(StubProvider):
         ("como rodar o pipeline?", "dev"),
         ("por que refaturamento subiu?", "analise_dados"),
         ("quantas ordens existem em CE?", "analise_dados"),
+        ("quais tipos de medidor dão mais problema em SP?", "analise_dados"),
         ("o que é ACF?", "glossario"),
     ],
 )

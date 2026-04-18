@@ -13,12 +13,12 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from src.common.llm_gateway import build_provider
-from src.rag.prompts import build_messages
+from src.rag.prompts import SYSTEM_STATIC, build_messages
 from src.rag.retriever import HybridRetriever, Passage, route_doc_types
 from src.rag.safety import (
     OUT_OF_SCOPE_MESSAGE,
@@ -77,6 +77,33 @@ _PROFILE_DETAIL_RE = re.compile(
 # CE+SP de erro_leitura rotulado. As regras abaixo casam primeiro os genéricos
 # e depois a extensão CE-total é aplicada separadamente quando região=CE.
 _CARD_BOOST_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
+    # Tipos de medidor em casos de digitação (SP)
+    (
+        re.compile(
+            r"\b(tipos?\s+de\s+medidor(?:es)?|medidores?)\b.*\b(digita\w*)\b|"
+            r"\b(digita\w*)\b.*\b(tipos?\s+de\s+medidor(?:es)?|medidores?)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-tipos-medidor-digitacao", "sp-tipos-medidor", "sp-n1-causas"),
+    ),
+    # Tipos de medidor em SP (visão geral)
+    (
+        re.compile(
+            r"\b(tipos?\s+de\s+medidor(?:es)?|medidores?\s+existentes|"
+            r"tipo do medidor)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-tipos-medidor", "sp-perfil-assunto-lider", "sp-n1-top-instalacoes"),
+    ),
+    # Instalações com problemas de digitação
+    (
+        re.compile(
+            r"\b(instala\w*|ucs?)\b.*\b(digita\w*)\b|"
+            r"\b(digita\w*)\b.*\b(instala\w*|ucs?)\b",
+            re.IGNORECASE,
+        ),
+        ("instalacoes-digitacao", "ce-top-instalacoes", "sp-n1-top-instalacoes"),
+    ),
     # Causas-raiz / motivos principais
     (
         re.compile(
@@ -104,7 +131,7 @@ _CARD_BOOST_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
             r"tempo entre)\b",
             re.IGNORECASE,
         ),
-        ("sp-perfil-assunto-lider", "sp-n1-assuntos"),
+        ("sp-perfil-assunto-lider", "sp-tipos-medidor", "sp-n1-assuntos"),
     ),
     # Instalações por regional
     (
@@ -196,7 +223,7 @@ _CARD_BOOST_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
             r"qual .* mais reclam\w*|quem .* mais reclam\w*|medidor)\b",
             re.IGNORECASE,
         ),
-        ("ce-top-instalacoes", "sp-n1-top-instalacoes"),
+        ("ce-top-instalacoes", "sp-n1-top-instalacoes", "sp-tipos-medidor"),
     ),
     # Mês específico / ano-mês → cards mensais por assunto/causa
     (
@@ -306,10 +333,25 @@ _SP_BOOSTS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
     ),
     (
         re.compile(
+            r"\b(tipos?\s+de\s+medidor(?:es)?|medidores?)\b.*\b(digita\w*)\b|"
+            r"\b(digita\w*)\b.*\b(tipos?\s+de\s+medidor(?:es)?|medidores?)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-tipos-medidor-digitacao",),
+    ),
+    (
+        re.compile(
+            r"\b(tipos?\s+de\s+medidor(?:es)?|medidores?\s+existentes)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-tipos-medidor",),
+    ),
+    (
+        re.compile(
             r"\b(instala\w*|\buc\b|ucs|cliente|clientes|consumidor|consumidores|medidor)\b",
             re.IGNORECASE,
         ),
-        ("sp-n1-top-instalacoes",),
+        ("sp-n1-top-instalacoes", "sp-tipos-medidor"),
     ),
     (
         re.compile(
@@ -431,6 +473,15 @@ def classify_intent(question: str) -> str:
             "mensal",
             "total",
             "reclama",
+            "problema",
+            "problemas",
+            "erro de leitura",
+            "digita",
+            "instala",
+            "uc",
+            "medidor",
+            "tipos de medidor",
+            "tipo de medidor",
             "compare",
             "compar",
             "resumo",
@@ -629,7 +680,11 @@ class RagOrchestrator:
                 region_detected=region,
             )
 
-        passages = self._enforce_budget(passages)
+        passages = self._enforce_budget(
+            passages,
+            question=check.sanitized,
+            history=history,
+        )
         messages = build_messages(
             question=check.sanitized,
             passages=passages,
@@ -638,7 +693,10 @@ class RagOrchestrator:
         )
         resp = self.provider.complete(
             messages,
-            max_tokens=self._answer_budget(),
+            max_tokens=self._answer_budget(
+                question=check.sanitized,
+                history=history,
+            ),
             temperature=self.config.temperature,
             top_p=self.config.top_p,
         )
@@ -725,14 +783,21 @@ class RagOrchestrator:
             yield OUT_OF_SCOPE_MESSAGE
             return
 
-        passages = self._enforce_budget(passages)
+        passages = self._enforce_budget(
+            passages,
+            question=check.sanitized,
+            history=history,
+        )
         messages = build_messages(
             question=check.sanitized, passages=passages, history=history
         )
         acc_text = []
         for chunk in self.provider.stream(
             messages,
-            max_tokens=self._answer_budget(),
+            max_tokens=self._answer_budget(
+                question=check.sanitized,
+                history=history,
+            ),
             temperature=self.config.temperature,
             top_p=self.config.top_p,
         ):
@@ -805,24 +870,90 @@ class RagOrchestrator:
             return merged[:top_n]
         return semantic[:top_n]
 
-    def _answer_budget(self) -> int:
+    def _answer_budget(
+        self,
+        *,
+        question: str = "",
+        history: list[dict[str, str]] | None = None,
+    ) -> int:
         """Teto de tokens de resposta para SLA de ~35s em CPU (Qwen 2.5 3B Q4).
 
         Aproximação: ~12-14 tok/s em i7-1185G7 → 35s ≈ 400 tokens úteis.
         Respostas curtas e diretas também reforçam as regras de exatidão.
         """
-        return min(400, self.config.max_turn_tokens // 2)
+        sla_cap = min(400, self.config.max_turn_tokens // 2)
+        context_limit = min(self.config.n_ctx, self.config.max_context_tokens)
+        fixed = self._fixed_prompt_tokens(question=question, history=history)
+        # Mantém folga mínima para ao menos 1 passagem curta no contexto.
+        available = context_limit - fixed - 64
+        return max(64, min(sla_cap, available))
 
-    def _enforce_budget(self, passages: list[Passage]) -> list[Passage]:
-        budget = self.config.max_turn_tokens - 600  # reserva para system+pergunta+resposta
+    def _enforce_budget(
+        self,
+        passages: list[Passage],
+        *,
+        question: str = "",
+        history: list[dict[str, str]] | None = None,
+    ) -> list[Passage]:
+        context_limit = min(self.config.n_ctx, self.config.max_context_tokens)
+        answer_budget = self._answer_budget(question=question, history=history)
+        fixed = self._fixed_prompt_tokens(question=question, history=history)
+        turn_cap = self.config.max_turn_tokens - 600
+        # Reserva espaço para conclusão + overhead do render de contexto.
+        budget = min(turn_cap, context_limit - fixed - answer_budget - 32)
+        budget = max(80, budget)
+        # Guarda adicional em caracteres para evitar prompt excessivo no chat template.
+        char_budget = max(1_200, min(4_200, (context_limit - 1_200) * 2))
         acc = 0
+        acc_chars = 0
         kept: list[Passage] = []
         for p in passages:
-            if acc + (len(p.text) // 4) > budget:
+            passage_tokens = self._approx_tokens(p.text)
+            passage_chars = len(p.text)
+            if (
+                acc + passage_tokens > budget
+                or acc_chars + passage_chars > char_budget
+            ):
                 break
             kept.append(p)
-            acc += len(p.text) // 4
-        return kept or passages[:1]
+            acc += passage_tokens
+            acc_chars += passage_chars
+        if kept:
+            return kept
+        if not passages:
+            return []
+        trim_budget = min(char_budget, max(160, budget * 3))
+        return [self._trim_passage(passages[0], trim_budget)]
+
+    @staticmethod
+    def _approx_tokens(text: str) -> int:
+        # Estimativa conservadora (PT-BR + markdown + IDs técnicos):
+        # usar /3 reduz risco de undercount vs tokenizador real do modelo.
+        return max(1, (len(text) + 2) // 3)
+
+    def _fixed_prompt_tokens(
+        self,
+        *,
+        question: str,
+        history: list[dict[str, str]] | None,
+    ) -> int:
+        history_tokens = sum(
+            self._approx_tokens(str(turn.get("content", "")))
+            for turn in (history or [])[-4:]
+        )
+        # Prefixo estático + envelope ChatML + pergunta atual.
+        return (
+            self._approx_tokens(SYSTEM_STATIC)
+            + self._approx_tokens(question)
+            + history_tokens
+            + 80
+        )
+
+    def _trim_passage(self, passage: Passage, char_budget: int) -> Passage:
+        trimmed = passage.text[: max(160, char_budget)].rstrip()
+        if len(trimmed) < len(passage.text):
+            trimmed = f"{trimmed}..."
+        return replace(passage, text=trimmed)
 
     def _record(
         self,

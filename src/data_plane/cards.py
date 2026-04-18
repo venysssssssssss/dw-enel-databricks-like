@@ -38,11 +38,14 @@ def build_data_cards(
     monthly = store.aggregate("monthly_volume", scope_filters)
     groups = store.aggregate("by_group", scope_filters)
     top_installations_regional = store.aggregate("top_instalacoes_por_regional", scope_filters)
+    top_installations_digitacao = store.aggregate("top_instalacoes_digitacao", scope_filters)
     sazonalidade = store.aggregate("sazonalidade_reclamacoes", scope_filters)
     reincidencia_assunto = store.aggregate("reincidencia_por_assunto", scope_filters)
     playbook = store.aggregate("playbook_dificuldade_acoes", scope_filters)
     sp_causa_obs = store.aggregate("sp_causa_observacoes", {"regiao": ["SP"]})
     sp_profile = store.aggregate("sp_perfil_assunto_lider", {"regiao": ["SP"]})
+    sp_tipos_medidor = store.aggregate("sp_tipos_medidor", {"regiao": ["SP"]})
+    sp_tipos_medidor_digitacao = store.aggregate("sp_tipos_medidor_digitacao", {"regiao": ["SP"]})
     frame = store.load_silver(include_total=False)
 
     cards = [
@@ -58,6 +61,7 @@ def build_data_cards(
         _monthly_card(monthly, region=scope),
         _grupo_card(groups, region=scope),
         _instalacoes_por_regional_card(top_installations_regional, region=scope),
+        _instalacoes_digitacao_card(top_installations_digitacao, region=scope),
         _sazonalidade_card(sazonalidade, region=scope),
         _reincidencia_por_assunto_card(reincidencia_assunto, region=scope),
         _playbook_card(playbook, region=scope),
@@ -101,6 +105,8 @@ def build_data_cards(
         cards.extend(_sp_n1_cards(store))
         cards.append(_sp_causa_observacoes_card(sp_causa_obs))
         cards.append(_sp_perfil_assunto_lider_card(sp_profile))
+        cards.append(_sp_tipos_medidor_card(sp_tipos_medidor))
+        cards.append(_sp_tipos_medidor_digitacao_card(sp_tipos_medidor_digitacao))
 
     source = store.silver_path.as_posix()
     return [
@@ -330,6 +336,33 @@ def _instalacoes_por_regional_card(data: pd.DataFrame, *, region: str) -> DataCa
         "instalacoes-por-regional",
         "Instalações com mais reclamações por regional",
         "\n".join(lines).strip(),
+        region=region,
+    )
+
+
+def _instalacoes_digitacao_card(data: pd.DataFrame, *, region: str) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "instalacoes-digitacao",
+            "Instalações com mais ocorrências de digitação",
+            "Sem dados de instalação para ocorrências com causa de digitação.",
+            region=region,
+        )
+    lines = ["Instalações com maior volume de reclamações ligadas à digitação:", ""]
+    for row in data.head(20).itertuples(index=False):
+        meter = (
+            f" | medidor: {row.tipo_medidor_dominante}"
+            if getattr(row, "tipo_medidor_dominante", "")
+            else ""
+        )
+        lines.append(
+            f"- {row.regiao} | `{row.instalacao}`: {_fmt_n(row.qtd_ordens)} ordens "
+            f"(assunto líder: {row.assunto_top}){meter}"
+        )
+    return DataCard(
+        "instalacoes-digitacao",
+        "Instalações com mais ocorrências de digitação",
+        "\n".join(lines),
         region=region,
     )
 
@@ -995,10 +1028,13 @@ def _sp_perfil_assunto_lider_card(data: pd.DataFrame) -> DataCard:
     row = data.iloc[0]
     body = (
         f"No assunto líder de SP (**{row['assunto_lider']}**, {_fmt_n(row['qtd_ordens'])} ordens), "
-        f"o perfil agregado indica: mês de fatura mais reclamado **{row['fat_reclamada_top'] or 'n/d'}**, "
-        f"tempo médio emissão→reclamação **{float(row['dias_emissao_ate_reclamacao_medio']):.1f} dias**, "
+        "o perfil agregado indica: mês de fatura mais reclamado "
+        f"**{row['fat_reclamada_top'] or 'n/d'}**, "
+        "tempo médio emissão→reclamação "
+        f"**{float(row['dias_emissao_ate_reclamacao_medio']):.1f} dias**, "
         f"tipo de medidor predominante **{row['tipo_medidor_dominante'] or 'n/d'}**, "
-        f"valor médio da fatura reclamada **R$ {float(row['valor_fatura_reclamada_medio']):.2f}**.\n\n"
+        "valor médio da fatura reclamada "
+        f"**R$ {float(row['valor_fatura_reclamada_medio']):.2f}**.\n\n"
         f"Cobertura do perfil: fatura {100.0 * float(row['cobertura_fatura_pct']):.1f}% "
         f"| medidor {100.0 * float(row['cobertura_medidor_pct']):.1f}%."
     )
@@ -1006,6 +1042,62 @@ def _sp_perfil_assunto_lider_card(data: pd.DataFrame) -> DataCard:
         "sp-perfil-assunto-lider",
         "SP — perfil do assunto mais reclamado",
         body,
+        region="SP",
+    )
+
+
+def _sp_tipos_medidor_card(data: pd.DataFrame) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "sp-tipos-medidor",
+            "SP — tipos de medidor mais recorrentes",
+            "Sem dados de tipo de medidor disponíveis para SP.",
+            region="SP",
+        )
+    top = data.iloc[0]
+    header = (
+        f"Em SP, o tipo de medidor mais recorrente nas reclamações é "
+        f"**{top['tipo_medidor_dominante']}** com {_fmt_n(top['qtd_ordens'])} ordens "
+        f"({_fmt_pct(float(top['percentual']))})."
+    )
+    lines = [header, "", "**Top tipos de medidor em SP**:", ""]
+    for row in data.itertuples(index=False):
+        lines.append(
+            f"- **{row.tipo_medidor_dominante}**: {_fmt_n(row.qtd_ordens)} ordens "
+            f"({_fmt_pct(float(row.percentual))}), {_fmt_n(row.qtd_instalacoes)} instalações"
+        )
+    return DataCard(
+        "sp-tipos-medidor",
+        "SP — tipos de medidor mais recorrentes",
+        "\n".join(lines),
+        region="SP",
+    )
+
+
+def _sp_tipos_medidor_digitacao_card(data: pd.DataFrame) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "sp-tipos-medidor-digitacao",
+            "SP — tipos de medidor em reclamações de digitação",
+            "Sem dados de tipo de medidor para ocorrências de digitação em SP.",
+            region="SP",
+        )
+    top = data.iloc[0]
+    header = (
+        "Nas reclamações de digitação em SP, o tipo de medidor mais recorrente é "
+        f"**{top['tipo_medidor_dominante']}** com {_fmt_n(top['qtd_ordens'])} ordens "
+        f"({_fmt_pct(float(top['percentual']))})."
+    )
+    lines = [header, "", "**Top tipos de medidor em casos de digitação (SP)**:", ""]
+    for row in data.itertuples(index=False):
+        lines.append(
+            f"- **{row.tipo_medidor_dominante}**: {_fmt_n(row.qtd_ordens)} ordens "
+            f"({_fmt_pct(float(row.percentual))}), {_fmt_n(row.qtd_instalacoes)} instalações"
+        )
+    return DataCard(
+        "sp-tipos-medidor-digitacao",
+        "SP — tipos de medidor em reclamações de digitação",
+        "\n".join(lines),
         region="SP",
     )
 

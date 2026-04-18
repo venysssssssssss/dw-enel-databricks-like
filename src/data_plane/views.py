@@ -200,6 +200,129 @@ def top_instalacoes_por_regional_view(
     return top[cols]
 
 
+def top_instalacoes_digitacao_view(frame: pd.DataFrame, *, limit: int = 20) -> pd.DataFrame:
+    cols = [
+        "regiao",
+        "instalacao",
+        "qtd_ordens",
+        "assunto_top",
+        "tipo_medidor_dominante",
+    ]
+    if frame.empty or "instalacao" not in frame.columns or "causa_canonica" not in frame.columns:
+        return pd.DataFrame(columns=cols)
+    sub = frame.copy()
+    causa = sub["causa_canonica"].fillna("").astype(str).str.casefold()
+    texto = (
+        sub.get("texto_completo", pd.Series("", index=sub.index))
+        .fillna("")
+        .astype(str)
+        .str.casefold()
+    )
+    sub = sub.loc[causa.str.contains("digit") | texto.str.contains("digit")]
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    sub["instalacao"] = sub["instalacao"].fillna("").astype(str).str.strip()
+    sub = sub.loc[sub["instalacao"].ne("")]
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    grouped = (
+        sub.groupby(["regiao", "instalacao"], as_index=False)
+        .agg(
+            qtd_ordens=("ordem", "nunique"),
+            assunto_top=("assunto", _mode_text),
+            tipo_medidor_dominante=("tipo_medidor_dominante", _mode_text),
+        )
+        .sort_values("qtd_ordens", ascending=False)
+        .head(limit)
+        .reset_index(drop=True)
+    )
+    return grouped[cols]
+
+
+def sp_tipos_medidor_view(frame: pd.DataFrame, *, limit: int = 12) -> pd.DataFrame:
+    cols = [
+        "regiao",
+        "tipo_medidor_dominante",
+        "qtd_ordens",
+        "qtd_instalacoes",
+        "percentual",
+    ]
+    if (
+        frame.empty
+        or "regiao" not in frame.columns
+        or "tipo_medidor_dominante" not in frame.columns
+    ):
+        return pd.DataFrame(columns=cols)
+    sp = frame.loc[frame["regiao"].astype(str) == "SP"].copy()
+    if sp.empty:
+        return pd.DataFrame(columns=cols)
+    sp["tipo_medidor_dominante"] = sp["tipo_medidor_dominante"].fillna("").astype(str).str.strip()
+    sp = sp.loc[sp["tipo_medidor_dominante"].ne("")]
+    if sp.empty:
+        return pd.DataFrame(columns=cols)
+    grouped = (
+        sp.groupby("tipo_medidor_dominante", as_index=False)
+        .agg(
+            qtd_ordens=("ordem", "nunique"),
+            qtd_instalacoes=("instalacao", "nunique"),
+        )
+        .sort_values("qtd_ordens", ascending=False)
+        .head(limit)
+        .reset_index(drop=True)
+    )
+    total = max(int(sp["ordem"].nunique()), 1)
+    grouped["percentual"] = grouped["qtd_ordens"] / total
+    grouped["regiao"] = "SP"
+    return grouped[cols]
+
+
+def sp_tipos_medidor_digitacao_view(frame: pd.DataFrame, *, limit: int = 10) -> pd.DataFrame:
+    cols = [
+        "regiao",
+        "tipo_medidor_dominante",
+        "qtd_ordens",
+        "qtd_instalacoes",
+        "percentual",
+    ]
+    if (
+        frame.empty
+        or "causa_canonica" not in frame.columns
+        or "tipo_medidor_dominante" not in frame.columns
+    ):
+        return pd.DataFrame(columns=cols)
+    sp = frame.loc[frame["regiao"].astype(str) == "SP"].copy()
+    if sp.empty:
+        return pd.DataFrame(columns=cols)
+    causa = sp["causa_canonica"].fillna("").astype(str).str.casefold()
+    texto = (
+        sp.get("texto_completo", pd.Series("", index=sp.index))
+        .fillna("")
+        .astype(str)
+        .str.casefold()
+    )
+    sp = sp.loc[causa.str.contains("digit") | texto.str.contains("digit")]
+    if sp.empty:
+        return pd.DataFrame(columns=cols)
+    sp["tipo_medidor_dominante"] = sp["tipo_medidor_dominante"].fillna("").astype(str).str.strip()
+    sp = sp.loc[sp["tipo_medidor_dominante"].ne("")]
+    if sp.empty:
+        return pd.DataFrame(columns=cols)
+    grouped = (
+        sp.groupby("tipo_medidor_dominante", as_index=False)
+        .agg(
+            qtd_ordens=("ordem", "nunique"),
+            qtd_instalacoes=("instalacao", "nunique"),
+        )
+        .sort_values("qtd_ordens", ascending=False)
+        .head(limit)
+        .reset_index(drop=True)
+    )
+    total = max(int(sp["ordem"].nunique()), 1)
+    grouped["percentual"] = grouped["qtd_ordens"] / total
+    grouped["regiao"] = "SP"
+    return grouped[cols]
+
+
 def monthly_assunto_breakdown_view(
     frame: pd.DataFrame, *, top_per_month: int = 3, max_months: int = 18
 ) -> pd.DataFrame:
@@ -365,8 +488,12 @@ def sp_perfil_assunto_lider_view(frame: pd.DataFrame) -> pd.DataFrame:
                 )
                 if not sub.empty
                 else 0.0,
-                "cobertura_fatura_pct": float(sub.get("perfil_fatura_disponivel", pd.Series(False)).mean()),
-                "cobertura_medidor_pct": float(sub.get("perfil_medidor_disponivel", pd.Series(False)).mean()),
+                "cobertura_fatura_pct": float(
+                    sub.get("perfil_fatura_disponivel", pd.Series(False)).mean()
+                ),
+                "cobertura_medidor_pct": float(
+                    sub.get("perfil_medidor_disponivel", pd.Series(False)).mean()
+                ),
             }
         ]
     )
@@ -395,7 +522,11 @@ def sazonalidade_reclamacoes_view(frame: pd.DataFrame) -> pd.DataFrame:
         peak = group.sort_values("qtd_ordens", ascending=False).iloc[0]
         mean = float(group["qtd_ordens"].mean()) if not group.empty else 0.0
         peak_month = peak["mes_ingresso"]
-        label = peak_month.strftime("%Y-%m") if hasattr(peak_month, "strftime") else str(peak_month)[:7]
+        label = (
+            peak_month.strftime("%Y-%m")
+            if hasattr(peak_month, "strftime")
+            else str(peak_month)[:7]
+        )
         rows.append(
             {
                 "regiao": region,
@@ -442,7 +573,10 @@ def reincidencia_por_assunto_view(frame: pd.DataFrame, *, limit: int = 12) -> pd
         out["qtd_instalacoes_reincidentes"] / out["qtd_instalacoes"].replace(0, 1)
     )
     return (
-        out.sort_values(["taxa_reincidencia", "qtd_instalacoes_reincidentes"], ascending=[False, False])
+        out.sort_values(
+            ["taxa_reincidencia", "qtd_instalacoes_reincidentes"],
+            ascending=[False, False],
+        )
         .head(limit)
         .reset_index(drop=True)[cols]
     )
@@ -610,6 +744,27 @@ VIEW_REGISTRY: dict[str, ViewSpec] = {
         ("qtd_ordens",),
         FILTER_FIELDS,
         top_instalacoes_por_regional_view,
+    ),
+    "top_instalacoes_digitacao": ViewSpec(
+        "top_instalacoes_digitacao",
+        ("regiao", "instalacao"),
+        ("qtd_ordens",),
+        FILTER_FIELDS,
+        top_instalacoes_digitacao_view,
+    ),
+    "sp_tipos_medidor": ViewSpec(
+        "sp_tipos_medidor",
+        ("tipo_medidor_dominante",),
+        ("qtd_ordens", "percentual"),
+        FILTER_FIELDS,
+        sp_tipos_medidor_view,
+    ),
+    "sp_tipos_medidor_digitacao": ViewSpec(
+        "sp_tipos_medidor_digitacao",
+        ("tipo_medidor_dominante",),
+        ("qtd_ordens", "percentual"),
+        FILTER_FIELDS,
+        sp_tipos_medidor_digitacao_view,
     ),
     "monthly_assunto_breakdown": ViewSpec(
         "monthly_assunto_breakdown",

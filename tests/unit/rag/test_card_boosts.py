@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -100,6 +101,13 @@ def _passage(anchor: str, score: float = 0.15, doc_type: str = "data") -> Passag
         ("Existe sazonalidade nas reclamações?", "sazonalidade-ce-sp"),
         ("Qual a reincidência de reclamações por assunto?", "reincidencia-por-assunto"),
         ("Qual maior dificuldade do meu cliente e qual medida adotar?", "playbook-acoes-cliente"),
+        ("Quais instalações mais tem problemas com erros de digitação?", "instalacoes-digitacao"),
+        (
+            "Quais tipos de medidores são os mais recorrentes em reclamações "
+            "que envolvem digitação?",
+            "sp-tipos-medidor-digitacao",
+        ),
+        ("Quais são os TIPOS dos medidores existentes nas instalações de SP?", "sp-tipos-medidor"),
     ],
 )
 def test_detect_card_boosts_maps_queries_to_canonical_anchors(question: str, expected_head: str):
@@ -308,6 +316,8 @@ def test_detect_card_boosts_routes_month_specific_queries(question: str):
         ("Evolução mensal de SP", "sp-n1-mensal"),
         ("Quantos tickets em SP?", "sp-n1-overview"),
         ("Qual instalação reclama mais em SP?", "sp-n1-top-instalacoes"),
+        ("Qual tipo de medidor que mais dá problema em SP?", "sp-tipos-medidor"),
+        ("Tipos de medidor em digitação em SP", "sp-tipos-medidor-digitacao"),
     ],
 )
 def test_detect_card_boosts_sp_region_uses_sp_anchors(question: str, expected_anchor: str):
@@ -345,3 +355,29 @@ def test_answer_budget_caps_tokens_for_latency_sla(tmp_path: Path):
     orch = RagOrchestrator(cfg, retriever=retriever, provider=StubProvider())  # type: ignore[arg-type]
     # SLA de 35s em CPU ≈ 400 tokens máx
     assert orch._answer_budget() <= 400  # type: ignore[attr-defined]
+
+
+def test_answer_budget_respects_context_window(tmp_path: Path):
+    cfg = _make_config(tmp_path)
+    retriever = _FakeRetriever(semantic=[], by_anchor={})
+    orch = RagOrchestrator(cfg, retriever=retriever, provider=StubProvider())  # type: ignore[arg-type]
+    budget = orch._answer_budget(
+        question="detalhe " * 700,
+        history=[{"role": "user", "content": "contexto " * 500}],
+    )
+    assert 64 <= budget <= 400
+
+
+def test_enforce_budget_trims_first_passage_when_needed(tmp_path: Path):
+    cfg = _make_config(tmp_path)
+    retriever = _FakeRetriever(semantic=[], by_anchor={})
+    orch = RagOrchestrator(cfg, retriever=retriever, provider=StubProvider())  # type: ignore[arg-type]
+    huge = replace(_passage("top-causas-raiz", score=0.99), text="A" * 30_000)
+    kept = orch._enforce_budget(  # type: ignore[attr-defined]
+        [huge],
+        question="Qual a principal causa em SP?",
+        history=[{"role": "user", "content": "histórico " * 400}],
+    )
+    assert len(kept) == 1
+    assert kept[0].anchor == huge.anchor
+    assert len(kept[0].text) < len(huge.text)
