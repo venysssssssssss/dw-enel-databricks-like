@@ -286,6 +286,215 @@ _CHAT_CSS = """
   border-left: 2px solid var(--divider);
 }
 
+/* ── Agent step spoilers (pipeline peek — LIVE animations) ───────────── */
+.agent-steps {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-md);
+  margin-bottom: 12px;
+  max-width: 640px;
+  position: relative;
+  overflow: hidden;
+}
+.agent-steps::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 30%,
+    var(--accent-soft) 50%,
+    transparent 70%
+  );
+  background-size: 220% 100%;
+  animation: agCardSweep 4.2s linear infinite;
+  pointer-events: none;
+  opacity: 0.55;
+}
+@keyframes agCardSweep {
+  from { background-position: 180% 0; }
+  to   { background-position: -80% 0; }
+}
+.agent-steps > * { position: relative; z-index: 1; }
+
+.agent-steps .ag-title {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin-bottom: 4px;
+  display: flex; align-items: center; gap: 8px;
+}
+.agent-steps .ag-title .live {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 var(--accent-ring);
+  animation: liveDot 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes liveDot {
+  0%, 100% { opacity: 0.55; transform: scale(1); box-shadow: 0 0 0 0 var(--accent-ring); }
+  50%      { opacity: 1;    transform: scale(1.25); box-shadow: 0 0 0 6px transparent; }
+}
+
+.ag-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  padding: 3px 6px;
+  margin-left: -6px;
+  border-radius: 6px;
+  animation: stepIn 260ms var(--ease) both;
+  position: relative;
+}
+@keyframes stepIn {
+  from { opacity: 0; transform: translateX(-4px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Active row — continuous aliveness (bg sweep + glow) */
+.ag-row.active {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent-soft) 35%,
+    var(--accent-soft) 65%,
+    transparent 100%
+  );
+  background-size: 260% 100%;
+  animation: stepIn 260ms var(--ease) both,
+             bgSweep 2.4s cubic-bezier(.45,0,.55,1) infinite;
+}
+@keyframes bgSweep {
+  from { background-position: 130% 0; }
+  to   { background-position: -130% 0; }
+}
+
+.ag-row .mark {
+  width: 16px; height: 16px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 10px; font-weight: 600;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+.ag-row.done .mark {
+  background: oklch(70% 0.14 150 / 0.18);
+  color: var(--ok);
+  border: 1px solid oklch(70% 0.14 150 / 0.40);
+  animation: markPop 340ms var(--ease) both;
+}
+.ag-row.done .mark::before { content: "✓"; }
+@keyframes markPop {
+  0%   { transform: scale(0.6); opacity: 0; }
+  60%  { transform: scale(1.18); opacity: 1; }
+  100% { transform: scale(1); }
+}
+.ag-row.active .mark {
+  border: 2px solid var(--accent-ring);
+  border-top-color: var(--accent);
+  animation: agSpin 0.75s linear infinite;
+}
+@keyframes agSpin { to { transform: rotate(360deg); } }
+.ag-row.pending .mark {
+  border: 1px dashed var(--border-strong);
+  opacity: 0.7;
+}
+.ag-row.pending { opacity: 0.42; }
+
+.ag-row .lbl {
+  color: var(--text);
+  font-weight: 500;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.ag-row.pending .lbl { color: var(--text-faint); font-weight: 400; }
+
+/* Inline trace — scrolling substream next to label (GPT/DeepSeek thinking feel) */
+.ag-row .ag-trace {
+  flex: 1;
+  min-width: 0;
+  height: 16px;
+  position: relative;
+  overflow: hidden;
+}
+.ag-row:not(.active) .ag-trace { display: none; }
+.ag-trace .tr {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 16px;
+  line-height: 16px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transform: translateY(6px);
+  animation: traceRotate 6s infinite;
+}
+.ag-trace .tr::before {
+  content: "›";
+  margin-right: 5px;
+  color: var(--accent);
+  opacity: 0.75;
+}
+.ag-trace .tr:nth-child(1) { animation-delay: 0.0s; }
+.ag-trace .tr:nth-child(2) { animation-delay: 1.2s; }
+.ag-trace .tr:nth-child(3) { animation-delay: 2.4s; }
+.ag-trace .tr:nth-child(4) { animation-delay: 3.6s; }
+.ag-trace .tr:nth-child(5) { animation-delay: 4.8s; }
+/* 5 items × 1.2s window = 6s total cycle */
+@keyframes traceRotate {
+  0%    { opacity: 0; transform: translateY(6px); }
+  3%    { opacity: 1; transform: translateY(0); }
+  17%   { opacity: 1; transform: translateY(0); }
+  20%   { opacity: 0; transform: translateY(-6px); }
+  100%  { opacity: 0; transform: translateY(-6px); }
+}
+
+.ag-row .detail {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.ag-row.done .detail {
+  color: var(--accent);
+  border-color: var(--accent-ring);
+}
+.ag-row.active .detail {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--accent-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-steps::before,
+  .ag-row.active,
+  .ag-row.active .mark,
+  .agent-steps .ag-title .live,
+  .ag-trace .tr {
+    animation: none !important;
+  }
+  .ag-trace .tr:nth-child(1) { opacity: 1; transform: none; }
+  .ag-row.active { background: var(--accent-soft); }
+}
+
 /* ── Typing shimmer ──────────────────────────────────────────────────── */
 .typing { display: grid; gap: 8px; max-width: 480px; }
 .typing-label {
@@ -446,17 +655,58 @@ _CHAT_CSS = """
 }
 @keyframes caretBlink { 50% { opacity: 0; } }
 
-/* ── Chat input ──────────────────────────────────────────────────────── */
-[data-testid="stChatInput"] textarea {
-  border-radius: var(--r-lg) !important;
-  border: 1px solid var(--border-strong) !important;
-  font-family: var(--font-body) !important;
-  background: var(--surface) !important;
-  color: var(--text) !important;
+/* ── Chat input — sticky premium bar ─────────────────────────────────── */
+[data-testid="stChatInput"] {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--bg) 40%,
+    var(--bg) 100%
+  ) !important;
+  padding-top: 18px !important;
+  padding-bottom: 6px !important;
 }
-[data-testid="stChatInput"] textarea:focus {
+[data-testid="stChatInput"] > div {
+  background: var(--surface) !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: var(--r-lg) !important;
+  box-shadow: var(--shadow-md) !important;
+  transition: border-color 180ms var(--ease), box-shadow 180ms var(--ease),
+              transform 180ms var(--ease) !important;
+}
+[data-testid="stChatInput"] > div:focus-within {
   border-color: var(--accent) !important;
-  box-shadow: 0 0 0 3px var(--accent-ring) !important;
+  box-shadow: 0 0 0 4px var(--accent-ring), var(--shadow-lg) !important;
+  transform: translateY(-1px) !important;
+}
+[data-testid="stChatInput"] textarea {
+  font-family: var(--font-body) !important;
+  font-size: 14px !important;
+  background: transparent !important;
+  color: var(--text) !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 14px 16px !important;
+  line-height: 1.55 !important;
+  caret-color: var(--accent) !important;
+}
+[data-testid="stChatInput"] textarea::placeholder {
+  color: var(--text-faint) !important;
+  font-style: italic;
+}
+[data-testid="stChatInput"] button {
+  background: var(--accent) !important;
+  border-radius: var(--r-md) !important;
+  color: #fff !important;
+  transition: background 160ms var(--ease), transform 160ms var(--ease) !important;
+}
+[data-testid="stChatInput"] button:hover {
+  background: var(--accent-hover) !important;
+  transform: scale(1.04) !important;
+}
+[data-testid="stChatInput"] button[disabled] {
+  background: var(--surface-3) !important;
+  color: var(--text-faint) !important;
 }
 
 /* Accessibility */
@@ -669,11 +919,126 @@ def _stream_answer(
     """Run the RAG pipeline with streaming. Returns (meta, body_text, passages)."""
     start = time.perf_counter()
 
+    # Agent-steps scaffold — rendered via INDEPENDENT slot so CSS animations
+    # keep playing while the bubble streams tokens (no DOM thrash).
+    steps: list[dict[str, Any]] = [
+        {
+            "key": "sanitize",
+            "label": "Validando entrada",
+            "status": "active",
+            "detail": "",
+            "substream": [
+                "scan prompt · normalizando NFKC",
+                "mask PII · telefone/CPF/email",
+                "policy check · safety layer",
+                "comprimento · vs limite 2k tok",
+                "hash determinístico da query",
+            ],
+        },
+        {
+            "key": "intent",
+            "label": "Classificando intenção",
+            "status": "pending",
+            "detail": "",
+            "substream": [
+                "tokenize · regex + fallback",
+                "score vs 8 classes canônicas",
+                "top-1 vs top-2 gap",
+                "confidence gate · 0.55",
+                "decisão final · roteia pipeline",
+            ],
+        },
+        {
+            "key": "region",
+            "label": "Detectando escopo regional",
+            "status": "pending",
+            "detail": "",
+            "substream": [
+                "regex CE|SP|Ceará|São Paulo",
+                "fuzzy match cidades/uts",
+                "fallback CE+SP se analítico",
+                "out-of-scope check",
+                "escopo validado",
+            ],
+        },
+        {
+            "key": "retrieve",
+            "label": "Recuperando passagens RAG",
+            "status": "pending",
+            "detail": "",
+            "substream": [
+                "embedding · MiniLM-L12 multilíngue",
+                "Chroma ANN · k=32 vizinhos",
+                "BM25 re-rank sobre keywords",
+                "filter doc_types · cards+docs",
+                "dedup por source_hash",
+            ],
+        },
+        {
+            "key": "budget",
+            "label": "Ajustando orçamento de contexto",
+            "status": "pending",
+            "detail": "",
+            "substream": [
+                "token-count por passagem",
+                "corta excedentes · janela ctx",
+                "reserva 512 tok p/ saída",
+                "ordena por score descendente",
+                "ctx-window Qwen 2.5 · 4k",
+            ],
+        },
+        {
+            "key": "llm",
+            "label": "Gerando resposta",
+            "status": "pending",
+            "detail": "",
+            "substream": [
+                "monta system prompt v2",
+                "injeta passages como evidence",
+                "few-shot CE/SP examples",
+                "Qwen2.5-3B · CPU local",
+                "stream tokens · citação ao fim",
+            ],
+        },
+    ]
+
+    thinking_slot = st.empty()
+    bubble_slot = st.empty()
+    badges: list[str] = []
+
+    def _paint_thinking() -> None:
+        thinking_slot.markdown(_agent_steps_html(steps), unsafe_allow_html=True)
+
+    def _paint_bubble(body_html: str = "") -> None:
+        bubble_slot.markdown(
+            _bubble_open("assistant", "Assistente", badges)
+            + body_html
+            + _bubble_close(),
+            unsafe_allow_html=True,
+        )
+
+    def _advance(key: str, *, detail: str = "") -> None:
+        for s in steps:
+            if s["key"] == key:
+                s["status"] = "done"
+                if detail:
+                    s["detail"] = detail
+                break
+        for s in steps:
+            if s["status"] == "pending":
+                s["status"] = "active"
+                break
+        _paint_thinking()
+
+    _paint_thinking()
+    _paint_bubble("")
+
     check = check_input(question)
     if not check.allowed:
         msg = check.reason or "Pergunta inválida."
         st.warning(msg)
         return None, msg, []
+    _advance("sanitize", detail="ok")
 
     if is_out_of_regional_scope(check.sanitized):
         st.info(OUT_OF_REGIONAL_SCOPE_MESSAGE)
@@ -687,16 +1052,15 @@ def _stream_answer(
         }, OUT_OF_REGIONAL_SCOPE_MESSAGE, []
 
     intent = classify_intent(check.sanitized)
+    _advance("intent", detail=intent)
+    badges = [f"intent · {intent}"]
+
     if intent in {"saudacao", "cortesia"}:
         text = greeting_response(context_hint)
         elapsed = (time.perf_counter() - start) * 1000
-        slot = st.empty()
-        slot.markdown(
-            _bubble_open("assistant", "Assistente", [f"intent · {intent}"])
-            + text
-            + _bubble_close(),
-            unsafe_allow_html=True,
-        )
+        # collapse thinking card for simple greetings
+        thinking_slot.empty()
+        _paint_bubble(text)
         return {
             "intent": intent,
             "prompt_tokens": 0,
@@ -708,6 +1072,8 @@ def _stream_answer(
     region = detect_regional_scope(check.sanitized)
     if region is None and intent == "analise_dados":
         region = "CE+SP"
+    _advance("region", detail=region or "geral")
+    badges = [f"intent · {intent}", f"região · {region or 'geral'}"]
 
     try:
         passages = orch._top_passages(  # noqa: SLF001
@@ -724,31 +1090,42 @@ def _stream_answer(
         )
         st.warning(msg)
         return None, msg, []
+    _advance("retrieve", detail=f"{len(passages)} fontes")
 
     if is_out_of_scope(passages, config.similarity_threshold):
         st.info(OUT_OF_SCOPE_MESSAGE)
         return None, OUT_OF_SCOPE_MESSAGE, []
 
     passages = orch._enforce_budget(passages)  # noqa: SLF001
+    _advance("budget", detail=f"{len(passages)} ctx")
+
     from src.rag.prompts import build_messages
 
     messages = build_messages(
         question=check.sanitized, passages=passages, history=history
     )
 
-    slot = st.empty()
-    badges = [f"intent · {intent}", f"região · {region or 'geral'}"]
+    # Enrich LLM substream with ACTUAL passages the agent will reference —
+    # gives a "GPT/DeepSeek thinking" feel (user sees which docs are in play).
+    llm_trace: list[str] = []
+    for i, p in enumerate(passages[:5], start=1):
+        doc_id = getattr(p, "doc_id", None) or getattr(p, "id", None) or f"passage_{i}"
+        score = getattr(p, "score", 0.0)
+        llm_trace.append(f"fonte {i:02d} · {doc_id}  ({score:.2f})")
+    while len(llm_trace) < 5:
+        llm_trace.append("sintetizando evidências...")
+    for s in steps:
+        if s["key"] == "llm":
+            s["substream"] = llm_trace
+    _paint_thinking()
 
-    # Phase 1: typing shimmer
-    slot.markdown(
-        _bubble_open("assistant", "Assistente", badges)
-        + _typing_block()
-        + _bubble_close(),
-        unsafe_allow_html=True,
-    )
+    # Typing shimmer bridges pre-first-token wait — thinking_slot keeps animating
+    # independently because it lives in its own slot.
+    _paint_bubble(_typing_block())
 
     accumulated: list[str] = []
     first_token_ms: float | None = None
+    last_paint = 0.0
 
     for chunk in orch.provider.stream(
         messages,
@@ -759,19 +1136,33 @@ def _stream_answer(
         if first_token_ms is None:
             first_token_ms = (time.perf_counter() - start) * 1000
         accumulated.append(chunk)
-        body = "".join(accumulated) + "<span class='caret'></span>"
-        slot.markdown(
-            _bubble_open("assistant", "Assistente", badges) + body + _bubble_close(),
-            unsafe_allow_html=True,
-        )
+        now = time.perf_counter()
+        # Throttle DOM updates to ~8 fps so the caret/text feel smooth without
+        # thrashing. thinking_slot is NOT repainted during this loop — its CSS
+        # animations (spin, bgSweep, trace rotate) keep playing uninterrupted.
+        if now - last_paint > 0.12:
+            body = "".join(accumulated) + "<span class='caret'></span>"
+            _paint_bubble(body)
+            last_paint = now
 
     body = "".join(accumulated).strip()
     sources_html = _render_sources_html(passages)
     elapsed = (time.perf_counter() - start) * 1000
     time_str = f"{elapsed / 1000:.1f}s"
 
-    # Phase 3: final bubble with sources
-    slot.markdown(
+    # Finalize thinking: mark LLM done with rich detail, then collapse card.
+    for s in steps:
+        if s["key"] == "llm":
+            s["status"] = "done"
+            s["detail"] = (
+                f"{len(accumulated)} tok · 1º {first_token_ms:.0f}ms"
+                if first_token_ms
+                else f"{len(accumulated)} tok"
+            )
+    _paint_thinking()
+
+    # Final bubble with sources
+    bubble_slot.markdown(
         _bubble_open("assistant", "Assistente", badges, time_str)
         + body
         + sources_html
@@ -810,6 +1201,37 @@ def _bubble_open(role: str, name: str, badges: list[str], time_str: str = "") ->
 
 def _bubble_close() -> str:
     return "</div></div></div>"
+
+
+def _agent_steps_html(steps: list[dict[str, Any]]) -> str:
+    """Render animated pipeline-step 'spoilers' — aliveness via CSS-only loops."""
+    rows: list[str] = []
+    for s in steps:
+        status = s.get("status", "pending")
+        label = s.get("label", "")
+        detail = s.get("detail", "")
+        substream = s.get("substream") or []
+        trace_items: list[str] = []
+        for tr in substream[:5]:
+            safe = str(tr).replace("<", "&lt;").replace(">", "&gt;")
+            trace_items.append(f"<span class='tr'>{safe}</span>")
+        trace_html = f"<span class='ag-trace'>{''.join(trace_items)}</span>"
+        detail_html = f"<span class='detail'>{detail}</span>" if detail else ""
+        rows.append(
+            f"<div class='ag-row {status}'>"
+            f"<span class='mark'></span>"
+            f"<span class='lbl'>{label}</span>"
+            f"{trace_html}"
+            f"{detail_html}"
+            f"</div>"
+        )
+    return (
+        "<div class='agent-steps'>"
+        "<div class='ag-title'><span class='live'></span>"
+        "Pipeline do agente · streaming</div>"
+        + "".join(rows)
+        + "</div>"
+    )
 
 
 def _typing_block() -> str:

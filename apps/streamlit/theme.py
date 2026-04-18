@@ -126,7 +126,7 @@ def dashboard_css(mode: ThemeMode = "light") -> str:
     glass_border = "rgba(255, 255, 255, 0.14)" if dark else "rgba(28, 32, 38, 0.10)"
     return f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter+Tight:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 
 :root {{
   {variables}
@@ -162,8 +162,15 @@ def dashboard_css(mode: ThemeMode = "light") -> str:
   --warn:  oklch(74% 0.14 70);
   --crit:  oklch(64% 0.20 25);
   --font-display: 'Inter Tight', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-serif:   'Fraunces', 'Iowan Old Style', Georgia, serif;
   --font-body:    'Inter', system-ui, -apple-system, sans-serif;
   --font-mono:    'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  /* ── Aconchegante warm tokens (story, hero accents, pareto gradient) ── */
+  --warm-wash:    oklch(96% 0.022 55);
+  --terra:        oklch(60% 0.17 28);
+  --terra-deep:   oklch(48% 0.17 24);
+  --plum:         oklch(36% 0.14 12);
+  --plum-deep:    oklch(28% 0.12 10);
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --r-xs: 4px; --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px;
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;

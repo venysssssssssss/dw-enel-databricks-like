@@ -309,21 +309,41 @@ def render_sidebar_filters(
     st.sidebar.markdown(_sidebar_brand(len(frame)), unsafe_allow_html=True)
 
     # ── Presets ─────────────────────────────────────────────────────────────
-    active_preset = _current_preset(current, options)
+    # Preset as single source of truth (session_state["_preset_radio"]).
+    # On first render, seed from current filter state; after that, user choice wins.
+    if "_preset_radio" not in st.session_state:
+        st.session_state["_preset_radio"] = _current_preset(current, options)
+
     st.sidebar.markdown(
         _section_header("Presets", badge=str(len(_PRESETS))),
         unsafe_allow_html=True,
     )
-    st.sidebar.markdown(_preset_stack_html(active_preset, _PRESETS), unsafe_allow_html=True)
+    st.sidebar.markdown(
+        _preset_stack_html(st.session_state["_preset_radio"], _PRESETS),
+        unsafe_allow_html=True,
+    )
     preset = st.sidebar.radio(
         "Preset",
         _PRESETS,
-        index=_PRESETS.index(active_preset),
         label_visibility="collapsed",
         key="_preset_radio",
     )
-    if preset != PRESET_MANUAL:
-        current = preset_filters(preset, frame, current)
+
+    # Detect explicit preset change and apply it once (avoids snap-back when user
+    # switches back to Manual from CE/Refat/30d).
+    last_applied = st.session_state.get("_preset_last_applied")
+    if preset != last_applied:
+        if preset == PRESET_MANUAL:
+            # Manual = release locks: restore all options so user can pick freely.
+            current = default_filters(options, include_total=include_total)
+        else:
+            current = preset_filters(preset, frame, current)
+        st.session_state[DEFAULT_FILTERS_KEY] = current
+        st.session_state["_preset_last_applied"] = preset
+        # Reset multiselect widget state so `default=` actually takes effect.
+        for _k in ("_sb_ms_regions", "_sb_ms_causes", "_sb_ms_topics"):
+            st.session_state.pop(_k, None)
+        st.rerun()
 
     # ── Period ───────────────────────────────────────────────────────────────
     st.sidebar.markdown(
@@ -358,6 +378,7 @@ def render_sidebar_filters(
             options.regions,
             default=list(current.regions),
             help="Escopo geográfico dos dados.",
+            key="_sb_ms_regions",
         )
     )
     causes = tuple(
@@ -366,6 +387,7 @@ def render_sidebar_filters(
             options.causes,
             default=list(current.causes),
             help="Label consolidado pela taxonomia e fallback de IA.",
+            key="_sb_ms_causes",
         )
     )
     topics = tuple(
@@ -374,6 +396,7 @@ def render_sidebar_filters(
             options.topics,
             default=list(current.topics),
             help="Tópico BERTopic descoberto nos textos livres.",
+            key="_sb_ms_topics",
         )
     )
 
@@ -436,6 +459,14 @@ def render_sidebar_filters(
     if st.sidebar.button("Limpar todos os filtros", use_container_width=True, key="sb_clear"):
         updated = default_filters(options, include_total=include_total)
         st.session_state[DEFAULT_FILTERS_KEY] = updated
+        for _k in (
+            "_preset_radio",
+            "_preset_last_applied",
+            "_sb_ms_regions",
+            "_sb_ms_causes",
+            "_sb_ms_topics",
+        ):
+            st.session_state.pop(_k, None)
         st.query_params.clear()
         st.rerun()
 
