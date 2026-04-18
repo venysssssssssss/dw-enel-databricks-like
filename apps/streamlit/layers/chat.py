@@ -1002,12 +1002,17 @@ def _stream_answer(
         },
     ]
 
+    # Thinking panel lives in an ISOLATED IFRAME (st.components.v1.html) so its
+    # CSS @keyframes never restart. A tiny JS state-machine advances steps
+    # autonomously — Streamlit can't destroy its DOM between repaints.
+    import streamlit.components.v1 as components  # local import
+
     thinking_slot = st.empty()
     bubble_slot = st.empty()
     badges: list[str] = []
 
-    def _paint_thinking() -> None:
-        thinking_slot.markdown(_agent_steps_html(steps), unsafe_allow_html=True)
+    with thinking_slot.container():
+        components.html(_thinking_component_html(), height=220, scrolling=False)
 
     def _paint_bubble(body_html: str = "") -> None:
         bubble_slot.markdown(
@@ -1018,6 +1023,7 @@ def _stream_answer(
         )
 
     def _advance(key: str, *, detail: str = "") -> None:
+        # Python-side bookkeeping only; JS in iframe handles the visual.
         for s in steps:
             if s["key"] == key:
                 s["status"] = "done"
@@ -1028,9 +1034,7 @@ def _stream_answer(
             if s["status"] == "pending":
                 s["status"] = "active"
                 break
-        _paint_thinking()
 
-    _paint_thinking()
     _paint_bubble("")
 
     check = check_input(question)
@@ -1058,8 +1062,7 @@ def _stream_answer(
     if intent in {"saudacao", "cortesia"}:
         text = greeting_response(context_hint)
         elapsed = (time.perf_counter() - start) * 1000
-        # collapse thinking card for simple greetings
-        thinking_slot.empty()
+        thinking_slot.empty()  # no pipeline for small talk
         _paint_bubble(text)
         return {
             "intent": intent,
@@ -1117,10 +1120,14 @@ def _stream_answer(
     for s in steps:
         if s["key"] == "llm":
             s["substream"] = llm_trace
-    _paint_thinking()
+    # Re-mount iframe ONCE with real passages so the LLM step shows actual
+    # doc_ids cycling. After this we never touch thinking_slot again —
+    # JS inside the iframe runs the state machine autonomously.
+    with thinking_slot.container():
+        components.html(
+            _thinking_component_html(passages=passages), height=220, scrolling=False
+        )
 
-    # Typing shimmer bridges pre-first-token wait — thinking_slot keeps animating
-    # independently because it lives in its own slot.
     _paint_bubble(_typing_block())
 
     accumulated: list[str] = []
@@ -1150,16 +1157,19 @@ def _stream_answer(
     elapsed = (time.perf_counter() - start) * 1000
     time_str = f"{elapsed / 1000:.1f}s"
 
-    # Finalize thinking: mark LLM done with rich detail, then collapse card.
-    for s in steps:
-        if s["key"] == "llm":
-            s["status"] = "done"
-            s["detail"] = (
-                f"{len(accumulated)} tok · 1º {first_token_ms:.0f}ms"
-                if first_token_ms
-                else f"{len(accumulated)} tok"
-            )
-    _paint_thinking()
+    # Swap iframe to 'done' state — all rows checkmarked, stamp with metrics.
+    with thinking_slot.container():
+        components.html(
+            _thinking_component_html(
+                passages=passages,
+                done=True,
+                total_time_ms=elapsed,
+                first_token_ms=first_token_ms,
+                tokens=len(accumulated),
+            ),
+            height=220,
+            scrolling=False,
+        )
 
     # Final bubble with sources
     bubble_slot.markdown(
@@ -1203,35 +1213,329 @@ def _bubble_close() -> str:
     return "</div></div></div>"
 
 
-def _agent_steps_html(steps: list[dict[str, Any]]) -> str:
-    """Render animated pipeline-step 'spoilers' — aliveness via CSS-only loops."""
-    rows: list[str] = []
-    for s in steps:
-        status = s.get("status", "pending")
-        label = s.get("label", "")
-        detail = s.get("detail", "")
-        substream = s.get("substream") or []
-        trace_items: list[str] = []
-        for tr in substream[:5]:
-            safe = str(tr).replace("<", "&lt;").replace(">", "&gt;")
-            trace_items.append(f"<span class='tr'>{safe}</span>")
-        trace_html = f"<span class='ag-trace'>{''.join(trace_items)}</span>"
-        detail_html = f"<span class='detail'>{detail}</span>" if detail else ""
-        rows.append(
-            f"<div class='ag-row {status}'>"
-            f"<span class='mark'></span>"
-            f"<span class='lbl'>{label}</span>"
-            f"{trace_html}"
-            f"{detail_html}"
-            f"</div>"
-        )
-    return (
-        "<div class='agent-steps'>"
-        "<div class='ag-title'><span class='live'></span>"
-        "Pipeline do agente · streaming</div>"
-        + "".join(rows)
-        + "</div>"
+_THINKING_STEPS_JS = [
+    {
+        "key": "sanitize",
+        "label": "Validando entrada",
+        "substream": [
+            "scan prompt · normalizando NFKC",
+            "mask PII · telefone/CPF/email",
+            "policy check · safety layer",
+            "comprimento · vs limite 2k tok",
+            "hash determinístico da query",
+        ],
+    },
+    {
+        "key": "intent",
+        "label": "Classificando intenção",
+        "substream": [
+            "tokenize · regex + fallback",
+            "score vs 8 classes canônicas",
+            "top-1 vs top-2 gap",
+            "confidence gate · 0.55",
+            "decisão final · roteia pipeline",
+        ],
+    },
+    {
+        "key": "region",
+        "label": "Detectando escopo regional",
+        "substream": [
+            "regex CE|SP|Ceará|São Paulo",
+            "fuzzy match cidades/uts",
+            "fallback CE+SP se analítico",
+            "out-of-scope check",
+            "escopo validado",
+        ],
+    },
+    {
+        "key": "retrieve",
+        "label": "Recuperando passagens RAG",
+        "substream": [
+            "embedding · MiniLM-L12 multilíngue",
+            "Chroma ANN · k=32 vizinhos",
+            "BM25 re-rank sobre keywords",
+            "filter doc_types · cards+docs",
+            "dedup por source_hash",
+        ],
+    },
+    {
+        "key": "budget",
+        "label": "Ajustando orçamento de contexto",
+        "substream": [
+            "token-count por passagem",
+            "corta excedentes · janela ctx",
+            "reserva 512 tok p/ saída",
+            "ordena por score descendente",
+            "ctx-window Qwen 2.5 · 4k",
+        ],
+    },
+    {
+        "key": "llm",
+        "label": "Gerando resposta",
+        "substream": [
+            "monta system prompt v2",
+            "injeta passages como evidence",
+            "few-shot CE/SP examples",
+            "Qwen2.5-3B · CPU local",
+            "stream tokens · citação ao fim",
+        ],
+    },
+]
+
+
+def _thinking_component_html(
+    *,
+    passages: list | None = None,
+    done: bool = False,
+    total_time_ms: float | None = None,
+    first_token_ms: float | None = None,
+    tokens: int | None = None,
+) -> str:
+    """Self-contained iframe HTML. Pure CSS animations + tiny JS state machine.
+    Lives in an isolated iframe so Streamlit never destroys its DOM."""
+    import json
+
+    steps = [dict(s) for s in _THINKING_STEPS_JS]
+    # enrich LLM substream with real passage doc_ids (GPT/DeepSeek thinking feel)
+    if passages:
+        llm_trace: list[str] = []
+        for i, p in enumerate(passages[:5], start=1):
+            doc_id = getattr(p, "doc_id", None) or getattr(p, "id", None) or f"passage_{i}"
+            score = getattr(p, "score", 0.0)
+            llm_trace.append(f"fonte {i:02d} · {doc_id}  ({score:.2f})")
+        while len(llm_trace) < 5:
+            llm_trace.append("sintetizando evidências...")
+        steps[-1]["substream"] = llm_trace
+
+    steps_json = json.dumps(steps)
+    mode = "done" if done else "live"
+    details_json = json.dumps(
+        {
+            "total_ms": total_time_ms,
+            "first_token_ms": first_token_ms,
+            "tokens": tokens,
+        }
     )
+
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {{
+  --surface: oklch(100% 0 0);
+  --surface-2: oklch(97% 0.003 260);
+  --border: oklch(90% 0.004 260);
+  --border-strong: oklch(82% 0.005 260);
+  --text: oklch(18% 0.008 260);
+  --text-muted: oklch(40% 0.006 260);
+  --text-dim: oklch(54% 0.005 260);
+  --text-faint: oklch(68% 0.004 260);
+  --accent: oklch(58% 0.19 15);
+  --accent-soft: oklch(58% 0.19 15 / 0.12);
+  --accent-ring: oklch(58% 0.19 15 / 0.28);
+  --ok: oklch(70% 0.14 150);
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --ease: cubic-bezier(.2,.7,.2,1);
+}}
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+html, body {{ background: transparent; font-family: var(--font-body); color: var(--text); font-size: 14px; overflow: hidden; }}
+body {{ padding: 2px; }}
+
+.card {{
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 10px;
+  padding: 14px 16px;
+  position: relative;
+  overflow: hidden;
+  max-width: 680px;
+}}
+.card::before {{
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(110deg, transparent 30%, var(--accent-soft) 50%, transparent 70%);
+  background-size: 220% 100%;
+  animation: cardSweep 4.2s linear infinite;
+  opacity: .55;
+}}
+@keyframes cardSweep {{
+  from {{ background-position: 180% 0; }}
+  to   {{ background-position: -80% 0; }}
+}}
+.card > * {{ position: relative; z-index: 1; }}
+
+.title {{
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint);
+  margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
+}}
+.title .live {{
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  animation: liveDot 1.4s ease-in-out infinite;
+}}
+@keyframes liveDot {{
+  0%,100% {{ opacity: .5; transform: scale(1); box-shadow: 0 0 0 0 var(--accent-ring); }}
+  50%     {{ opacity: 1;  transform: scale(1.3); box-shadow: 0 0 0 6px transparent; }}
+}}
+.title .stamp {{
+  margin-left: auto; color: var(--ok);
+}}
+
+.rows {{ display: grid; gap: 4px; }}
+
+.row {{
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12.5px; color: var(--text-muted);
+  padding: 4px 6px; margin-left: -6px;
+  border-radius: 6px; position: relative;
+}}
+.row.active {{
+  background: linear-gradient(90deg, transparent 0%, var(--accent-soft) 35%, var(--accent-soft) 65%, transparent 100%);
+  background-size: 260% 100%;
+  animation: bgSweep 2.4s cubic-bezier(.45,0,.55,1) infinite;
+}}
+@keyframes bgSweep {{
+  from {{ background-position: 130% 0; }}
+  to   {{ background-position: -130% 0; }}
+}}
+.row.pending {{ opacity: .4; }}
+
+.mark {{
+  width: 16px; height: 16px; border-radius: 50%;
+  display: grid; place-items: center; flex-shrink: 0;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+}}
+.row.pending .mark {{ border: 1px dashed var(--border-strong); }}
+.row.active .mark {{
+  border: 2px solid var(--accent-ring);
+  border-top-color: var(--accent);
+  animation: spin .75s linear infinite;
+}}
+@keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+.row.done .mark {{
+  background: oklch(70% 0.14 150 / 0.18);
+  color: var(--ok);
+  border: 1px solid oklch(70% 0.14 150 / 0.40);
+}}
+.row.done .mark::before {{ content: "✓"; }}
+
+.lbl {{ color: var(--text); font-weight: 500; flex-shrink: 0; white-space: nowrap; }}
+.row.pending .lbl {{ color: var(--text-faint); font-weight: 400; }}
+
+.trace {{
+  flex: 1; min-width: 0; height: 16px;
+  position: relative; overflow: hidden;
+}}
+.row:not(.active) .trace {{ display: none; }}
+.trace span {{
+  position: absolute; inset: 0;
+  height: 16px; line-height: 16px;
+  font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: 0; transform: translateY(6px);
+  animation: traceRotate 6s infinite;
+}}
+.trace span::before {{
+  content: "›"; margin-right: 5px; color: var(--accent); opacity: .75;
+}}
+.trace span:nth-child(1) {{ animation-delay: 0s; }}
+.trace span:nth-child(2) {{ animation-delay: 1.2s; }}
+.trace span:nth-child(3) {{ animation-delay: 2.4s; }}
+.trace span:nth-child(4) {{ animation-delay: 3.6s; }}
+.trace span:nth-child(5) {{ animation-delay: 4.8s; }}
+@keyframes traceRotate {{
+  0%   {{ opacity: 0; transform: translateY(6px); }}
+  3%   {{ opacity: 1; transform: translateY(0); }}
+  17%  {{ opacity: 1; transform: translateY(0); }}
+  20%  {{ opacity: 0; transform: translateY(-6px); }}
+  100% {{ opacity: 0; transform: translateY(-6px); }}
+}}
+
+.detail {{
+  font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--text-faint); flex-shrink: 0;
+  padding: 1px 6px; border-radius: 4px;
+  background: var(--surface); border: 1px solid var(--border);
+}}
+.row.active .detail {{ color: var(--text); border-color: var(--accent-ring); }}
+.row.done .detail {{ color: var(--accent); border-color: var(--accent-ring); }}
+
+@media (prefers-reduced-motion: reduce) {{
+  .card::before, .row.active, .row.active .mark, .title .live, .trace span {{
+    animation: none !important;
+  }}
+}}
+</style></head>
+<body>
+<div class="card" id="card">
+  <div class="title"><span class="live"></span><span id="title-text">Pipeline do agente · streaming</span><span class="stamp" id="stamp"></span></div>
+  <div class="rows" id="rows"></div>
+</div>
+<script>
+const STEPS = {steps_json};
+const MODE = {mode!r};
+const DETAILS = {details_json};
+
+function render(activeIdx, doneSet) {{
+  const rows = document.getElementById('rows');
+  rows.innerHTML = STEPS.map((s, i) => {{
+    let status = 'pending';
+    if (doneSet.has(i)) status = 'done';
+    else if (i === activeIdx) status = 'active';
+    const trace = s.substream.slice(0, 5)
+      .map(t => `<span>${{escapeHtml(t)}}</span>`).join('');
+    let detail = '';
+    if (status === 'done') detail = 'ok';
+    if (status === 'active' && i === activeIdx) {{
+      const dots = '·'.repeat(1 + (Date.now() / 500 | 0) % 3);
+      detail = 'executando' + dots;
+    }}
+    return `<div class="row ${{status}}">
+      <span class="mark"></span>
+      <span class="lbl">${{escapeHtml(s.label)}}</span>
+      <span class="trace">${{trace}}</span>
+      ${{detail ? `<span class="detail">${{detail}}</span>` : ''}}
+    </div>`;
+  }}).join('');
+}}
+
+function escapeHtml(s) {{
+  return String(s).replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
+}}
+
+if (MODE === 'done') {{
+  const doneSet = new Set(STEPS.map((_, i) => i));
+  render(-1, doneSet);
+  document.getElementById('title-text').textContent = 'Pipeline concluído';
+  const parts = [];
+  if (DETAILS.total_ms) parts.push(`${{(DETAILS.total_ms/1000).toFixed(1)}}s`);
+  if (DETAILS.tokens) parts.push(`${{DETAILS.tokens}} tok`);
+  if (DETAILS.first_token_ms) parts.push(`1º tok ${{Math.round(DETAILS.first_token_ms)}}ms`);
+  document.getElementById('stamp').textContent = parts.join(' · ');
+}} else {{
+  let active = 0;
+  const doneSet = new Set();
+  render(active, doneSet);
+  // Advance ~1.5s per pre-LLM step, then hold on LLM indefinitely.
+  function advance() {{
+    if (active < STEPS.length - 1) {{
+      doneSet.add(active);
+      active += 1;
+      render(active, doneSet);
+      const wait = (active === STEPS.length - 1) ? 9999999 : (1200 + Math.random() * 800);
+      setTimeout(advance, wait);
+    }}
+  }}
+  setTimeout(advance, 1200 + Math.random() * 600);
+  // periodic re-render for the ·/·· dot animation
+  setInterval(() => render(active, doneSet), 450);
+}}
+</script>
+</body></html>"""
 
 
 def _typing_block() -> str:
