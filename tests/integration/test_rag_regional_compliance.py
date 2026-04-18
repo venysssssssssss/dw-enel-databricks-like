@@ -25,9 +25,11 @@ def _config(tmp_path: Path) -> RagConfig:
         max_turn_tokens=2000,
         max_context_tokens=3000,
         rerank_enabled=False,
+        rerank_model="cross-encoder/ms-marco-MiniLM-L-6-v2",
         stream=False,
         retrieval_k=8,
         rerank_top_n=5,
+        query_expansion_enabled=True,
         similarity_threshold=0.01,
         corpus_roots=(tmp_path,),
         chunk_size_tokens=200,
@@ -69,6 +71,10 @@ class RegionalRetriever:
         if region == "CE+SP":
             return [p for p in self.pool if p.region in {"CE", "SP", "CE+SP"}]
         return list(self.pool)
+
+    def get_by_anchors(self, anchors: list[str], **kwargs) -> list[Passage]:
+        del anchors, kwargs
+        return []
 
 
 class EchoProvider(StubProvider):

@@ -45,6 +45,10 @@ class CardRetriever:
             target = "visao-geral"
         return [card for card in self._cards if card.anchor == target][:1]
 
+    def get_by_anchors(self, anchors: list[str], **kwargs) -> list[Passage]:
+        del anchors, kwargs
+        return []
+
 
 class ExtractiveProvider(StubProvider):
     def complete(self, messages, **kwargs):
@@ -86,9 +90,11 @@ def _config(tmp_path: Path) -> RagConfig:
         max_turn_tokens=2000,
         max_context_tokens=3000,
         rerank_enabled=False,
+        rerank_model="cross-encoder/ms-marco-MiniLM-L-6-v2",
         stream=False,
         retrieval_k=5,
         rerank_top_n=3,
+        query_expansion_enabled=True,
         similarity_threshold=0.01,
         corpus_roots=(tmp_path,),
         chunk_size_tokens=200,
@@ -188,6 +194,8 @@ def _sample_store(tmp_path: Path) -> DataStore:
         silver_path=silver_path,
         topic_assignments_path=tmp_path / "missing_assignments.csv",
         topic_taxonomy_path=tmp_path / "missing_taxonomy.json",
+        medidor_sp_path=tmp_path / "missing_medidor.csv",
+        fatura_sp_path=tmp_path / "missing_fatura.xlsx",
         cache_dir=tmp_path / "cache",
     )
 

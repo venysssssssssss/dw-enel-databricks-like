@@ -35,9 +35,11 @@ class RagConfig:
     max_turn_tokens: int
     max_context_tokens: int
     rerank_enabled: bool
+    rerank_model: str
     stream: bool
     retrieval_k: int
     rerank_top_n: int
+    query_expansion_enabled: bool
     similarity_threshold: float
     corpus_roots: tuple[Path, ...]
     chunk_size_tokens: int
@@ -112,9 +114,14 @@ def load_rag_config() -> RagConfig:
         max_turn_tokens=_env_int("RAG_MAX_TURN_TOKENS", 3000),
         max_context_tokens=_env_int("RAG_MAX_CONTEXT_TOKENS", 4096),
         rerank_enabled=_env_bool("RAG_RERANK_ENABLED", False),
+        rerank_model=os.getenv(
+            "RAG_RERANK_MODEL",
+            "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        ),
         stream=_env_bool("RAG_STREAM", True),
         retrieval_k=_env_int("RAG_RETRIEVAL_K", 12),
         rerank_top_n=_env_int("RAG_RERANK_TOP_N", 5),
+        query_expansion_enabled=_env_bool("RAG_QUERY_EXPANSION_ENABLED", True),
         similarity_threshold=_env_float("RAG_SIMILARITY_THRESHOLD", 0.05),
         corpus_roots=corpus_roots,
         chunk_size_tokens=_env_int("RAG_CHUNK_SIZE", 480),

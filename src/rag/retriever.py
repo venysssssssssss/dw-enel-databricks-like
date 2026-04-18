@@ -18,6 +18,15 @@ if TYPE_CHECKING:
     from src.rag.config import RagConfig
 
 _TOKEN_RE = re.compile(r"[\wÀ-ÿ]+", re.UNICODE)
+_QUERY_EXPANSION_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("reincid", ("recorrência", "repetição", "mesma instalação")),
+    ("sazon", ("mensal", "pico", "tendência temporal")),
+    ("assunto", ("tema", "categoria de reclamação")),
+    ("causa", ("causa-raiz", "motivo")),
+    ("instala", ("uc", "unidade consumidora")),
+    ("medidor", ("tipo de medidor", "digital", "analógico", "ciclométrico")),
+    ("fatura", ("valor da fatura", "emissão", "vencimento")),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +102,7 @@ class HybridRetriever:
         self.config = config
         self._collection = None
         self._embed_fn = None
+        self._reranker = None
 
     def _ensure_ready(self) -> None:
         if self._collection is not None:
@@ -126,7 +136,8 @@ class HybridRetriever:
     ) -> list[Passage]:
         self._ensure_ready()
         k_eff = k or self.config.retrieval_k
-        query_embedding = self._embed_fn([query])[0]  # type: ignore[misc]
+        expanded_query = _expand_query(query) if self.config.query_expansion_enabled else query
+        query_embedding = self._embed_fn([expanded_query])[0]  # type: ignore[misc]
         where_clauses: list[dict[str, object]] = []
         if doc_types:
             where_clauses.append({"doc_type": {"$in": doc_types}})
@@ -156,7 +167,7 @@ class HybridRetriever:
         dists = result.get("distances", [[]])[0]
 
         # Batch BM25 cross-doc: 1 chamada Rust em vez de N (IDF correto + paralelo).
-        lex_scores = lexical_scores(query, list(docs))
+        lex_scores = lexical_scores(expanded_query, list(docs))
 
         passages: list[Passage] = []
         for cid, text, meta, dist, lex in zip(
@@ -166,6 +177,7 @@ class HybridRetriever:
             # Combina cosine com lexical para preservar sinônimos PT-BR sem
             # perder correspondência exata de termos de negócio.
             score = 0.60 * cos_sim + 0.40 * lex
+            score += _intent_anchor_bonus(query, (meta or {}).get("anchor", ""))
             passages.append(
                 Passage(
                     chunk_id=cid,
@@ -183,7 +195,59 @@ class HybridRetriever:
                 )
             )
         passages.sort(key=lambda p: p.score, reverse=True)
+        passages = self._rerank(query, passages)
         return passages
+
+    def _rerank(self, query: str, passages: list[Passage]) -> list[Passage]:
+        if not passages or not self.config.rerank_enabled:
+            return passages
+        model = self._load_reranker()
+        if model is None:
+            return passages
+        try:
+            pairs = [(query, p.text[:1800]) for p in passages]
+            raw_scores = model.predict(pairs)  # type: ignore[attr-defined]
+            if not len(raw_scores):
+                return passages
+            peak = max(float(score) for score in raw_scores) or 1.0
+            rescored: list[Passage] = []
+            for passage, rr in zip(passages, raw_scores, strict=False):
+                rr_norm = max(0.0, float(rr) / peak)
+                score = 0.35 * passage.score + 0.65 * rr_norm
+                rescored.append(
+                    Passage(
+                        chunk_id=passage.chunk_id,
+                        text=passage.text,
+                        source_path=passage.source_path,
+                        section=passage.section,
+                        doc_type=passage.doc_type,
+                        sprint_id=passage.sprint_id,
+                        anchor=passage.anchor,
+                        score=score,
+                        dataset_version=passage.dataset_version,
+                        region=passage.region,
+                        scope=passage.scope,
+                        data_source=passage.data_source,
+                    )
+                )
+            rescored.sort(key=lambda p: p.score, reverse=True)
+            return rescored
+        except Exception:
+            return passages
+
+    def _load_reranker(self):
+        if self._reranker is False:
+            return None
+        if self._reranker is not None:
+            return self._reranker
+        try:
+            from sentence_transformers import CrossEncoder
+
+            self._reranker = CrossEncoder(self.config.rerank_model)
+            return self._reranker
+        except Exception:
+            self._reranker = False
+            return None
 
     def top_passages(
         self,
@@ -266,6 +330,7 @@ def route_doc_types(query: str) -> list[str] | None:
         "quantos", "quantas", "volume", "total de", "percentual", "porcentagem",
         "top ", "ranking", "maior", "mais frequente", "evolução", "mensal",
         "reclamações", "reclamacoes", "causa-raiz", "causa raiz", "assunto",
+        "reincid", "sazon", "perfil", "medidor", "fatura",
     )
     if any(term in q for term in analytics_terms):
         return ["data", "business", "viz"]
@@ -292,3 +357,35 @@ def route_doc_types(query: str) -> list[str] | None:
 def check_stub_corpus(path: Path) -> bool:
     """Retorna True se ChromaDB está populado; usado para mostrar CTA na UI."""
     return path.exists() and any(path.glob("*.sqlite*"))
+
+
+def _expand_query(query: str) -> str:
+    q = query.strip()
+    low = q.lower()
+    extras: list[str] = []
+    for trigger, synonyms in _QUERY_EXPANSION_HINTS:
+        if trigger in low:
+            extras.extend(synonyms)
+    if not extras:
+        return q
+    # Append-only expansion to preserve original semantics.
+    return f"{q} {' '.join(extras)}"
+
+
+def _intent_anchor_bonus(query: str, anchor: str) -> float:
+    q = query.lower()
+    a = str(anchor).lower()
+    bonus = 0.0
+    if "instala" in q and "instal" in a:
+        bonus += 0.08
+    if ("assunto" in q or "tema" in q) and "assunto" in a:
+        bonus += 0.06
+    if ("causa" in q or "motivo" in q) and ("causa" in a or "observacoes" in a):
+        bonus += 0.06
+    if ("sazon" in q or "mensal" in q) and ("mensal" in a or "sazon" in a):
+        bonus += 0.05
+    if "reincid" in q and "reincid" in a:
+        bonus += 0.06
+    if ("medidor" in q or "fatura" in q or "perfil" in q) and "perfil" in a:
+        bonus += 0.06
+    return bonus

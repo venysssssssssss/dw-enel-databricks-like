@@ -65,6 +65,12 @@ _INDIVIDUAL_CLIENT_RE = re.compile(
     re.IGNORECASE,
 )
 
+_PROFILE_DETAIL_RE = re.compile(
+    r"\b(perfil|data da fatura|fatura reclamada|emissão|emissao|vencimento|"
+    r"tipo de medidor|medidor|valor médio|valor medio|tempo entre)\b",
+    re.IGNORECASE,
+)
+
 # Boosts determinísticos: cada regra casa a query e injeta cards canônicos na
 # retrieval. Ordem importa — primeiros anchors têm prioridade visual no prompt.
 # CE tem dois universos: (a) cards CE-total com 167k ordens reais e (b) cards
@@ -81,7 +87,60 @@ _CARD_BOOST_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
         ),
         ("top-causas-raiz", "top-assuntos"),
     ),
-    # Assuntos / tipos de reclamação
+    # Causa evidenciada em observações (SP)
+    (
+        re.compile(
+            r"\b(causa[ -]?raiz).*?\b(observa\w*|texto|devolutiva)\b|"
+            r"\b(observa\w*|texto|devolutiva).*?\b(causa[ -]?raiz)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-causa-observacoes", "sp-n1-causas"),
+    ),
+    # Perfil detalhado do assunto líder (SP)
+    (
+        re.compile(
+            r"\b(perfil|tipo de medidor|medidor|fatura reclamada|data da fatura|"
+            r"valor médio da fatura|valor medio da fatura|emissão|emissao|vencimento|"
+            r"tempo entre)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-perfil-assunto-lider", "sp-n1-assuntos"),
+    ),
+    # Instalações por regional
+    (
+        re.compile(
+            r"\b(instala\w*|ucs?|clientes?).*\b(regional|região|regiao)\b|"
+            r"\b(regional|região|regiao).*\b(instala\w*|ucs?|clientes?)\b",
+            re.IGNORECASE,
+        ),
+        ("instalacoes-por-regional", "ce-top-instalacoes", "sp-n1-top-instalacoes"),
+    ),
+    # Sazonalidade
+    (
+        re.compile(
+            r"\b(sazonalidade|sazonal|estacional|pico mensal|picos mensais)\b",
+            re.IGNORECASE,
+        ),
+        ("sazonalidade-ce-sp", "evolucao-mensal"),
+    ),
+    # Reincidência por assunto
+    (
+        re.compile(
+            r"\b(reincid\w*|recorr\w*|repeti\w* por assunto)\b",
+            re.IGNORECASE,
+        ),
+        ("reincidencia-por-assunto", "top-assuntos"),
+    ),
+    # Dificuldade principal do cliente + medida recomendada
+    (
+        re.compile(
+            r"\b(dificuldade|dor principal|medida|ação|acao|o que posso adotar|"
+            r"plano de ação|plano de acao)\b",
+            re.IGNORECASE,
+        ),
+        ("playbook-acoes-cliente", "top-assuntos", "top-causas-raiz"),
+    ),
+    # Assuntos / tipos de reclamação (genérico; vem após intents específicas)
     (
         re.compile(
             r"\b(assunto|assuntos|tipo de reclama|tipos de reclama|"
@@ -169,7 +228,10 @@ _CE_TOTAL_BOOSTS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
         ("ce-reclamacoes-totais-assuntos", "ce-reclamacoes-totais-causas"),
     ),
     (
-        re.compile(r"\b(refatur\w*|maior taxa|mais refatur\w*|taxa de refatur\w*)\b", re.IGNORECASE),
+        re.compile(
+            r"\b(refatur\w*|maior taxa|mais refatur\w*|taxa de refatur\w*)\b",
+            re.IGNORECASE,
+        ),
         ("ce-reclamacoes-totais-refaturamento",),
     ),
     (
@@ -249,6 +311,23 @@ _SP_BOOSTS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
         ),
         ("sp-n1-top-instalacoes",),
     ),
+    (
+        re.compile(
+            r"\b(causa[ -]?raiz).*\b(observa\w*|texto|devolutiva)\b|"
+            r"\b(observa\w*|texto|devolutiva).*\b(causa[ -]?raiz)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-causa-observacoes",),
+    ),
+    (
+        re.compile(
+            r"\b(perfil|tipo de medidor|medidor|fatura reclamada|data da fatura|"
+            r"valor médio da fatura|valor medio da fatura|emissão|emissao|vencimento|"
+            r"tempo entre)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-perfil-assunto-lider",),
+    ),
 )
 
 
@@ -283,6 +362,18 @@ def detect_card_boosts(
 def is_individual_client_query(question: str) -> bool:
     """Queries sobre cliente/UC individual: recusar cedo com orientação agregada."""
     return bool(_INDIVIDUAL_CLIENT_RE.search(question))
+
+
+SP_PROFILE_SCOPE_MESSAGE = (
+    "O perfil detalhado com **tipo de medidor** e **faturas reclamadas** está "
+    "disponível somente para **SP** nesta versão. Para CE, consigo responder "
+    "com métricas agregadas de assuntos, causas, sazonalidade e reincidência."
+)
+
+
+def is_profile_detail_query(question: str) -> bool:
+    """Detecta perguntas de perfil detalhado cliente/fatura/medidor."""
+    return bool(_PROFILE_DETAIL_RE.search(question))
 
 
 @dataclass(frozen=True, slots=True)
@@ -450,7 +541,33 @@ class RagOrchestrator:
         # `INDIVIDUAL_CLIENT_MESSAGE` permanece disponível para rollback futuro.
         intent = classify_intent(check.sanitized)
         region = detect_regional_scope(check.sanitized)
-        if region is None and intent in ANALYTICAL_INTENTS:
+        profile_detail = is_profile_detail_query(check.sanitized)
+        if profile_detail and region in {"CE", "CE+SP"}:
+            self._record(
+                question=check.sanitized,
+                intent="profile_scope_limited",
+                passages=[],
+                prompt_tokens=0,
+                completion_tokens=len(SP_PROFILE_SCOPE_MESSAGE) // 4,
+                first_token_ms=timer.first_token_ms or timer.total_ms(),
+                total_ms=timer.total_ms(),
+                region_detected=region,
+                out_of_regional_scope=False,
+                golden_case_id=golden_case_id,
+            )
+            return RagResponse(
+                text=SP_PROFILE_SCOPE_MESSAGE,
+                passages=[],
+                intent="profile_scope_limited",
+                prompt_tokens=0,
+                completion_tokens=len(SP_PROFILE_SCOPE_MESSAGE) // 4,
+                latency_ms=timer.total_ms(),
+                region_detected=region,
+                out_of_regional_scope=False,
+            )
+        if profile_detail and region is None:
+            region = "SP"
+        elif region is None and intent in ANALYTICAL_INTENTS:
             region = "CE+SP"
 
         if intent in {"saudacao", "cortesia"}:
@@ -574,7 +691,13 @@ class RagOrchestrator:
 
         intent = classify_intent(check.sanitized)
         region = detect_regional_scope(check.sanitized)
-        if region is None and intent in ANALYTICAL_INTENTS:
+        profile_detail = is_profile_detail_query(check.sanitized)
+        if profile_detail and region in {"CE", "CE+SP"}:
+            yield SP_PROFILE_SCOPE_MESSAGE
+            return
+        if profile_detail and region is None:
+            region = "SP"
+        elif region is None and intent in ANALYTICAL_INTENTS:
             region = "CE+SP"
         if intent in {"saudacao", "cortesia"}:
             yield greeting_response(context_hint)

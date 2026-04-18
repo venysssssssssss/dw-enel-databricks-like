@@ -34,9 +34,11 @@ def _make_config(tmp_path: Path) -> RagConfig:
         max_turn_tokens=2000,
         max_context_tokens=3000,
         rerank_enabled=False,
+        rerank_model="cross-encoder/ms-marco-MiniLM-L-6-v2",
         stream=False,
         retrieval_k=5,
         rerank_top_n=3,
+        query_expansion_enabled=True,
         similarity_threshold=0.05,
         corpus_roots=(tmp_path,),
         chunk_size_tokens=200,
@@ -94,6 +96,10 @@ def _passage(anchor: str, score: float = 0.15, doc_type: str = "data") -> Passag
         ("Qual a diferença entre CE e SP?", "ce-vs-sp-causas"),
         ("Qual o assunto mais reclamado?", "top-assuntos"),
         ("Distribuição por grupo tarifário", "grupo-tarifario"),
+        ("Qual instalação tem mais reclamações por regional?", "instalacoes-por-regional"),
+        ("Existe sazonalidade nas reclamações?", "sazonalidade-ce-sp"),
+        ("Qual a reincidência de reclamações por assunto?", "reincidencia-por-assunto"),
+        ("Qual maior dificuldade do meu cliente e qual medida adotar?", "playbook-acoes-cliente"),
     ],
 )
 def test_detect_card_boosts_maps_queries_to_canonical_anchors(question: str, expected_head: str):
@@ -256,7 +262,9 @@ def test_detect_card_boosts_ce_region_prioritizes_ce_total_cards(
     assert expected_anchor in boosts
     # CE-total boosts devem vir antes dos genéricos
     ce_total_positions = [i for i, a in enumerate(boosts) if a.startswith("ce-reclamacoes-totais-")]
-    generic_positions = [i for i, a in enumerate(boosts) if not a.startswith("ce-reclamacoes-totais-")]
+    generic_positions = [
+        i for i, a in enumerate(boosts) if not a.startswith("ce-reclamacoes-totais-")
+    ]
     if ce_total_positions and generic_positions:
         assert max(ce_total_positions) < min(generic_positions)
 
@@ -310,6 +318,25 @@ def test_detect_card_boosts_sp_region_uses_sp_anchors(question: str, expected_an
 def test_detect_card_boosts_sp_region_skips_ce_total():
     boosts = detect_card_boosts("Qual a principal causa em SP?", region="SP")
     assert not any(a.startswith("ce-reclamacoes-totais-") for a in boosts)
+
+
+def test_detect_card_boosts_sp_region_routes_observacoes_anchor():
+    boosts = detect_card_boosts(
+        "De acordo com as reclamações de SP qual a causa raiz evidenciada nas observações?",
+        region="SP",
+    )
+    assert "sp-causa-observacoes" in boosts
+
+
+def test_detect_card_boosts_sp_region_routes_profile_anchor():
+    boosts = detect_card_boosts(
+        (
+            "No assunto mais reclamado em SP, qual o perfil com tipo de medidor e "
+            "valor médio da fatura?"
+        ),
+        region="SP",
+    )
+    assert "sp-perfil-assunto-lider" in boosts
 
 
 def test_answer_budget_caps_tokens_for_latency_sla(tmp_path: Path):
