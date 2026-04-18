@@ -541,6 +541,31 @@ _CHAT_CSS = """
 .shimmer.s2 { width: 75%; opacity: 0.55; }
 .shimmer.s3 { width: 50%; opacity: 0.35; }
 
+/* ── Completion pill row (replaces done-state iframe re-mount) ──────── */
+.completion-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin: 0 0 14px;
+  max-width: 640px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--ok);
+  border-radius: var(--r-md);
+  animation: msgIn 260ms var(--ease) both;
+}
+.completion-done {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ok);
+  font-weight: 600;
+  margin-right: 4px;
+}
+
 /* ── Sources ─────────────────────────────────────────────────────────── */
 .sources {
   margin-top: 12px;
@@ -716,7 +741,6 @@ _CHAT_CSS = """
 
 
 def render(st: Any, *, theme: str = "light", context_hint: str | None = None) -> None:
-    del theme
     st.markdown(_CHAT_CSS, unsafe_allow_html=True)
 
     orch = _build_orchestrator(st)
@@ -727,7 +751,7 @@ def render(st: Any, *, theme: str = "light", context_hint: str | None = None) ->
 
     _render_chat_header(st, provider_name, model_name, corpus_ready)
     _render_suggested_panel(st)
-    _render_chat_area(st, orch, config, context_hint)
+    _render_chat_area(st, orch, config, context_hint, theme=theme)
 
 
 def _render_chat_header(
@@ -816,6 +840,8 @@ def _render_chat_area(
     orch: RagOrchestrator,
     config: Any,
     context_hint: str | None,
+    *,
+    theme: str = "light",
 ) -> None:
     if "chat_history" not in st.session_state:
         st.session_state["chat_history"] = []
@@ -830,7 +856,7 @@ def _render_chat_area(
     pending = st.session_state.pop("pending_question", None)
     user_input = st.chat_input("Pergunte sobre dados, regras, arquitetura ou sprints") or pending
     if user_input:
-        _handle_user_turn(st, orch, config, user_input, context_hint)
+        _handle_user_turn(st, orch, config, user_input, context_hint, theme=theme)
 
     bottom_cols = st.columns([1, 1, 4])
     with bottom_cols[0]:
@@ -875,6 +901,8 @@ def _handle_user_turn(
     config: Any,
     user_input: str,
     context_hint: str | None,
+    *,
+    theme: str = "light",
 ) -> None:
     st.session_state["chat_first_open"] = False
     time_str = datetime.now().strftime("%H:%M")
@@ -890,7 +918,9 @@ def _handle_user_turn(
     )
 
     history = _history_for_llm(st.session_state["chat_history"])
-    meta, full_text, passages = _stream_answer(st, orch, config, user_input, history, context_hint)
+    meta, full_text, passages = _stream_answer(
+        st, orch, config, user_input, history, context_hint, theme=theme
+    )
 
     if meta:
         st.markdown(_format_metadata(meta), unsafe_allow_html=True)
@@ -915,104 +945,36 @@ def _stream_answer(
     question: str,
     history: list[dict[str, str]],
     context_hint: str | None,
+    *,
+    theme: str = "light",
 ) -> tuple[dict[str, Any] | None, str, list]:
     """Run the RAG pipeline with streaming. Returns (meta, body_text, passages)."""
     start = time.perf_counter()
 
-    # Agent-steps scaffold — rendered via INDEPENDENT slot so CSS animations
-    # keep playing while the bubble streams tokens (no DOM thrash).
-    steps: list[dict[str, Any]] = [
-        {
-            "key": "sanitize",
-            "label": "Validando entrada",
-            "status": "active",
-            "detail": "",
-            "substream": [
-                "scan prompt · normalizando NFKC",
-                "mask PII · telefone/CPF/email",
-                "policy check · safety layer",
-                "comprimento · vs limite 2k tok",
-                "hash determinístico da query",
-            ],
-        },
-        {
-            "key": "intent",
-            "label": "Classificando intenção",
-            "status": "pending",
-            "detail": "",
-            "substream": [
-                "tokenize · regex + fallback",
-                "score vs 8 classes canônicas",
-                "top-1 vs top-2 gap",
-                "confidence gate · 0.55",
-                "decisão final · roteia pipeline",
-            ],
-        },
-        {
-            "key": "region",
-            "label": "Detectando escopo regional",
-            "status": "pending",
-            "detail": "",
-            "substream": [
-                "regex CE|SP|Ceará|São Paulo",
-                "fuzzy match cidades/uts",
-                "fallback CE+SP se analítico",
-                "out-of-scope check",
-                "escopo validado",
-            ],
-        },
-        {
-            "key": "retrieve",
-            "label": "Recuperando passagens RAG",
-            "status": "pending",
-            "detail": "",
-            "substream": [
-                "embedding · MiniLM-L12 multilíngue",
-                "Chroma ANN · k=32 vizinhos",
-                "BM25 re-rank sobre keywords",
-                "filter doc_types · cards+docs",
-                "dedup por source_hash",
-            ],
-        },
-        {
-            "key": "budget",
-            "label": "Ajustando orçamento de contexto",
-            "status": "pending",
-            "detail": "",
-            "substream": [
-                "token-count por passagem",
-                "corta excedentes · janela ctx",
-                "reserva 512 tok p/ saída",
-                "ordena por score descendente",
-                "ctx-window Qwen 2.5 · 4k",
-            ],
-        },
-        {
-            "key": "llm",
-            "label": "Gerando resposta",
-            "status": "pending",
-            "detail": "",
-            "substream": [
-                "monta system prompt v2",
-                "injeta passages como evidence",
-                "few-shot CE/SP examples",
-                "Qwen2.5-3B · CPU local",
-                "stream tokens · citação ao fim",
-            ],
-        },
-    ]
-
-    # Thinking panel lives in an ISOLATED IFRAME (st.components.v1.html) so its
-    # CSS @keyframes never restart. A tiny JS state-machine advances steps
-    # autonomously — Streamlit can't destroy its DOM between repaints.
+    # Two INDEPENDENT slots: thinking (iframe) and bubble (markdown). The iframe
+    # is mounted AT MOST ONCE per turn — never re-mounted — so CSS animations
+    # never restart. It stays in 'live' mode until the turn ends, then the slot
+    # is cleared and a compact metrics pill is rendered inline.
     import streamlit.components.v1 as components  # local import
 
     thinking_slot = st.empty()
     bubble_slot = st.empty()
+    metrics_slot = st.empty()
     badges: list[str] = []
+    iframe_mounted = False
 
-    with thinking_slot.container():
-        components.html(_thinking_component_html(), height=220, scrolling=False)
+    def _mount_thinking() -> None:
+        nonlocal iframe_mounted
+        if iframe_mounted:
+            return
+        with thinking_slot.container():
+            components.html(
+                _thinking_component_html(theme=theme), height=220, scrolling=False
+            )
+        iframe_mounted = True
+
+    def _clear_thinking() -> None:
+        thinking_slot.empty()
 
     def _paint_bubble(body_html: str = "") -> None:
         bubble_slot.markdown(
@@ -1022,29 +984,16 @@ def _stream_answer(
             unsafe_allow_html=True,
         )
 
-    def _advance(key: str, *, detail: str = "") -> None:
-        # Python-side bookkeeping only; JS in iframe handles the visual.
-        for s in steps:
-            if s["key"] == key:
-                s["status"] = "done"
-                if detail:
-                    s["detail"] = detail
-                break
-        for s in steps:
-            if s["status"] == "pending":
-                s["status"] = "active"
-                break
-
-    _paint_bubble("")
-
+    # ── Fast-path guards (no iframe for these) ─────────────────────────────
     check = check_input(question)
     if not check.allowed:
         msg = check.reason or "Pergunta inválida."
+        _clear_thinking()
         st.warning(msg)
         return None, msg, []
-    _advance("sanitize", detail="ok")
 
     if is_out_of_regional_scope(check.sanitized):
+        _clear_thinking()
         st.info(OUT_OF_REGIONAL_SCOPE_MESSAGE)
         elapsed = (time.perf_counter() - start) * 1000
         return {
@@ -1056,13 +1005,12 @@ def _stream_answer(
         }, OUT_OF_REGIONAL_SCOPE_MESSAGE, []
 
     intent = classify_intent(check.sanitized)
-    _advance("intent", detail=intent)
     badges = [f"intent · {intent}"]
 
     if intent in {"saudacao", "cortesia"}:
         text = greeting_response(context_hint)
         elapsed = (time.perf_counter() - start) * 1000
-        thinking_slot.empty()  # no pipeline for small talk
+        _clear_thinking()
         _paint_bubble(text)
         return {
             "intent": intent,
@@ -1075,8 +1023,11 @@ def _stream_answer(
     region = detect_regional_scope(check.sanitized)
     if region is None and intent == "analise_dados":
         region = "CE+SP"
-    _advance("region", detail=region or "geral")
     badges = [f"intent · {intent}", f"região · {region or 'geral'}"]
+
+    # ── Real pipeline: mount iframe ONCE, then never touch it again ────────
+    _mount_thinking()
+    _paint_bubble("")
 
     try:
         passages = orch._top_passages(  # noqa: SLF001
@@ -1086,6 +1037,7 @@ def _stream_answer(
             region=region,
         )
     except (FileNotFoundError, RuntimeError) as exc:
+        _clear_thinking()
         msg = (
             "Índice RAG não disponível. Rode "
             "`python scripts/rebuild_rag_corpus_regional.py`.\n\n"
@@ -1093,40 +1045,19 @@ def _stream_answer(
         )
         st.warning(msg)
         return None, msg, []
-    _advance("retrieve", detail=f"{len(passages)} fontes")
 
     if is_out_of_scope(passages, config.similarity_threshold):
+        _clear_thinking()
         st.info(OUT_OF_SCOPE_MESSAGE)
         return None, OUT_OF_SCOPE_MESSAGE, []
 
     passages = orch._enforce_budget(passages)  # noqa: SLF001
-    _advance("budget", detail=f"{len(passages)} ctx")
 
     from src.rag.prompts import build_messages
 
     messages = build_messages(
         question=check.sanitized, passages=passages, history=history
     )
-
-    # Enrich LLM substream with ACTUAL passages the agent will reference —
-    # gives a "GPT/DeepSeek thinking" feel (user sees which docs are in play).
-    llm_trace: list[str] = []
-    for i, p in enumerate(passages[:5], start=1):
-        doc_id = getattr(p, "doc_id", None) or getattr(p, "id", None) or f"passage_{i}"
-        score = getattr(p, "score", 0.0)
-        llm_trace.append(f"fonte {i:02d} · {doc_id}  ({score:.2f})")
-    while len(llm_trace) < 5:
-        llm_trace.append("sintetizando evidências...")
-    for s in steps:
-        if s["key"] == "llm":
-            s["substream"] = llm_trace
-    # Re-mount iframe ONCE with real passages so the LLM step shows actual
-    # doc_ids cycling. After this we never touch thinking_slot again —
-    # JS inside the iframe runs the state machine autonomously.
-    with thinking_slot.container():
-        components.html(
-            _thinking_component_html(passages=passages), height=220, scrolling=False
-        )
 
     _paint_bubble(_typing_block())
 
@@ -1144,9 +1075,8 @@ def _stream_answer(
             first_token_ms = (time.perf_counter() - start) * 1000
         accumulated.append(chunk)
         now = time.perf_counter()
-        # Throttle DOM updates to ~8 fps so the caret/text feel smooth without
-        # thrashing. thinking_slot is NOT repainted during this loop — its CSS
-        # animations (spin, bgSweep, trace rotate) keep playing uninterrupted.
+        # Throttle DOM updates to ~8 fps. thinking_slot is NEVER repainted —
+        # its CSS animations (spin, bgSweep, trace rotate) keep playing.
         if now - last_paint > 0.12:
             body = "".join(accumulated) + "<span class='caret'></span>"
             _paint_bubble(body)
@@ -1157,19 +1087,19 @@ def _stream_answer(
     elapsed = (time.perf_counter() - start) * 1000
     time_str = f"{elapsed / 1000:.1f}s"
 
-    # Swap iframe to 'done' state — all rows checkmarked, stamp with metrics.
-    with thinking_slot.container():
-        components.html(
-            _thinking_component_html(
-                passages=passages,
-                done=True,
-                total_time_ms=elapsed,
-                first_token_ms=first_token_ms,
-                tokens=len(accumulated),
-            ),
-            height=220,
-            scrolling=False,
-        )
+    # Clear the thinking iframe and render a compact completion pill in its
+    # place. Single deterministic transition — no iframe re-mount, no
+    # animation restart.
+    _clear_thinking()
+    metrics_slot.markdown(
+        _completion_pill_html(
+            total_time_ms=elapsed,
+            first_token_ms=first_token_ms,
+            tokens=len(accumulated),
+            sources=len(passages),
+        ),
+        unsafe_allow_html=True,
+    )
 
     # Final bubble with sources
     bubble_slot.markdown(
@@ -1283,6 +1213,29 @@ _THINKING_STEPS_JS = [
 ]
 
 
+_THINKING_VARS_LIGHT = """\
+  --surface: oklch(100% 0 0);
+  --surface-2: oklch(97% 0.003 260);
+  --border: oklch(90% 0.004 260);
+  --border-strong: oklch(82% 0.005 260);
+  --text: oklch(18% 0.008 260);
+  --text-muted: oklch(40% 0.006 260);
+  --text-dim: oklch(54% 0.005 260);
+  --text-faint: oklch(68% 0.004 260);
+"""
+
+_THINKING_VARS_DARK = """\
+  --surface: oklch(20% 0.006 260);
+  --surface-2: oklch(23% 0.006 260);
+  --border: oklch(28% 0.006 260);
+  --border-strong: oklch(36% 0.006 260);
+  --text: oklch(96% 0.002 260);
+  --text-muted: oklch(70% 0.004 260);
+  --text-dim: oklch(54% 0.004 260);
+  --text-faint: oklch(42% 0.004 260);
+"""
+
+
 def _thinking_component_html(
     *,
     passages: list | None = None,
@@ -1290,6 +1243,7 @@ def _thinking_component_html(
     total_time_ms: float | None = None,
     first_token_ms: float | None = None,
     tokens: int | None = None,
+    theme: str = "light",
 ) -> str:
     """Self-contained iframe HTML. Pure CSS animations + tiny JS state machine.
     Lives in an isolated iframe so Streamlit never destroys its DOM."""
@@ -1316,6 +1270,7 @@ def _thinking_component_html(
             "tokens": tokens,
         }
     )
+    theme_vars = _THINKING_VARS_DARK if theme == "dark" else _THINKING_VARS_LIGHT
 
     return f"""<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"/>
@@ -1324,16 +1279,8 @@ def _thinking_component_html(
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {{
-  --surface: oklch(100% 0 0);
-  --surface-2: oklch(97% 0.003 260);
-  --border: oklch(90% 0.004 260);
-  --border-strong: oklch(82% 0.005 260);
-  --text: oklch(18% 0.008 260);
-  --text-muted: oklch(40% 0.006 260);
-  --text-dim: oklch(54% 0.005 260);
-  --text-faint: oklch(68% 0.004 260);
-  --accent: oklch(58% 0.19 15);
-  --accent-soft: oklch(58% 0.19 15 / 0.12);
+{theme_vars}  --accent: oklch(58% 0.19 15);
+  --accent-soft: oklch(58% 0.19 15 / 0.14);
   --accent-ring: oklch(58% 0.19 15 / 0.28);
   --ok: oklch(70% 0.14 150);
   --font-body: 'Inter', system-ui, sans-serif;
@@ -1536,6 +1483,47 @@ if (MODE === 'done') {{
 }}
 </script>
 </body></html>"""
+
+
+def _completion_pill_html(
+    *,
+    total_time_ms: float | None,
+    first_token_ms: float | None,
+    tokens: int | None,
+    sources: int,
+) -> str:
+    """Compact inline pill shown after the thinking iframe is cleared.
+
+    Replaces the previous 'done-state iframe re-mount' — one deterministic
+    transition, no animation restart. Uses the same --accent / --ok tokens
+    so it automatically adapts to light/dark theme.
+    """
+    pills: list[str] = []
+    if total_time_ms is not None:
+        pills.append(
+            f"<span class='pill'><span class='k'>⏱</span>"
+            f"<span class='v'>{total_time_ms/1000:.1f}s</span></span>"
+        )
+    if first_token_ms:
+        pills.append(
+            f"<span class='pill'><span class='k'>1º tok</span>"
+            f"<span class='v'>{first_token_ms:.0f} ms</span></span>"
+        )
+    if tokens:
+        pills.append(
+            f"<span class='pill'><span class='k'>tokens</span>"
+            f"<span class='v'>{tokens}</span></span>"
+        )
+    pills.append(
+        f"<span class='pill'><span class='k'>fontes</span>"
+        f"<span class='v'>{sources}</span></span>"
+    )
+    return (
+        "<div class='completion-pill-row'>"
+        "<span class='completion-done'>✓ Pipeline concluído</span>"
+        + "".join(pills)
+        + "</div>"
+    )
 
 
 def _typing_block() -> str:
