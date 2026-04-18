@@ -323,6 +323,63 @@ def sp_tipos_medidor_digitacao_view(frame: pd.DataFrame, *, limit: int = 10) -> 
     return grouped[cols]
 
 
+def sp_causas_por_tipo_medidor_view(
+    frame: pd.DataFrame,
+    *,
+    top_types: int = 6,
+    top_causes_per_type: int = 5,
+) -> pd.DataFrame:
+    cols = [
+        "regiao",
+        "tipo_medidor_dominante",
+        "causa_canonica",
+        "qtd_ordens",
+        "qtd_total_tipo",
+        "percentual_no_tipo",
+        "rank",
+    ]
+    required = {"regiao", "tipo_medidor_dominante", "causa_canonica", "ordem"}
+    if frame.empty or any(column not in frame.columns for column in required):
+        return pd.DataFrame(columns=cols)
+    sp = frame.loc[frame["regiao"].astype(str) == "SP"].copy()
+    if sp.empty:
+        return pd.DataFrame(columns=cols)
+    sp["tipo_medidor_dominante"] = (
+        sp["tipo_medidor_dominante"].fillna("").astype(str).str.strip()
+    )
+    sp["causa_canonica"] = sp["causa_canonica"].fillna("").astype(str).str.strip()
+    sp = sp.loc[sp["tipo_medidor_dominante"].ne("") & sp["causa_canonica"].ne("")]
+    if sp.empty:
+        return pd.DataFrame(columns=cols)
+
+    totals = (
+        sp.groupby("tipo_medidor_dominante", as_index=False)
+        .agg(qtd_total_tipo=("ordem", "nunique"))
+        .sort_values("qtd_total_tipo", ascending=False)
+        .head(top_types)
+        .reset_index(drop=True)
+    )
+    if totals.empty:
+        return pd.DataFrame(columns=cols)
+    totals["ordem_tipo"] = range(len(totals))
+    sp = sp.loc[sp["tipo_medidor_dominante"].isin(totals["tipo_medidor_dominante"])]
+
+    grouped = (
+        sp.groupby(["tipo_medidor_dominante", "causa_canonica"], as_index=False)
+        .agg(qtd_ordens=("ordem", "nunique"))
+        .merge(totals, on="tipo_medidor_dominante", how="inner")
+    )
+    grouped["percentual_no_tipo"] = grouped["qtd_ordens"] / grouped["qtd_total_tipo"].replace(0, 1)
+    grouped = grouped.sort_values(
+        ["ordem_tipo", "qtd_ordens", "causa_canonica"],
+        ascending=[True, False, True],
+    ).reset_index(drop=True)
+    grouped["rank"] = grouped.groupby("tipo_medidor_dominante").cumcount() + 1
+    grouped = grouped.loc[grouped["rank"] <= top_causes_per_type].copy()
+    grouped["regiao"] = "SP"
+    return grouped[cols].reset_index(drop=True)
+
+
 def monthly_assunto_breakdown_view(
     frame: pd.DataFrame, *, top_per_month: int = 3, max_months: int = 18
 ) -> pd.DataFrame:
@@ -765,6 +822,13 @@ VIEW_REGISTRY: dict[str, ViewSpec] = {
         ("qtd_ordens", "percentual"),
         FILTER_FIELDS,
         sp_tipos_medidor_digitacao_view,
+    ),
+    "sp_causas_por_tipo_medidor": ViewSpec(
+        "sp_causas_por_tipo_medidor",
+        ("tipo_medidor_dominante", "causa_canonica"),
+        ("qtd_ordens", "percentual_no_tipo"),
+        FILTER_FIELDS,
+        sp_causas_por_tipo_medidor_view,
     ),
     "monthly_assunto_breakdown": ViewSpec(
         "monthly_assunto_breakdown",

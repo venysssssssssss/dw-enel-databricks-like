@@ -46,6 +46,7 @@ def build_data_cards(
     sp_profile = store.aggregate("sp_perfil_assunto_lider", {"regiao": ["SP"]})
     sp_tipos_medidor = store.aggregate("sp_tipos_medidor", {"regiao": ["SP"]})
     sp_tipos_medidor_digitacao = store.aggregate("sp_tipos_medidor_digitacao", {"regiao": ["SP"]})
+    sp_causas_por_tipo = store.aggregate("sp_causas_por_tipo_medidor", {"regiao": ["SP"]})
     frame = store.load_silver(include_total=False)
 
     cards = [
@@ -107,6 +108,7 @@ def build_data_cards(
         cards.append(_sp_perfil_assunto_lider_card(sp_profile))
         cards.append(_sp_tipos_medidor_card(sp_tipos_medidor))
         cards.append(_sp_tipos_medidor_digitacao_card(sp_tipos_medidor_digitacao))
+        cards.append(_sp_causas_por_tipo_medidor_card(sp_causas_por_tipo))
 
     source = store.silver_path.as_posix()
     return [
@@ -1097,6 +1099,45 @@ def _sp_tipos_medidor_digitacao_card(data: pd.DataFrame) -> DataCard:
     return DataCard(
         "sp-tipos-medidor-digitacao",
         "SP — tipos de medidor em reclamações de digitação",
+        "\n".join(lines),
+        region="SP",
+    )
+
+
+def _sp_causas_por_tipo_medidor_card(data: pd.DataFrame) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "sp-causas-por-tipo-medidor",
+            "SP — top motivos por tipo de medidor",
+            "Sem dados suficientes para causas por tipo de medidor em SP.",
+            region="SP",
+        )
+    ordered = data.sort_values(
+        ["qtd_total_tipo", "rank"],
+        ascending=[False, True],
+    ).reset_index(drop=True)
+    first = ordered.iloc[0]
+    header = (
+        f"Em SP, para o medidor **{first['tipo_medidor_dominante']}**, "
+        f"a causa principal é **{first['causa_canonica']}** com "
+        f"{_fmt_n(first['qtd_ordens'])} ordens "
+        f"({_fmt_pct(float(first['percentual_no_tipo']))} dentro do tipo)."
+    )
+    lines = [header, "", "**Top 5 causas por tipo de medidor (SP)**:", ""]
+    for meter, group in ordered.groupby("tipo_medidor_dominante", sort=False):
+        group = group.sort_values("rank").head(5)
+        total = int(group.iloc[0]["qtd_total_tipo"])
+        rendered = "; ".join(
+            (
+                f"{int(row.rank)}. {row.causa_canonica} "
+                f"({_fmt_n(row.qtd_ordens)}, {_fmt_pct(float(row.percentual_no_tipo))})"
+            )
+            for row in group.itertuples(index=False)
+        )
+        lines.append(f"- **{meter}** ({_fmt_n(total)} ordens): {rendered}")
+    return DataCard(
+        "sp-causas-por-tipo-medidor",
+        "SP — top motivos por tipo de medidor",
         "\n".join(lines),
         region="SP",
     )

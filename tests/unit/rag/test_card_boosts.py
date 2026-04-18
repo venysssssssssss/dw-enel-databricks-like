@@ -101,7 +101,17 @@ def _passage(anchor: str, score: float = 0.15, doc_type: str = "data") -> Passag
         ("Existe sazonalidade nas reclamações?", "sazonalidade-ce-sp"),
         ("Qual a reincidência de reclamações por assunto?", "reincidencia-por-assunto"),
         ("Qual maior dificuldade do meu cliente e qual medida adotar?", "playbook-acoes-cliente"),
+        (
+            "O que seria REFATURAMENTO PRODUTOS ? "
+            "Por que isso é um motivo de reclamação recorrente",
+            "ce-reclamacoes-totais-assuntos",
+        ),
         ("Quais instalações mais tem problemas com erros de digitação?", "instalacoes-digitacao"),
+        (
+            "Dessas reclamações geradas, quais são os top 5 motivos de reclamações "
+            "para o medidor digital",
+            "sp-causas-por-tipo-medidor",
+        ),
         (
             "Quais tipos de medidores são os mais recorrentes em reclamações "
             "que envolvem digitação?",
@@ -317,12 +327,25 @@ def test_detect_card_boosts_routes_month_specific_queries(question: str):
         ("Quantos tickets em SP?", "sp-n1-overview"),
         ("Qual instalação reclama mais em SP?", "sp-n1-top-instalacoes"),
         ("Qual tipo de medidor que mais dá problema em SP?", "sp-tipos-medidor"),
+        (
+            "Top 5 motivos de reclamação para medidor digital em SP",
+            "sp-causas-por-tipo-medidor",
+        ),
         ("Tipos de medidor em digitação em SP", "sp-tipos-medidor-digitacao"),
     ],
 )
 def test_detect_card_boosts_sp_region_uses_sp_anchors(question: str, expected_anchor: str):
     boosts = detect_card_boosts(question, region="SP")
     assert expected_anchor in boosts
+
+
+def test_detect_card_boosts_sp_region_prioritizes_medidor_motivo_drilldown():
+    boosts = detect_card_boosts(
+        "Top 5 motivos de reclamação para medidor digital em SP",
+        region="SP",
+    )
+    assert boosts
+    assert boosts[0] == "sp-causas-por-tipo-medidor"
 
 
 def test_detect_card_boosts_sp_region_skips_ce_total():

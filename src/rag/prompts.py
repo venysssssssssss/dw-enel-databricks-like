@@ -108,6 +108,9 @@ UNIVERSOS DE DADOS ADICIONAIS:
 - **Tipos de medidor em digitação (SP)**: anchor
   `sp-tipos-medidor-digitacao` responde os tipos de medidor mais recorrentes
   em ocorrências de digitação em SP.
+- **Motivos por tipo de medidor (SP)**: anchor
+  `sp-causas-por-tipo-medidor` responde os top motivos (causas canônicas)
+  por tipo de medidor, incluindo recorte para medidor digital.
 - **Instalações com digitação**: anchor `instalacoes-digitacao` lista
   instalações com maior volume de ocorrências de digitação.
 - **Sazonalidade**: anchor `sazonalidade-ce-sp` resume mês de pico por região.

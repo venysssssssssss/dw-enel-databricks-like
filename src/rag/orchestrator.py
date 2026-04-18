@@ -77,6 +77,26 @@ _PROFILE_DETAIL_RE = re.compile(
 # CE+SP de erro_leitura rotulado. As regras abaixo casam primeiro os genéricos
 # e depois a extensão CE-total é aplicada separadamente quando região=CE.
 _CARD_BOOST_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
+    # Termo explícito de negócio (CE total): refaturamento produtos
+    (
+        re.compile(r"\brefaturamento\s+produtos\b", re.IGNORECASE),
+        (
+            "ce-reclamacoes-totais-assuntos",
+            "ce-reclamacoes-totais-refaturamento",
+            "ce-reclamacoes-totais-mensal-assuntos",
+        ),
+    ),
+    # Motivos/causas por tipo de medidor (SP)
+    (
+        re.compile(
+            r"\b(motivo|motivos|causa|causas|assunto|assuntos)\b.*"
+            r"\b(medidor(?:es)?|digital|analógic\w*|analogic\w*|ciclom\w*)\b|"
+            r"\b(medidor(?:es)?|digital|analógic\w*|analogic\w*|ciclom\w*)\b.*"
+            r"\b(motivo|motivos|causa|causas|assunto|assuntos)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-causas-por-tipo-medidor", "sp-tipos-medidor", "sp-n1-causas"),
+    ),
     # Tipos de medidor em casos de digitação (SP)
     (
         re.compile(
@@ -304,6 +324,16 @@ _CE_TOTAL_BOOSTS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
 
 # Boosts dedicados à região SP (universo N1 erro_leitura).
 _SP_BOOSTS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
+    (
+        re.compile(
+            r"\b(motivo|motivos|causa|causas|assunto|assuntos)\b.*"
+            r"\b(medidor(?:es)?|digital|analógic\w*|analogic\w*|ciclom\w*)\b|"
+            r"\b(medidor(?:es)?|digital|analógic\w*|analogic\w*|ciclom\w*)\b.*"
+            r"\b(motivo|motivos|causa|causas|assunto|assuntos)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-causas-por-tipo-medidor",),
+    ),
     (
         re.compile(
             r"\b(assunto|assuntos|causa|causas|motivo|motivos|principal|principais|"

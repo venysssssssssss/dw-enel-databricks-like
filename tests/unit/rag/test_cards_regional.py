@@ -113,13 +113,19 @@ def test_build_data_cards_sp_scope_contains_sp_and_quality(tmp_path: Path) -> No
     assert "data-quality-notes" in anchors
     assert "sp-tipos-medidor" in anchors
     assert "sp-tipos-medidor-digitacao" in anchors
+    assert "sp-causas-por-tipo-medidor" in anchors
 
 
 def test_build_data_cards_ce_sp_scope_contains_comparatives(tmp_path: Path) -> None:
     cards = build_data_cards(_store(tmp_path), regional_scope="CE+SP")
     anchors = {card.anchor for card in cards}
     assert {"ce-vs-sp-causas", "ce-vs-sp-refaturamento", "ce-vs-sp-mensal"} <= anchors
-    assert {"instalacoes-digitacao", "sp-tipos-medidor", "sp-tipos-medidor-digitacao"} <= anchors
+    assert {
+        "instalacoes-digitacao",
+        "sp-tipos-medidor",
+        "sp-tipos-medidor-digitacao",
+        "sp-causas-por-tipo-medidor",
+    } <= anchors
 
 
 def test_data_quality_notes_always_present(tmp_path: Path) -> None:
