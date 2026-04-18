@@ -23,8 +23,15 @@ _QUERY_EXPANSION_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("sazon", ("mensal", "pico", "tendência temporal")),
     ("assunto", ("tema", "categoria de reclamação")),
     ("causa", ("causa-raiz", "motivo")),
+    ("motivo", ("causa-raiz", "driver operacional", "recorrência")),
+    ("recorrent", ("reincidência", "frequência", "série mensal")),
     ("instala", ("uc", "unidade consumidora")),
     ("medidor", ("tipo de medidor", "digital", "analógico", "ciclométrico")),
+    ("digital", ("medidor digital", "causa por tipo", "percentual no tipo")),
+    (
+        "refaturamento produtos",
+        ("ce total", "assunto causa", "refaturamento corretivo"),
+    ),
     ("fatura", ("valor da fatura", "emissão", "vencimento")),
 )
 
@@ -177,7 +184,10 @@ class HybridRetriever:
             # Combina cosine com lexical para preservar sinônimos PT-BR sem
             # perder correspondência exata de termos de negócio.
             score = 0.60 * cos_sim + 0.40 * lex
-            score += _intent_anchor_bonus(query, (meta or {}).get("anchor", ""))
+            anchor = (meta or {}).get("anchor", "")
+            score += _intent_anchor_bonus(query, anchor)
+            score += _region_anchor_bonus(region, anchor)
+            score += _query_structure_bonus(query, anchor)
             passages.append(
                 Passage(
                     chunk_id=cid,
@@ -330,7 +340,7 @@ def route_doc_types(query: str) -> list[str] | None:
         "quantos", "quantas", "volume", "total de", "percentual", "porcentagem",
         "top ", "ranking", "maior", "mais frequente", "evolução", "mensal",
         "reclamações", "reclamacoes", "causa-raiz", "causa raiz", "assunto",
-        "reincid", "sazon", "perfil", "medidor", "fatura",
+        "reincid", "sazon", "perfil", "medidor", "fatura", "taxonomia",
     )
     if any(term in q for term in analytics_terms):
         return ["data", "business", "viz"]
@@ -387,5 +397,41 @@ def _intent_anchor_bonus(query: str, anchor: str) -> float:
     if "reincid" in q and "reincid" in a:
         bonus += 0.06
     if ("medidor" in q or "fatura" in q or "perfil" in q) and "perfil" in a:
+        bonus += 0.06
+    return bonus
+
+
+def _region_anchor_bonus(
+    region: Literal["CE", "SP", "CE+SP"] | None,
+    anchor: str,
+) -> float:
+    a = str(anchor).lower()
+    if not a:
+        return 0.0
+    if region == "SP" and a.startswith("sp-"):
+        return 0.06
+    if region == "CE" and a.startswith("ce-"):
+        return 0.06
+    if region == "CE+SP" and (
+        a.startswith("ce-vs-sp-")
+        or a in {"instalacoes-por-regional", "sazonalidade-ce-sp", "motivos-taxonomia-ce-sp"}
+    ):
+        return 0.05
+    return 0.0
+
+
+def _query_structure_bonus(query: str, anchor: str) -> float:
+    q = query.lower()
+    a = str(anchor).lower()
+    bonus = 0.0
+    if "refaturamento produtos" in q and "ce-reclamacoes-totais" in a:
+        bonus += 0.07
+    if (
+        any(term in q for term in ("motivo", "motivos", "causa", "causas"))
+        and "medidor" in q
+        and "sp-causas-por-tipo-medidor" in a
+    ):
+        bonus += 0.08
+    if any(term in q for term in ("taxonomia", "motivo consolidado")) and "motivos-taxonomia" in a:
         bonus += 0.06
     return bonus

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from src.rag.eval.metrics import (
     answer_exactness,
     citation_accuracy,
+    fallback_guardrail_success,
     mrr,
     ndcg_at_k,
     recall_at_k,
@@ -140,6 +141,10 @@ def run_eval(
             "ndcg@10": _mean(ndcg10_values),
             "citation_accuracy": _mean(citation_values),
             "refusal_rate": refusal_rate(refusal_answers, refusal_expecteds),
+            "fallback_guardrail_success": fallback_guardrail_success(
+                refusal_answers,
+                refusal_expecteds,
+            ),
             "regional_compliance": regional_compliance(passage_regions),
             "answer_exactness": _mean(exactness_values),
             "latency_p50_ms": round(p50, 2),

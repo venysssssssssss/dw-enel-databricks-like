@@ -101,6 +101,7 @@ def _passage(anchor: str, score: float = 0.15, doc_type: str = "data") -> Passag
         ("Existe sazonalidade nas reclamações?", "sazonalidade-ce-sp"),
         ("Qual a reincidência de reclamações por assunto?", "reincidencia-por-assunto"),
         ("Qual maior dificuldade do meu cliente e qual medida adotar?", "playbook-acoes-cliente"),
+        ("Qual a taxonomia consolidada de motivos em CE e SP?", "motivos-taxonomia-ce-sp"),
         (
             "O que seria REFATURAMENTO PRODUTOS ? "
             "Por que isso é um motivo de reclamação recorrente",

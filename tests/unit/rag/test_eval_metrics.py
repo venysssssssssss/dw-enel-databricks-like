@@ -3,6 +3,7 @@ from __future__ import annotations
 from src.rag.eval.metrics import (
     answer_exactness,
     citation_accuracy,
+    fallback_guardrail_success,
     mrr,
     ndcg_at_k,
     recall_at_k,
@@ -32,6 +33,18 @@ def test_refusal_rate() -> None:
     ]
     expected = [True, False]
     assert refusal_rate(answers, expected) == 1.0
+
+
+def test_fallback_guardrail_success() -> None:
+    answers = [
+        "Não encontrei essa informação nos dados indexados de CE/SP.",
+        (
+            "Resposta analítica com fonte "
+            "[fonte: data/silver/erro_leitura_normalizado.csv#sp-n1-assuntos]"
+        ),
+    ]
+    expected_refusal = [False, False]
+    assert fallback_guardrail_success(answers, expected_refusal) == 0.5
 
 
 def test_regional_compliance() -> None:

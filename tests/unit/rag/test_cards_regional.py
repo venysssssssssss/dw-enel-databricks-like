@@ -103,6 +103,7 @@ def test_build_data_cards_ce_scope_contains_ce_and_quality(tmp_path: Path) -> No
     assert "regiao-ce" in anchors
     assert "regiao-sp" not in anchors
     assert "data-quality-notes" in anchors
+    assert "ce-reclamacoes-totais-assunto-causa" in anchors
 
 
 def test_build_data_cards_sp_scope_contains_sp_and_quality(tmp_path: Path) -> None:
@@ -125,6 +126,7 @@ def test_build_data_cards_ce_sp_scope_contains_comparatives(tmp_path: Path) -> N
         "sp-tipos-medidor",
         "sp-tipos-medidor-digitacao",
         "sp-causas-por-tipo-medidor",
+        "motivos-taxonomia-ce-sp",
     } <= anchors
 
 

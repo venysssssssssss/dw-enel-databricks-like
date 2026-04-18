@@ -380,6 +380,97 @@ def sp_causas_por_tipo_medidor_view(
     return grouped[cols].reset_index(drop=True)
 
 
+def ce_total_assunto_causa_view(
+    frame: pd.DataFrame,
+    *,
+    top_assuntos: int = 6,
+    top_causas_por_assunto: int = 4,
+) -> pd.DataFrame:
+    cols = [
+        "regiao",
+        "assunto",
+        "causa_canonica",
+        "qtd_ordens",
+        "qtd_assunto",
+        "percentual_no_assunto",
+        "rank_assunto",
+        "rank_causa",
+    ]
+    required = {"regiao", "tipo_origem", "assunto", "causa_canonica", "ordem"}
+    if frame.empty or any(column not in frame.columns for column in required):
+        return pd.DataFrame(columns=cols)
+    sub = frame.loc[
+        (frame["regiao"].astype(str) == "CE")
+        & (frame["tipo_origem"].astype(str) == "reclamacao_total")
+    ].copy()
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    sub["assunto"] = sub["assunto"].fillna("").astype(str).str.strip()
+    sub["causa_canonica"] = sub["causa_canonica"].fillna("").astype(str).str.strip()
+    sub = sub.loc[sub["assunto"].ne("") & sub["causa_canonica"].ne("")]
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+
+    top = (
+        sub.groupby("assunto", as_index=False)
+        .agg(qtd_assunto=("ordem", "nunique"))
+        .sort_values("qtd_assunto", ascending=False)
+        .head(top_assuntos)
+        .reset_index(drop=True)
+    )
+    if top.empty:
+        return pd.DataFrame(columns=cols)
+    top["rank_assunto"] = range(1, len(top) + 1)
+    sub = sub.loc[sub["assunto"].isin(top["assunto"])]
+    grouped = (
+        sub.groupby(["assunto", "causa_canonica"], as_index=False)
+        .agg(qtd_ordens=("ordem", "nunique"))
+        .merge(top, on="assunto", how="inner")
+    )
+    grouped["percentual_no_assunto"] = grouped["qtd_ordens"] / grouped["qtd_assunto"].replace(0, 1)
+    grouped = grouped.sort_values(
+        ["rank_assunto", "qtd_ordens", "causa_canonica"],
+        ascending=[True, False, True],
+    ).reset_index(drop=True)
+    grouped["rank_causa"] = grouped.groupby("assunto").cumcount() + 1
+    grouped = grouped.loc[grouped["rank_causa"] <= top_causas_por_assunto]
+    grouped["regiao"] = "CE"
+    return grouped[cols].reset_index(drop=True)
+
+
+def motivos_taxonomia_view(frame: pd.DataFrame, *, limit: int = 20) -> pd.DataFrame:
+    cols = [
+        "regiao",
+        "assunto",
+        "causa_canonica",
+        "motivo_taxonomia",
+        "qtd_ordens",
+        "percentual",
+    ]
+    required = {"regiao", "assunto", "causa_canonica", "ordem"}
+    if frame.empty or any(column not in frame.columns for column in required):
+        return pd.DataFrame(columns=cols)
+    sub = frame.copy()
+    sub["regiao"] = sub["regiao"].fillna("").astype(str).str.strip()
+    sub["assunto"] = sub["assunto"].fillna("").astype(str).str.strip()
+    sub["causa_canonica"] = sub["causa_canonica"].fillna("").astype(str).str.strip()
+    sub = sub.loc[sub["regiao"].isin({"CE", "SP"})]
+    sub = sub.loc[sub["assunto"].ne("") & sub["causa_canonica"].ne("")]
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    grouped = (
+        sub.groupby(["regiao", "assunto", "causa_canonica"], as_index=False)
+        .agg(qtd_ordens=("ordem", "nunique"))
+        .sort_values("qtd_ordens", ascending=False)
+        .head(limit)
+        .reset_index(drop=True)
+    )
+    total = max(int(sub["ordem"].nunique()), 1)
+    grouped["motivo_taxonomia"] = grouped["assunto"] + " | " + grouped["causa_canonica"]
+    grouped["percentual"] = grouped["qtd_ordens"] / total
+    return grouped[cols]
+
+
 def monthly_assunto_breakdown_view(
     frame: pd.DataFrame, *, top_per_month: int = 3, max_months: int = 18
 ) -> pd.DataFrame:
@@ -829,6 +920,20 @@ VIEW_REGISTRY: dict[str, ViewSpec] = {
         ("qtd_ordens", "percentual_no_tipo"),
         FILTER_FIELDS,
         sp_causas_por_tipo_medidor_view,
+    ),
+    "ce_total_assunto_causa": ViewSpec(
+        "ce_total_assunto_causa",
+        ("assunto", "causa_canonica"),
+        ("qtd_ordens", "percentual_no_assunto"),
+        FILTER_FIELDS,
+        ce_total_assunto_causa_view,
+    ),
+    "motivos_taxonomia": ViewSpec(
+        "motivos_taxonomia",
+        ("regiao", "assunto", "causa_canonica"),
+        ("qtd_ordens", "percentual"),
+        FILTER_FIELDS,
+        motivos_taxonomia_view,
     ),
     "monthly_assunto_breakdown": ViewSpec(
         "monthly_assunto_breakdown",

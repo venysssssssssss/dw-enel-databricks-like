@@ -47,6 +47,7 @@ def build_data_cards(
     sp_tipos_medidor = store.aggregate("sp_tipos_medidor", {"regiao": ["SP"]})
     sp_tipos_medidor_digitacao = store.aggregate("sp_tipos_medidor_digitacao", {"regiao": ["SP"]})
     sp_causas_por_tipo = store.aggregate("sp_causas_por_tipo_medidor", {"regiao": ["SP"]})
+    motivos_taxonomia = store.aggregate("motivos_taxonomia", scope_filters)
     frame = store.load_silver(include_total=False)
 
     cards = [
@@ -66,6 +67,7 @@ def build_data_cards(
         _sazonalidade_card(sazonalidade, region=scope),
         _reincidencia_por_assunto_card(reincidencia_assunto, region=scope),
         _playbook_card(playbook, region=scope),
+        _motivos_taxonomia_card(motivos_taxonomia, region=scope),
         _data_quality_notes_card(frame),
     ]
     if scope in {"CE", "CE+SP"}:
@@ -593,11 +595,13 @@ def _ce_total_complaints_cards(store: DataStore) -> list[DataCard]:
     monthly = store.aggregate("monthly_volume", _CE_TOTAL_FILTERS, include_total=True)
     groups = store.aggregate("by_group", _CE_TOTAL_FILTERS, include_total=True)
     causas = store.aggregate("top_causas", _CE_TOTAL_FILTERS, include_total=True)
+    assunto_causa = store.aggregate("ce_total_assunto_causa", _CE_TOTAL_FILTERS, include_total=True)
 
     return [
         _ce_total_overview_card(overview),
         _ce_total_assuntos_card(assuntos),
         _ce_total_refaturamento_card(refat, assuntos),
+        _ce_total_assunto_causa_card(assunto_causa),
         _ce_total_evolucao_card(monthly),
         _ce_total_grupo_card(groups),
         _ce_total_causas_card(causas),
@@ -691,6 +695,37 @@ def _ce_total_refaturamento_card(
         "ce-reclamacoes-totais-refaturamento",
         "CE — refaturamento nas reclamações totais",
         "\n".join(lines),
+        region="CE",
+    )
+
+
+def _ce_total_assunto_causa_card(data: pd.DataFrame) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "ce-reclamacoes-totais-assunto-causa",
+            "CE — causas por assunto (reclamações totais)",
+            "Sem dados suficientes para explicabilidade assunto→causa em CE total.",
+            region="CE",
+        )
+    lines = [
+        "Explicabilidade CE (reclamações totais): principais causas dentro dos assuntos líderes.",
+        "",
+    ]
+    ordered = data.sort_values(["rank_assunto", "rank_causa"]).reset_index(drop=True)
+    for assunto, group in ordered.groupby("assunto", sort=False):
+        total = int(group.iloc[0]["qtd_assunto"])
+        lines.append(f"**{assunto}** ({_fmt_n(total)} ordens):")
+        for row in group.itertuples(index=False):
+            lines.append(
+                f"- {int(row.rank_causa)}. {row.causa_canonica}: "
+                f"{_fmt_n(row.qtd_ordens)} "
+                f"({_fmt_pct(float(row.percentual_no_assunto))} no assunto)"
+            )
+        lines.append("")
+    return DataCard(
+        "ce-reclamacoes-totais-assunto-causa",
+        "CE — causas por assunto (reclamações totais)",
+        "\n".join(lines).strip(),
         region="CE",
     )
 
@@ -1140,6 +1175,33 @@ def _sp_causas_por_tipo_medidor_card(data: pd.DataFrame) -> DataCard:
         "SP — top motivos por tipo de medidor",
         "\n".join(lines),
         region="SP",
+    )
+
+
+def _motivos_taxonomia_card(data: pd.DataFrame, *, region: str) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "motivos-taxonomia-ce-sp",
+            "Taxonomia consolidada de motivos (assunto + causa)",
+            "Sem dados para consolidar taxonomia de motivos em CE/SP.",
+            region=region,
+        )
+    lines = [
+        "Taxonomia consolidada de motivos de reclamação (assunto + causa canônica):",
+        "",
+        "**Top combinações CE/SP**:",
+        "",
+    ]
+    for row in data.head(20).itertuples(index=False):
+        lines.append(
+            f"- [{row.regiao}] **{row.assunto}** + {row.causa_canonica}: "
+            f"{_fmt_n(row.qtd_ordens)} ({_fmt_pct(float(row.percentual))})"
+        )
+    return DataCard(
+        "motivos-taxonomia-ce-sp",
+        "Taxonomia consolidada de motivos (assunto + causa)",
+        "\n".join(lines),
+        region=region,
     )
 
 

@@ -88,6 +88,18 @@ class RecordingProvider(StubProvider):
         )
 
 
+class NotFoundProvider(StubProvider):
+    def complete(self, messages, **kwargs):  # noqa: ANN001
+        del messages, kwargs
+        return LLMResponse(
+            text="Não encontrei essa informação nos dados indexados de CE/SP.",
+            prompt_tokens=80,
+            completion_tokens=12,
+            provider=self.name,
+            model=self.model,
+        )
+
+
 @pytest.mark.parametrize(
     "question,expected",
     [
@@ -102,6 +114,7 @@ class RecordingProvider(StubProvider):
         ("por que refaturamento subiu?", "analise_dados"),
         ("quantas ordens existem em CE?", "analise_dados"),
         ("quais tipos de medidor dão mais problema em SP?", "analise_dados"),
+        ("qual a taxonomia consolidada de motivos em CE e SP?", "analise_dados"),
         ("o que é ACF?", "glossario"),
     ],
 )
@@ -298,3 +311,32 @@ def test_orchestrator_records_telemetry(tmp_path: Path) -> None:
     assert len(lines) == 1
     assert "ACF" not in lines[0] or "question_preview" in lines[0]  # preview OK, hash é hex
     assert "region_of_passages" in lines[0]
+
+
+def test_orchestrator_guardrail_rewrites_generic_not_found_when_drilldown_exists(
+    tmp_path: Path,
+) -> None:
+    cfg = _make_config(tmp_path)
+    passages = [
+        Passage(
+            "c1",
+            "Em SP, para o medidor Digital, a causa principal é consumo_elevado_revisao.",
+            "data/silver/erro_leitura_normalizado.csv",
+            "s",
+            "data",
+            "",
+            "sp-causas-por-tipo-medidor",
+            0.92,
+        ),
+    ]
+    orch = RagOrchestrator(
+        cfg,
+        retriever=FakeRetriever(passages),
+        provider=NotFoundProvider(),
+    )
+    resp = orch.answer("Top 5 motivos para medidor digital em SP")
+    assert "Não encontrei" not in resp.text
+    assert (
+        "[fonte: data/silver/erro_leitura_normalizado.csv#sp-causas-por-tipo-medidor]"
+        in resp.text
+    )

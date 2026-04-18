@@ -24,6 +24,7 @@ def main() -> int:
     parser.add_argument("--gate-refusal", type=float, default=0.95)
     parser.add_argument("--gate-citation", type=float, default=0.80)
     parser.add_argument("--gate-exactness", type=float, default=0.75)
+    parser.add_argument("--gate-fallback-guardrail", type=float, default=0.95)
     parser.add_argument("--dataset-version", type=str, default=None)
     args = parser.parse_args()
 
@@ -35,6 +36,9 @@ def main() -> int:
         "recall@5": metrics["recall@5"] >= args.gate_recall5,
         "regional_compliance": metrics["regional_compliance"] >= args.gate_regional_compliance,
         "refusal_rate": metrics["refusal_rate"] >= args.gate_refusal,
+        "fallback_guardrail_success": (
+            metrics["fallback_guardrail_success"] >= args.gate_fallback_guardrail
+        ),
         "citation_accuracy": metrics["citation_accuracy"] >= args.gate_citation,
         "answer_exactness": metrics["answer_exactness"] >= args.gate_exactness,
     }
@@ -54,6 +58,7 @@ def main() -> int:
                 f"citation={metrics['citation_accuracy']:.2f}",
                 f"regional={metrics['regional_compliance']:.2f}",
                 f"refusal={metrics['refusal_rate']:.2f}",
+                f"fallback_guardrail={metrics['fallback_guardrail_success']:.2f}",
                 f"exactness={metrics['answer_exactness']:.2f}",
                 f"p50={metrics['latency_p50_ms']:.1f}ms",
                 f"p95={metrics['latency_p95_ms']:.1f}ms",

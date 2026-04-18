@@ -35,32 +35,32 @@
   Anchor: `sp-causas-por-tipo-medidor`.
 - [x] Novo boost semântico para intenções:
   - `motivo/causa/assunto` + `medidor/digital/analógico/ciclométrico`
-- [ ] Query decomposition para perguntas em duas etapas:
+- [x] Query decomposition para perguntas em duas etapas:
   1) entidade principal (tipo de medidor)
   2) métrica solicitada (top motivos, % no tipo, volume)
-- [ ] Re-ranking semântico com sinal estrutural de card (anchor priors + region priors).
+- [x] Re-ranking semântico com sinal estrutural de card (anchor priors + region priors).
 
 ### 3.2 Data Plane
 - [x] Nova view: `sp_causas_por_tipo_medidor`
   - top N tipos de medidor em SP
   - top 5 causas por tipo
   - `% dentro do tipo` para leitura gerencial.
-- [ ] Nova view CE-total por assunto→causa (explicabilidade para “por que recorrente?” em CE).
-- [ ] Consolidar taxonomia “motivo” (assunto + causa) em formato único para o LLM.
+- [x] Nova view CE-total por assunto→causa (explicabilidade para “por que recorrente?” em CE).
+- [x] Consolidar taxonomia “motivo” (assunto + causa) em formato único para o LLM.
 
 ### 3.3 Prompt/Orchestration
 - [x] Prompt atualizado com novo universo de dados (`sp-causas-por-tipo-medidor`).
-- [ ] Template de resposta causal:
+- [x] Template de resposta causal:
   - “o que é” (definição)
   - “por que recorrente” (drivers observáveis no dataset)
   - “o que fazer” (ação recomendada quando houver card de playbook)
-- [ ] Guardrail para evitar resposta genérica quando houver card de drill-down disponível.
+- [x] Guardrail para evitar resposta genérica quando houver card de drill-down disponível.
 
 ### 3.4 Qualidade e Testes
 - [x] Testes unitários de boosts e presença de anchors atualizados.
 - [x] Teste unitário da nova view `sp_causas_por_tipo_medidor`.
-- [ ] Golden cases novos (mín. +20) focados em perguntas compostas e follow-up contextual.
-- [ ] Métrica de fallback indevido por intent (quando havia card canônico disponível).
+- [x] Golden cases novos (mín. +20) focados em perguntas compostas e follow-up contextual.
+- [x] Métrica de fallback indevido por intent (quando havia card canônico disponível).
 
 ---
 
@@ -94,3 +94,11 @@
    - Mitigação: cards mais objetivos + limite de contexto + retries defensivos.
 3. **Desbalanceamento SP/CE**:
    - Mitigação: reforço de escopo por região e anchors específicos por universo.
+
+---
+
+## 7) Status de conclusão
+
+- Sprint 18 implementada end-to-end no código, com validação unitária/integrada em verde.
+- Corpus RAG reconstruído com os novos anchors e cards.
+- Cenários críticos de produção validados (medidor digital top motivos, explicação de REFATURAMENTO PRODUTOS).

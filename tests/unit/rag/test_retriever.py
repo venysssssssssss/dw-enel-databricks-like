@@ -17,6 +17,11 @@ def test_lexical_overlap_identical() -> None:
 def test_route_doc_types_routes_by_keyword() -> None:
     assert route_doc_types("qual a sprint 13?") == ["sprint"]
     assert route_doc_types("o que é ACF") == ["business", "viz"]
+    assert route_doc_types("qual a taxonomia consolidada de motivos?") == [
+        "data",
+        "business",
+        "viz",
+    ]
     assert route_doc_types("qual modelo lightgbm usa?") == ["ml"]
     assert route_doc_types("endpoint FastAPI /status") == ["api"]
     assert route_doc_types("ingestão bronze com spark") == ["architecture"]

@@ -76,6 +76,25 @@ def refusal_rate(answers: list[str], expected_refusal_flags: list[bool]) -> floa
     return correct / max(1, len(expected_refusal_flags))
 
 
+def fallback_guardrail_success(
+    answers: list[str],
+    expected_refusal_flags: list[bool],
+) -> float:
+    """Taxa de sucesso em evitar fallback indevido.
+
+    Considera apenas casos em que NÃO deveria haver recusa/fallback; mede
+    quantas respostas evitaram padrões como "não encontrei"/"não há dados".
+    """
+    eligible: list[str] = []
+    for answer, expected_refusal in zip(answers, expected_refusal_flags, strict=False):
+        if not expected_refusal:
+            eligible.append(answer)
+    if not eligible:
+        return 1.0
+    valid = sum(1 for answer in eligible if not _REFUSAL_RE.search(answer))
+    return valid / len(eligible)
+
+
 def regional_compliance(
     passages_region: Iterable[Iterable[str] | str],
     allowed: set[str] | None = None,

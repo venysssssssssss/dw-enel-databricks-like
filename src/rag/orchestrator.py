@@ -71,19 +71,54 @@ _PROFILE_DETAIL_RE = re.compile(
     re.IGNORECASE,
 )
 
+_GENERIC_FALLBACK_RE = re.compile(
+    r"(não encontrei essa informação|sem dados|não há dados indexados)",
+    re.IGNORECASE,
+)
+_METER_REASON_QUERY_RE = re.compile(
+    r"\b(motivo|motivos|causa|causas|assunto|assuntos)\b.*"
+    r"\b(medidor(?:es)?|digital|analógic\w*|analogic\w*|ciclom\w*)\b|"
+    r"\b(medidor(?:es)?|digital|analógic\w*|analogic\w*|ciclom\w*)\b.*"
+    r"\b(motivo|motivos|causa|causas|assunto|assuntos)\b",
+    re.IGNORECASE,
+)
+_REFAT_EXPLANATION_RE = re.compile(
+    r"\brefaturamento\s+produtos\b.*\b(o que|por que|porque|recorrent)\b|"
+    r"\b(o que|por que|porque|recorrent)\b.*\brefaturamento\s+produtos\b",
+    re.IGNORECASE,
+)
+_DRILLDOWN_CANONICAL_ANCHORS = {
+    "sp-causas-por-tipo-medidor",
+    "sp-tipos-medidor",
+    "sp-tipos-medidor-digitacao",
+    "ce-reclamacoes-totais-assunto-causa",
+    "ce-reclamacoes-totais-assuntos",
+    "ce-reclamacoes-totais-refaturamento",
+}
+
 # Boosts determinísticos: cada regra casa a query e injeta cards canônicos na
 # retrieval. Ordem importa — primeiros anchors têm prioridade visual no prompt.
 # CE tem dois universos: (a) cards CE-total com 167k ordens reais e (b) cards
 # CE+SP de erro_leitura rotulado. As regras abaixo casam primeiro os genéricos
 # e depois a extensão CE-total é aplicada separadamente quando região=CE.
 _CARD_BOOST_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
+    # Taxonomia consolidada (assunto + causa)
+    (
+        re.compile(
+            r"\b(taxonomia|assunto\s*\+\s*causa|motivo consolidado|motivos consolidados)\b",
+            re.IGNORECASE,
+        ),
+        ("motivos-taxonomia-ce-sp", "top-assuntos", "top-causas-raiz"),
+    ),
     # Termo explícito de negócio (CE total): refaturamento produtos
     (
         re.compile(r"\brefaturamento\s+produtos\b", re.IGNORECASE),
         (
             "ce-reclamacoes-totais-assuntos",
             "ce-reclamacoes-totais-refaturamento",
+            "ce-reclamacoes-totais-assunto-causa",
             "ce-reclamacoes-totais-mensal-assuntos",
+            "motivos-taxonomia-ce-sp",
         ),
     ),
     # Motivos/causas por tipo de medidor (SP)
@@ -516,6 +551,7 @@ def classify_intent(question: str) -> str:
             "compar",
             "resumo",
             "dados",
+            "taxonomia",
         )
     ):
         return "analise_dados"
@@ -732,6 +768,7 @@ class RagOrchestrator:
         )
         timer.mark_first_token()
         text = sanitize_output(resp.text).strip()
+        text = self._guardrail_not_found(text, passages=passages, intent=intent)
 
         self._record(
             question=check.sanitized,
@@ -873,6 +910,17 @@ class RagOrchestrator:
         if dataset_version:
             kwargs["dataset_version"] = dataset_version
         semantic = self.retriever.top_passages(query, **kwargs)
+        # Query decomposition: quando a pergunta tem duas etapas (entidade + métrica),
+        # roda recuperações auxiliares para reforçar cards de drill-down.
+        for subquery in self._decompose_query(query, region=region):
+            if subquery.casefold() == query.casefold():
+                continue
+            extra = self.retriever.top_passages(subquery, **kwargs)
+            semantic = self._merge_semantic_passages(
+                semantic,
+                extra,
+                limit=top_n * 3,
+            )
 
         # Segundo passo: boost determinístico — cards canônicos forçados no topo
         # quando a intenção da query é claramente identificável por keyword.
@@ -899,6 +947,109 @@ class RagOrchestrator:
                     seen.add(p.chunk_id)
             return merged[:top_n]
         return semantic[:top_n]
+
+    @staticmethod
+    def _merge_semantic_passages(
+        primary: list[Passage],
+        secondary: list[Passage],
+        *,
+        limit: int,
+    ) -> list[Passage]:
+        order: dict[str, int] = {
+            passage.chunk_id: idx for idx, passage in enumerate(primary)
+        }
+        best: dict[str, Passage] = {passage.chunk_id: passage for passage in primary}
+        for passage in secondary:
+            previous = best.get(passage.chunk_id)
+            if previous is None:
+                order[passage.chunk_id] = len(order)
+                best[passage.chunk_id] = passage
+                continue
+            if passage.score > previous.score:
+                best[passage.chunk_id] = passage
+        merged = sorted(
+            best.values(),
+            key=lambda passage: (-passage.score, order.get(passage.chunk_id, 10**9)),
+        )
+        return merged[: max(limit, 1)]
+
+    @staticmethod
+    def _decompose_query(
+        query: str,
+        *,
+        region: Literal["CE", "SP", "CE+SP"] | None,
+    ) -> list[str]:
+        q = query.strip()
+        low = q.casefold()
+        out: list[str] = []
+        if _METER_REASON_QUERY_RE.search(q):
+            meter = ""
+            if "digital" in low:
+                meter = "digital"
+            elif "analóg" in low or "analog" in low:
+                meter = "analógico"
+            elif "ciclom" in low:
+                meter = "ciclométrico"
+            scope = "SP" if region in {"SP", "CE+SP", None} else str(region)
+            out.append(
+                " ".join(
+                    part
+                    for part in (
+                        scope,
+                        "top motivos causas por tipo de medidor",
+                        meter,
+                        "qtd ordens percentual no tipo",
+                    )
+                    if part
+                )
+            )
+        if _REFAT_EXPLANATION_RE.search(q):
+            out.append(
+                "CE refaturamento produtos explicabilidade assunto causa recorrencia "
+                "reclamacoes totais"
+            )
+        return out
+
+    def _guardrail_not_found(
+        self,
+        text: str,
+        *,
+        passages: list[Passage],
+        intent: str,
+    ) -> str:
+        if intent not in ANALYTICAL_INTENTS:
+            return text
+        if not passages:
+            return text
+        if not _GENERIC_FALLBACK_RE.search(text):
+            return text
+        source = self._best_drilldown_passage(passages)
+        if source is None:
+            return text
+        summary = self._short_answer_from_passage(source)
+        citation = source.citation()
+        if citation.lower() not in summary.lower():
+            summary = f"{summary}\n\n{citation}"
+        return summary.strip()
+
+    @staticmethod
+    def _best_drilldown_passage(passages: list[Passage]) -> Passage | None:
+        for passage in passages:
+            if passage.anchor in _DRILLDOWN_CANONICAL_ANCHORS:
+                return passage
+        return passages[0] if passages else None
+
+    @staticmethod
+    def _short_answer_from_passage(passage: Passage) -> str:
+        blocks = [block.strip() for block in passage.text.split("\n\n") if block.strip()]
+        if not blocks:
+            return "Encontrei dados relevantes no card canônico para esta pergunta."
+        if len(blocks) == 1:
+            return blocks[0]
+        second = blocks[1]
+        if second.startswith("**") or second.startswith("-"):
+            return f"{blocks[0]}\n\n{second}"
+        return blocks[0]
 
     def _answer_budget(
         self,
