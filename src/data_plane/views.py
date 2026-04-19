@@ -380,6 +380,215 @@ def sp_causas_por_tipo_medidor_view(
     return grouped[cols].reset_index(drop=True)
 
 
+def _sp_profile_frame(frame: pd.DataFrame, required: set[str]) -> pd.DataFrame:
+    if frame.empty or any(column not in frame.columns for column in required | {"regiao"}):
+        return pd.DataFrame()
+    sub = frame.loc[frame["regiao"].astype(str) == "SP"].copy()
+    if sub.empty:
+        return pd.DataFrame()
+    for column in (
+        "instalacao",
+        "fat_reclamada_top",
+        "tipo_medidor_dominante",
+        "assunto",
+        "causa_canonica",
+        "texto_completo",
+    ):
+        if column not in sub.columns:
+            sub[column] = pd.NA
+    for column in (
+        "valor_fatura_reclamada_medio",
+        "valor_fatura_reclamada_max",
+        "dias_emissao_ate_reclamacao_medio",
+        "dias_vencimento_ate_reclamacao_medio",
+    ):
+        if column not in sub.columns:
+            sub[column] = pd.NA
+        if column in sub.columns:
+            sub[column] = pd.to_numeric(sub[column], errors="coerce")
+    return sub
+
+
+def sp_faturas_altas_view(frame: pd.DataFrame, *, limit: int = 10) -> pd.DataFrame:
+    cols = [
+        "regiao",
+        "instalacao",
+        "fat_reclamada_top",
+        "valor_fatura_reclamada_max",
+        "valor_fatura_reclamada_medio",
+        "dias_emissao_ate_reclamacao_medio",
+        "dias_vencimento_ate_reclamacao_medio",
+        "tipo_medidor_dominante",
+        "assunto_top",
+        "causa_top",
+        "qtd_ordens",
+    ]
+    required = {"instalacao", "fat_reclamada_top", "valor_fatura_reclamada_max", "ordem"}
+    sub = _sp_profile_frame(frame, required)
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    sub["instalacao"] = sub["instalacao"].fillna("").astype(str).str.strip()
+    sub["fat_reclamada_top"] = sub["fat_reclamada_top"].fillna("").astype(str).str.strip()
+    sub = sub.loc[
+        sub["instalacao"].ne("")
+        & sub["fat_reclamada_top"].ne("")
+        & sub["valor_fatura_reclamada_max"].notna()
+    ]
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    grouped = (
+        sub.groupby(["instalacao", "fat_reclamada_top"], as_index=False)
+        .agg(
+            valor_fatura_reclamada_max=("valor_fatura_reclamada_max", "max"),
+            valor_fatura_reclamada_medio=("valor_fatura_reclamada_medio", "mean"),
+            dias_emissao_ate_reclamacao_medio=("dias_emissao_ate_reclamacao_medio", "mean"),
+            dias_vencimento_ate_reclamacao_medio=("dias_vencimento_ate_reclamacao_medio", "mean"),
+            tipo_medidor_dominante=("tipo_medidor_dominante", _mode_text),
+            assunto_top=("assunto", _mode_text),
+            causa_top=("causa_canonica", _mode_text),
+            qtd_ordens=("ordem", "nunique"),
+        )
+        .sort_values("valor_fatura_reclamada_max", ascending=False)
+        .head(limit)
+        .reset_index(drop=True)
+    )
+    grouped["regiao"] = "SP"
+    return grouped[cols]
+
+
+def sp_fatura_medidor_view(frame: pd.DataFrame, *, limit: int = 12) -> pd.DataFrame:
+    cols = [
+        "regiao",
+        "tipo_medidor_dominante",
+        "qtd_ordens",
+        "qtd_instalacoes",
+        "valor_fatura_reclamada_medio",
+        "valor_fatura_reclamada_max",
+        "dias_emissao_ate_reclamacao_medio",
+        "dias_vencimento_ate_reclamacao_medio",
+        "assunto_top",
+        "causa_top",
+    ]
+    required = {"tipo_medidor_dominante", "valor_fatura_reclamada_medio", "ordem", "instalacao"}
+    sub = _sp_profile_frame(frame, required)
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    sub["tipo_medidor_dominante"] = (
+        sub["tipo_medidor_dominante"].fillna("").astype(str).str.strip()
+    )
+    sub = sub.loc[sub["tipo_medidor_dominante"].ne("")]
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    grouped = (
+        sub.groupby("tipo_medidor_dominante", as_index=False)
+        .agg(
+            qtd_ordens=("ordem", "nunique"),
+            qtd_instalacoes=("instalacao", "nunique"),
+            valor_fatura_reclamada_medio=("valor_fatura_reclamada_medio", "mean"),
+            valor_fatura_reclamada_max=("valor_fatura_reclamada_max", "max"),
+            dias_emissao_ate_reclamacao_medio=("dias_emissao_ate_reclamacao_medio", "mean"),
+            dias_vencimento_ate_reclamacao_medio=("dias_vencimento_ate_reclamacao_medio", "mean"),
+            assunto_top=("assunto", _mode_text),
+            causa_top=("causa_canonica", _mode_text),
+        )
+        .sort_values(["qtd_ordens", "valor_fatura_reclamada_max"], ascending=[False, False])
+        .head(limit)
+        .reset_index(drop=True)
+    )
+    grouped["regiao"] = "SP"
+    return grouped[cols]
+
+
+def sp_digitacao_fatura_medidor_view(frame: pd.DataFrame, *, limit: int = 12) -> pd.DataFrame:
+    cols = [
+        "regiao",
+        "tipo_medidor_dominante",
+        "qtd_ordens",
+        "qtd_instalacoes",
+        "valor_fatura_reclamada_medio",
+        "valor_fatura_reclamada_max",
+        "dias_emissao_ate_reclamacao_medio",
+        "dias_vencimento_ate_reclamacao_medio",
+        "assunto_top",
+    ]
+    required = {"tipo_medidor_dominante", "causa_canonica", "valor_fatura_reclamada_medio", "ordem"}
+    sub = _sp_profile_frame(frame, required)
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    causa = sub["causa_canonica"].fillna("").astype(str).str.casefold()
+    texto = (
+        sub.get("texto_completo", pd.Series("", index=sub.index))
+        .fillna("")
+        .astype(str)
+        .str.casefold()
+    )
+    sub = sub.loc[causa.str.contains("digit") | texto.str.contains("digit")]
+    sub["tipo_medidor_dominante"] = (
+        sub["tipo_medidor_dominante"].fillna("").astype(str).str.strip()
+    )
+    sub = sub.loc[sub["tipo_medidor_dominante"].ne("")]
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    grouped = (
+        sub.groupby("tipo_medidor_dominante", as_index=False)
+        .agg(
+            qtd_ordens=("ordem", "nunique"),
+            qtd_instalacoes=("instalacao", "nunique"),
+            valor_fatura_reclamada_medio=("valor_fatura_reclamada_medio", "mean"),
+            valor_fatura_reclamada_max=("valor_fatura_reclamada_max", "max"),
+            dias_emissao_ate_reclamacao_medio=("dias_emissao_ate_reclamacao_medio", "mean"),
+            dias_vencimento_ate_reclamacao_medio=("dias_vencimento_ate_reclamacao_medio", "mean"),
+            assunto_top=("assunto", _mode_text),
+        )
+        .sort_values(["qtd_ordens", "valor_fatura_reclamada_max"], ascending=[False, False])
+        .head(limit)
+        .reset_index(drop=True)
+    )
+    grouped["regiao"] = "SP"
+    return grouped[cols]
+
+
+def sp_medidores_problema_reclamacao_view(frame: pd.DataFrame, *, limit: int = 12) -> pd.DataFrame:
+    cols = [
+        "regiao",
+        "tipo_medidor_dominante",
+        "assunto_top",
+        "causa_top",
+        "qtd_ordens",
+        "qtd_instalacoes",
+        "valor_fatura_reclamada_medio",
+        "valor_fatura_reclamada_max",
+        "dias_emissao_ate_reclamacao_medio",
+    ]
+    required = {"tipo_medidor_dominante", "ordem", "instalacao"}
+    sub = _sp_profile_frame(frame, required)
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    sub["tipo_medidor_dominante"] = (
+        sub["tipo_medidor_dominante"].fillna("").astype(str).str.strip()
+    )
+    sub = sub.loc[sub["tipo_medidor_dominante"].ne("")]
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    grouped = (
+        sub.groupby("tipo_medidor_dominante", as_index=False)
+        .agg(
+            assunto_top=("assunto", _mode_text),
+            causa_top=("causa_canonica", _mode_text),
+            qtd_ordens=("ordem", "nunique"),
+            qtd_instalacoes=("instalacao", "nunique"),
+            valor_fatura_reclamada_medio=("valor_fatura_reclamada_medio", "mean"),
+            valor_fatura_reclamada_max=("valor_fatura_reclamada_max", "max"),
+            dias_emissao_ate_reclamacao_medio=("dias_emissao_ate_reclamacao_medio", "mean"),
+        )
+        .sort_values(["qtd_ordens", "qtd_instalacoes"], ascending=[False, False])
+        .head(limit)
+        .reset_index(drop=True)
+    )
+    grouped["regiao"] = "SP"
+    return grouped[cols]
+
+
 def ce_total_assunto_causa_view(
     frame: pd.DataFrame,
     *,
@@ -920,6 +1129,34 @@ VIEW_REGISTRY: dict[str, ViewSpec] = {
         ("qtd_ordens", "percentual_no_tipo"),
         FILTER_FIELDS,
         sp_causas_por_tipo_medidor_view,
+    ),
+    "sp_faturas_altas": ViewSpec(
+        "sp_faturas_altas",
+        ("instalacao", "fat_reclamada_top"),
+        ("valor_fatura_reclamada_max", "qtd_ordens"),
+        FILTER_FIELDS,
+        sp_faturas_altas_view,
+    ),
+    "sp_fatura_medidor": ViewSpec(
+        "sp_fatura_medidor",
+        ("tipo_medidor_dominante",),
+        ("qtd_ordens", "valor_fatura_reclamada_medio"),
+        FILTER_FIELDS,
+        sp_fatura_medidor_view,
+    ),
+    "sp_digitacao_fatura_medidor": ViewSpec(
+        "sp_digitacao_fatura_medidor",
+        ("tipo_medidor_dominante",),
+        ("qtd_ordens", "valor_fatura_reclamada_medio"),
+        FILTER_FIELDS,
+        sp_digitacao_fatura_medidor_view,
+    ),
+    "sp_medidores_problema_reclamacao": ViewSpec(
+        "sp_medidores_problema_reclamacao",
+        ("tipo_medidor_dominante",),
+        ("qtd_ordens", "assunto_top"),
+        FILTER_FIELDS,
+        sp_medidores_problema_reclamacao_view,
     ),
     "ce_total_assunto_causa": ViewSpec(
         "ce_total_assunto_causa",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import time
 from datetime import datetime
 from typing import Any
@@ -12,11 +13,10 @@ from src.rag.orchestrator import (
     RagOrchestrator,
     classify_intent,
     detect_regional_scope,
-    format_citations,
     greeting_response,
 )
 from src.rag.prompts import SUGGESTED_QUESTIONS
-from src.rag.retriever import check_stub_corpus, route_doc_types
+from src.rag.retriever import check_stub_corpus
 from src.rag.safety import (
     OUT_OF_SCOPE_MESSAGE,
     check_input,
@@ -1034,12 +1034,14 @@ def _stream_answer(
     _mount_thinking()
     _paint_bubble("")
 
+    _paint_bubble(_typing_block())
+
     try:
-        passages = orch._top_passages(  # noqa: SLF001
+        response = orch.answer(
             check.sanitized,
-            doc_types=route_doc_types(check.sanitized),
+            history=history,
+            context_hint=context_hint,
             dataset_version=None,
-            region=region,
         )
     except (FileNotFoundError, RuntimeError) as exc:
         _clear_thinking()
@@ -1050,47 +1052,27 @@ def _stream_answer(
         )
         st.warning(msg)
         return None, msg, []
+    except Exception as exc:  # pragma: no cover - UI safety net
+        _clear_thinking()
+        msg = f"Falha ao gerar resposta RAG: {exc}"
+        st.error(msg)
+        return None, msg, []
 
-    if is_out_of_scope(passages, config.similarity_threshold):
+    passages = response.passages
+    if response.blocked_reason == "out_of_scope" or is_out_of_scope(
+        passages, config.similarity_threshold
+    ):
         _clear_thinking()
         st.info(OUT_OF_SCOPE_MESSAGE)
-        return None, OUT_OF_SCOPE_MESSAGE, []
+        return None, OUT_OF_SCOPE_MESSAGE, passages
 
-    passages = orch._enforce_budget(passages)  # noqa: SLF001
-
-    from src.rag.prompts import build_messages
-
-    messages = build_messages(
-        question=check.sanitized, passages=passages, history=history
-    )
-
-    _paint_bubble(_typing_block())
-
-    accumulated: list[str] = []
-    first_token_ms: float | None = None
-    last_paint = 0.0
-
-    for chunk in orch.provider.stream(
-        messages,
-        max_tokens=orch._answer_budget(),  # noqa: SLF001
-        temperature=config.temperature,
-        top_p=config.top_p,
-    ):
-        if first_token_ms is None:
-            first_token_ms = (time.perf_counter() - start) * 1000
-        accumulated.append(chunk)
-        now = time.perf_counter()
-        # Throttle DOM updates to ~8 fps. thinking_slot is NEVER repainted —
-        # its CSS animations (spin, bgSweep, trace rotate) keep playing.
-        if now - last_paint > 0.12:
-            body = "".join(accumulated) + "<span class='caret'></span>"
-            _paint_bubble(body)
-            last_paint = now
-
-    body = "".join(accumulated).strip()
+    body = response.text.strip()
     sources_html = _render_sources_html(passages)
-    elapsed = (time.perf_counter() - start) * 1000
-    time_str = f"{elapsed / 1000:.1f}s"
+    elapsed = response.latency_ms or (time.perf_counter() - start) * 1000
+    time_str = _format_duration_ms(elapsed)
+    badges = [f"intent · {response.intent}", f"região · {response.region_detected or region or 'geral'}"]
+    if response.cache_hit:
+        badges.append("cache · hit")
 
     # Clear the thinking iframe and render a compact completion pill in its
     # place. Single deterministic transition — no iframe re-mount, no
@@ -1099,8 +1081,8 @@ def _stream_answer(
     metrics_slot.markdown(
         _completion_pill_html(
             total_time_ms=elapsed,
-            first_token_ms=first_token_ms,
-            tokens=len(accumulated),
+            first_token_ms=None,
+            tokens=response.completion_tokens,
             sources=len(passages),
         ),
         unsafe_allow_html=True,
@@ -1116,12 +1098,14 @@ def _stream_answer(
     )
 
     return {
-        "intent": intent,
-        "prompt_tokens": sum(len(m.get("content", "")) // 4 for m in messages),
-        "completion_tokens": len(body) // 4,
+        "intent": response.intent,
+        "prompt_tokens": response.prompt_tokens,
+        "completion_tokens": response.completion_tokens,
         "latency_ms": elapsed,
-        "first_token_ms": first_token_ms or elapsed,
+        "first_token_ms": None,
         "sources": len(passages),
+        "cache_hit": response.cache_hit,
+        "cache_seed_id": response.cache_seed_id,
     }, body, passages
 
 
@@ -1507,12 +1491,12 @@ def _completion_pill_html(
     if total_time_ms is not None:
         pills.append(
             f"<span class='pill'><span class='k'>⏱</span>"
-            f"<span class='v'>{total_time_ms/1000:.1f}s</span></span>"
+            f"<span class='v'>{_format_duration_ms(total_time_ms)}</span></span>"
         )
     if first_token_ms:
         pills.append(
             f"<span class='pill'><span class='k'>1º tok</span>"
-            f"<span class='v'>{first_token_ms:.0f} ms</span></span>"
+            f"<span class='v'>{_format_duration_ms(first_token_ms)}</span></span>"
         )
     if tokens:
         pills.append(
@@ -1561,12 +1545,21 @@ def _render_sources_html(passages: list) -> str:
         return ""
     items: list[str] = []
     for i, p in enumerate(passages, start=1):
-        doc_id = getattr(p, "doc_id", None) or getattr(p, "id", str(i))
+        source_path = getattr(p, "source_path", "") or getattr(p, "doc_id", "") or ""
+        anchor = getattr(p, "anchor", "") or ""
+        section = getattr(p, "section", "") or ""
+        doc_id = source_path
+        if anchor:
+            doc_id = f"{source_path}#{anchor}"
+        elif section:
+            doc_id = f"{source_path}#{section}"
+        if not doc_id:
+            doc_id = getattr(p, "id", str(i))
         score = getattr(p, "score", 0.0)
         items.append(
             f"<div class='source'>"
             f"<span class='n'>{i:02d}</span>"
-            f"<span class='path'>{doc_id}</span>"
+            f"<span class='path'>{html.escape(str(doc_id))}</span>"
             f"<span class='score'>{score:.2f}</span>"
             f"</div>"
         )
@@ -1579,14 +1572,31 @@ def _render_sources_html(passages: list) -> str:
     )
 
 
+def _format_duration_ms(value_ms: float | int | None) -> str:
+    if value_ms is None:
+        return "n/d"
+    seconds = max(float(value_ms) / 1000.0, 0.0)
+    if seconds < 60:
+        return f"{seconds:.1f} s"
+    minutes = int(seconds // 60)
+    remainder = seconds - (minutes * 60)
+    return f"{minutes} min {remainder:.0f} s"
+
+
 def _format_metadata(meta: dict[str, Any]) -> str:
     total_tokens = int(meta.get("prompt_tokens", 0)) + int(meta.get("completion_tokens", 0))
     tok_cls = "ok" if total_tokens < 2000 else ("warn" if total_tokens < 4000 else "crit")
     first_tok = meta.get("first_token_ms")
     first_tok_pill = (
         f"<span class='pill'><span class='k'>1º tok</span>"
-        f"<span class='v'>{first_tok:.0f} ms</span></span>"
+        f"<span class='v'>{_format_duration_ms(first_tok)}</span></span>"
         if first_tok
+        else ""
+    )
+    cache_pill = (
+        f"<span class='pill'><span class='k'>cache</span>"
+        f"<span class='v'>{'hit' if meta.get('cache_hit') else 'miss'}</span></span>"
+        if "cache_hit" in meta
         else ""
     )
     return (
@@ -1596,8 +1606,9 @@ def _format_metadata(meta: dict[str, Any]) -> str:
         f"<span class='pill {tok_cls}'><span class='k'>tokens</span>"
         f"<span class='v'>{total_tokens}</span></span>"
         f"<span class='pill'><span class='k'>⏱</span>"
-        f"<span class='v'>{meta.get('latency_ms', 0):.0f} ms</span></span>"
+        f"<span class='v'>{_format_duration_ms(meta.get('latency_ms', 0))}</span></span>"
         f"{first_tok_pill}"
+        f"{cache_pill}"
         f"<span class='pill'><span class='k'>fontes</span>"
         f"<span class='v'>{meta.get('sources', 0)}</span></span>"
         "</div>"

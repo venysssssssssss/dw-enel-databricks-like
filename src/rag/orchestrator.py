@@ -368,6 +368,49 @@ _CE_TOTAL_BOOSTS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
 _SP_BOOSTS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
     (
         re.compile(
+            r"\b(digita(?:ç|c|cao|ção|do|da|r|ndo|gem)\w*)\b.*"
+            r"\b(fatura\w*|valor(?:es)?|medidor(?:es)?)\b|"
+            r"\b(fatura\w*|valor(?:es)?|medidor(?:es)?)\b.*"
+            r"\b(digita(?:ç|c|cao|ção|do|da|r|ndo|gem)\w*)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-digitacao-fatura-medidor", "sp-tipos-medidor-digitacao", "instalacoes-digitacao"),
+    ),
+    (
+        re.compile(
+            r"\b(fatura\w*)\b.*\b(alta\w*|maior(?:es)?|valor(?:es)?|instala\w*|data)\b|"
+            r"\b(alta\w*|maior(?:es)?|valor(?:es)?|instala\w*|data)\b.*\b(fatura\w*)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-faturas-altas", "sp-fatura-medidor", "sp-perfil-assunto-lider"),
+    ),
+    (
+        re.compile(
+            r"\b(fatura\w*)\b.*\b(medidor(?:es)?|digital|analógic\w*|analogic\w*|ciclom\w*)\b|"
+            r"\b(medidor(?:es)?|digital|analógic\w*|analogic\w*|ciclom\w*)\b.*\b(fatura\w*)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-fatura-medidor", "sp-tipos-medidor", "sp-causas-por-tipo-medidor"),
+    ),
+    (
+        re.compile(
+            r"\b(medidor(?:es)?)\b.*\b(problema\w*|d[aã]o problema|tipo de reclama\w*)\b|"
+            r"\b(problema\w*|d[aã]o problema|tipo de reclama\w*)\b.*\b(medidor(?:es)?)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-medidores-problema-reclamacao", "sp-causas-por-tipo-medidor", "sp-tipos-medidor"),
+    ),
+    (
+        re.compile(
+            r"\b(tempo|demor\w*|soluc\w*|resolver|resolução|resolucao)\b.*"
+            r"\b(reclama\w*|fatura\w*)\b|"
+            r"\b(reclama\w*|fatura\w*)\b.*\b(tempo|demor\w*|soluc\w*|resolver|resolução|resolucao)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-fatura-medidor", "sp-perfil-assunto-lider", "data-quality-notes"),
+    ),
+    (
+        re.compile(
             r"\b(motivo|motivos|causa|causas|assunto|assuntos)\b.*"
             r"\b(medidor(?:es)?|digital|analógic\w*|analogic\w*|ciclom\w*)\b|"
             r"\b(medidor(?:es)?|digital|analógic\w*|analogic\w*|ciclom\w*)\b.*"

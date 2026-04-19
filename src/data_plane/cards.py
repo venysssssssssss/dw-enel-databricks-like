@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -47,6 +48,14 @@ def build_data_cards(
     sp_tipos_medidor = store.aggregate("sp_tipos_medidor", {"regiao": ["SP"]})
     sp_tipos_medidor_digitacao = store.aggregate("sp_tipos_medidor_digitacao", {"regiao": ["SP"]})
     sp_causas_por_tipo = store.aggregate("sp_causas_por_tipo_medidor", {"regiao": ["SP"]})
+    sp_faturas_altas = store.aggregate("sp_faturas_altas", {"regiao": ["SP"]})
+    sp_fatura_medidor = store.aggregate("sp_fatura_medidor", {"regiao": ["SP"]})
+    sp_digitacao_fatura_medidor = store.aggregate(
+        "sp_digitacao_fatura_medidor", {"regiao": ["SP"]}
+    )
+    sp_medidores_problema = store.aggregate(
+        "sp_medidores_problema_reclamacao", {"regiao": ["SP"]}
+    )
     motivos_taxonomia = store.aggregate("motivos_taxonomia", scope_filters)
     frame = store.load_silver(include_total=False)
 
@@ -111,6 +120,10 @@ def build_data_cards(
         cards.append(_sp_tipos_medidor_card(sp_tipos_medidor))
         cards.append(_sp_tipos_medidor_digitacao_card(sp_tipos_medidor_digitacao))
         cards.append(_sp_causas_por_tipo_medidor_card(sp_causas_por_tipo))
+        cards.append(_sp_faturas_altas_card(sp_faturas_altas))
+        cards.append(_sp_fatura_medidor_card(sp_fatura_medidor))
+        cards.append(_sp_digitacao_fatura_medidor_card(sp_digitacao_fatura_medidor))
+        cards.append(_sp_medidores_problema_reclamacao_card(sp_medidores_problema))
 
     source = store.silver_path.as_posix()
     return [
@@ -162,6 +175,18 @@ def _fmt_share(part: float, total: float) -> str:
 
 def _fmt_n(value: int | float) -> str:
     return f"{int(value):,}".replace(",", ".")
+
+
+def _fmt_money(value: int | float) -> str:
+    numeric = float(value)
+    if math.isnan(numeric):
+        return "n/d"
+    return f"R$ {numeric:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _fmt_days(value: int | float) -> str:
+    numeric = float(value)
+    return "n/d" if math.isnan(numeric) else f"{numeric:.1f} dias"
 
 
 def _total(overview: pd.DataFrame) -> int:
@@ -1173,6 +1198,168 @@ def _sp_causas_por_tipo_medidor_card(data: pd.DataFrame) -> DataCard:
     return DataCard(
         "sp-causas-por-tipo-medidor",
         "SP — top motivos por tipo de medidor",
+        "\n".join(lines),
+        region="SP",
+    )
+
+
+def _sp_faturas_altas_card(data: pd.DataFrame) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "sp-faturas-altas",
+            "SP — faturas reclamadas de maior valor por instalação",
+            "Sem dados suficientes de fatura reclamada, instalação e valor para SP.",
+            region="SP",
+        )
+    top = data.iloc[0]
+    lines = [
+        "Maiores faturas reclamadas em SP por instalação e mês/data de fatura disponível.",
+        (
+            f"Maior valor: instalação **{top['instalacao']}**, fatura **{top['fat_reclamada_top']}**, "
+            f"valor máximo **{_fmt_money(top['valor_fatura_reclamada_max'])}**, "
+            f"medidor **{top['tipo_medidor_dominante'] or 'n/d'}**."
+        ),
+        "",
+        "**Top faturas por valor máximo reclamado (SP)**:",
+        "",
+    ]
+    for row in data.head(10).itertuples(index=False):
+        lines.append(
+            f"- Instalação **{row.instalacao}**, fatura **{row.fat_reclamada_top}**: "
+            f"máx {_fmt_money(row.valor_fatura_reclamada_max)}, "
+            f"média {_fmt_money(row.valor_fatura_reclamada_medio)}, "
+            f"emissão→reclamação {_fmt_days(row.dias_emissao_ate_reclamacao_medio)}, "
+            f"medidor {row.tipo_medidor_dominante or 'n/d'}, "
+            f"assunto {row.assunto_top or 'n/d'}"
+        )
+    lines.extend(
+        [
+            "",
+            "Nota: a base traz mês/data de fatura reclamada e tempos até a reclamação; "
+            "não há campo confiável de tempo final de solução nesta visão.",
+        ]
+    )
+    return DataCard(
+        "sp-faturas-altas",
+        "SP — faturas reclamadas de maior valor por instalação",
+        "\n".join(lines),
+        region="SP",
+    )
+
+
+def _sp_fatura_medidor_card(data: pd.DataFrame) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "sp-fatura-medidor",
+            "SP — fatura reclamada cruzada com tipo de medidor",
+            "Sem dados suficientes para cruzar fatura reclamada com tipo de medidor em SP.",
+            region="SP",
+        )
+    top = data.iloc[0]
+    lines = [
+        (
+            f"Cruzamento SP fatura × medidor: **{top['tipo_medidor_dominante']}** lidera "
+            f"com {_fmt_n(top['qtd_ordens'])} ordens, "
+            f"valor médio {_fmt_money(top['valor_fatura_reclamada_medio'])} e "
+            f"máximo {_fmt_money(top['valor_fatura_reclamada_max'])}."
+        ),
+        "",
+        "**Perfil por tipo de medidor (SP)**:",
+        "",
+    ]
+    for row in data.head(12).itertuples(index=False):
+        lines.append(
+            f"- **{row.tipo_medidor_dominante}**: {_fmt_n(row.qtd_ordens)} ordens, "
+            f"{_fmt_n(row.qtd_instalacoes)} instalações, "
+            f"fatura média {_fmt_money(row.valor_fatura_reclamada_medio)}, "
+            f"máx {_fmt_money(row.valor_fatura_reclamada_max)}, "
+            f"emissão→reclamação {_fmt_days(row.dias_emissao_ate_reclamacao_medio)}, "
+            f"vencimento→reclamação {_fmt_days(row.dias_vencimento_ate_reclamacao_medio)}, "
+            f"assunto {row.assunto_top or 'n/d'}, causa {row.causa_top or 'n/d'}"
+        )
+    lines.extend(
+        [
+            "",
+            "Tempo de solução: campo final de solução não está disponível; tempos acima são "
+            "métricas de fatura até entrada da reclamação.",
+        ]
+    )
+    return DataCard(
+        "sp-fatura-medidor",
+        "SP — fatura reclamada cruzada com tipo de medidor",
+        "\n".join(lines),
+        region="SP",
+    )
+
+
+def _sp_digitacao_fatura_medidor_card(data: pd.DataFrame) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "sp-digitacao-fatura-medidor",
+            "SP — digitação cruzada com fatura e tipo de medidor",
+            "Sem dados suficientes para cruzar digitação, fatura reclamada e medidor em SP.",
+            region="SP",
+        )
+    top = data.iloc[0]
+    lines = [
+        (
+            f"Para reclamações com digitação em SP, **{top['tipo_medidor_dominante']}** lidera "
+            f"com {_fmt_n(top['qtd_ordens'])} ordens, "
+            f"fatura média {_fmt_money(top['valor_fatura_reclamada_medio'])} e "
+            f"máximo {_fmt_money(top['valor_fatura_reclamada_max'])}."
+        ),
+        "",
+        "**Digitação por tipo de medidor com dados de fatura (SP)**:",
+        "",
+    ]
+    for row in data.head(12).itertuples(index=False):
+        lines.append(
+            f"- **{row.tipo_medidor_dominante}**: {_fmt_n(row.qtd_ordens)} ordens, "
+            f"{_fmt_n(row.qtd_instalacoes)} instalações, "
+            f"fatura média {_fmt_money(row.valor_fatura_reclamada_medio)}, "
+            f"máx {_fmt_money(row.valor_fatura_reclamada_max)}, "
+            f"emissão→reclamação {_fmt_days(row.dias_emissao_ate_reclamacao_medio)}, "
+            f"assunto {row.assunto_top or 'n/d'}"
+        )
+    return DataCard(
+        "sp-digitacao-fatura-medidor",
+        "SP — digitação cruzada com fatura e tipo de medidor",
+        "\n".join(lines),
+        region="SP",
+    )
+
+
+def _sp_medidores_problema_reclamacao_card(data: pd.DataFrame) -> DataCard:
+    if data.empty:
+        return DataCard(
+            "sp-medidores-problema-reclamacao",
+            "SP — medidores que mais geram problemas e tipo de reclamação",
+            "Sem dados suficientes para ranquear medidores por problema em SP.",
+            region="SP",
+        )
+    top = data.iloc[0]
+    lines = [
+        (
+            f"Em SP, o tipo de medidor que mais aparece em reclamações é "
+            f"**{top['tipo_medidor_dominante']}** com {_fmt_n(top['qtd_ordens'])} ordens. "
+            f"Tipo de reclamação dominante: **{top['assunto_top'] or 'n/d'}**; "
+            f"causa dominante: **{top['causa_top'] or 'n/d'}**."
+        ),
+        "",
+        "**Ranking medidor × reclamação (SP)**:",
+        "",
+    ]
+    for row in data.head(12).itertuples(index=False):
+        lines.append(
+            f"- **{row.tipo_medidor_dominante}**: {_fmt_n(row.qtd_ordens)} ordens, "
+            f"{_fmt_n(row.qtd_instalacoes)} instalações, "
+            f"assunto {row.assunto_top or 'n/d'}, causa {row.causa_top or 'n/d'}, "
+            f"fatura média {_fmt_money(row.valor_fatura_reclamada_medio)}, "
+            f"emissão→reclamação {_fmt_days(row.dias_emissao_ate_reclamacao_medio)}"
+        )
+    return DataCard(
+        "sp-medidores-problema-reclamacao",
+        "SP — medidores que mais geram problemas e tipo de reclamação",
         "\n".join(lines),
         region="SP",
     )
