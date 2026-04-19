@@ -32,6 +32,21 @@ export async function fetchAggregation<T>(
   return requestJson<AggregationResponse<T>>(url, { cacheKey: `${url}:${datasetHash}` });
 }
 
+export async function sendRagFeedback(
+  questionHash: string,
+  rating: "up" | "down",
+  comment = ""
+): Promise<void> {
+  const response = await fetch("/v1/rag/feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question_hash: questionHash, rating, comment })
+  });
+  if (!response.ok) {
+    throw new Error(`Falha ao registrar feedback (${response.status})`);
+  }
+}
+
 async function requestJson<T>(url: string, options: { cacheKey?: string } = {}): Promise<T> {
   const headers: HeadersInit = {};
   const cacheKey = options.cacheKey ?? url;

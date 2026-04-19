@@ -73,6 +73,18 @@ class FakeRetriever:
         return []
 
 
+class AnchorRetriever(FakeRetriever):
+    def __init__(self, passages: list[Passage]) -> None:
+        super().__init__([])
+        self._by_anchor = {passage.anchor: passage for passage in passages}
+        self.anchor_calls = 0
+
+    def get_by_anchors(self, anchors, **kwargs):  # noqa: ANN001
+        del kwargs
+        self.anchor_calls += 1
+        return [self._by_anchor[anchor] for anchor in anchors if anchor in self._by_anchor]
+
+
 class RecordingProvider(StubProvider):
     def __init__(self) -> None:
         self.calls: list[list[dict[str, str]]] = []
@@ -374,3 +386,32 @@ def test_orchestrator_guardrail_rewrites_generic_not_found_when_drilldown_exists
         "[fonte: data/silver/erro_leitura_normalizado.csv#sp-causas-por-tipo-medidor]"
         in resp.text
     )
+
+
+def test_orchestrator_known_question_cache_skips_provider(tmp_path: Path) -> None:
+    cfg = _make_config(tmp_path)
+    passage = Passage(
+        "c1",
+        "# Visão geral CE\n\nBase CE com **10 ordens**.",
+        "data/silver/erro.csv",
+        "Visão geral CE",
+        "data",
+        "",
+        "ce-reclamacoes-totais-overview",
+        0.99,
+        dataset_version="ds1",
+        region="CE",
+    )
+    retriever = AnchorRetriever([passage])
+    provider = RecordingProvider()
+    orch = RagOrchestrator(cfg, retriever=retriever, provider=provider)
+
+    resp = orch.answer("Quantas ordens existem em CE?", dataset_version="ds1")
+
+    assert resp.cache_hit is True
+    assert resp.cache_seed_id == "ce-total-overview"
+    assert provider.calls == []
+    assert retriever.last_query is None
+    assert retriever.anchor_calls == 1
+    lines = cfg.telemetry_path.read_text(encoding="utf-8").splitlines()
+    assert '"cache_hit": true' in lines[-1]

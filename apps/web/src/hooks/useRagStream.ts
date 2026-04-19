@@ -2,8 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { streamRagAnswer } from "../lib/sse";
 
 export type RagMessage = {
+  id: string;
   role: "user" | "assistant";
   content: string;
+  questionHash?: string;
+  cacheHit?: boolean;
+  feedbackSent?: boolean;
 };
 
 export function useRagStream(datasetHash: string) {
@@ -25,14 +29,16 @@ export function useRagStream(datasetHash: string) {
       const controller = new AbortController();
       abortRef.current = controller;
       setStatus("streaming");
+      const userId = makeMessageId("user");
+      const assistantId = makeMessageId("assistant");
       const history = messagesRef.current.slice(-8).map((turn) => ({
         role: turn.role,
         content: turn.content
       }));
       setMessages((current) => [
         ...current,
-        { role: "user", content: question },
-        { role: "assistant", content: "" }
+        { id: userId, role: "user", content: question },
+        { id: assistantId, role: "assistant", content: "" }
       ]);
       await streamRagAnswer(
         question,
@@ -46,8 +52,19 @@ export function useRagStream(datasetHash: string) {
               return copy;
             });
           },
-          onDone() {
+          onDone(payload) {
             setStatus("done");
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === assistantId
+                  ? {
+                      ...message,
+                      questionHash: payload.question_hash,
+                      cacheHit: Boolean(payload.cache_hit)
+                    }
+                  : message
+              )
+            );
           },
           onError(message) {
             setStatus("error");
@@ -66,5 +83,20 @@ export function useRagStream(datasetHash: string) {
     [datasetHash]
   );
 
-  return { messages, status, ask };
+  const markFeedbackSent = useCallback((messageId: string) => {
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === messageId ? { ...message, feedbackSent: true } : message
+      )
+    );
+  }, []);
+
+  return { messages, status, ask, markFeedbackSent };
+}
+
+function makeMessageId(prefix: string): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }

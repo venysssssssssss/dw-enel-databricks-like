@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
 from src.common.llm_gateway import build_provider
+from src.rag.answer_cache import CachedAnswer, resolve_known_answer
 from src.rag.prompts import (
     SYSTEM_STATIC,
     build_messages,
@@ -500,6 +501,15 @@ class RagResponse:
     blocked_reason: str | None = None
     region_detected: Literal["CE", "SP", "CE+SP"] | None = None
     out_of_regional_scope: bool = False
+    cache_hit: bool = False
+    cache_seed_id: str | None = None
+    question_hash: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RagStreamEvent:
+    event: str
+    payload: dict[str, Any]
 
 
 @dataclass(slots=True)
@@ -695,6 +705,7 @@ class RagOrchestrator:
     ) -> RagResponse:
         timer = _Timer()
         check = check_input(question)
+        q_hash = hash_question(check.sanitized if check.allowed else question)
         if not check.allowed:
             return RagResponse(
                 text=check.reason or "Pergunta inválida.",
@@ -704,6 +715,7 @@ class RagOrchestrator:
                 completion_tokens=0,
                 latency_ms=timer.total_ms(),
                 blocked_reason=check.reason,
+                question_hash=q_hash,
             )
 
         if is_out_of_regional_scope(check.sanitized):
@@ -718,6 +730,8 @@ class RagOrchestrator:
                 region_detected=None,
                 out_of_regional_scope=True,
                 golden_case_id=golden_case_id,
+                cache_hit=True,
+                extra={"seed_id": "regional-scope-refusal"},
             )
             return RagResponse(
                 text=OUT_OF_REGIONAL_SCOPE_MESSAGE,
@@ -728,6 +742,9 @@ class RagOrchestrator:
                 latency_ms=timer.total_ms(),
                 region_detected=None,
                 out_of_regional_scope=True,
+                cache_hit=True,
+                cache_seed_id="regional-scope-refusal",
+                question_hash=q_hash,
             )
 
         # MVP: perguntas sobre instalação/UC agora são roteadas para cards
@@ -764,6 +781,47 @@ class RagOrchestrator:
         elif region is None and intent in ANALYTICAL_INTENTS:
             region = "CE+SP"
 
+        cached = self._resolve_cached_answer(
+            check.sanitized,
+            intent=intent,
+            region=region,
+            dataset_version=dataset_version,
+        )
+        if cached is not None:
+            total_ms = timer.total_ms()
+            self._record(
+                question=check.sanitized,
+                intent=cached.intent,
+                passages=cached.passages,
+                prompt_tokens=0,
+                completion_tokens=len(cached.text) // 4,
+                first_token_ms=timer.first_token_ms or total_ms,
+                total_ms=total_ms,
+                region_detected=cached.region_detected,
+                out_of_regional_scope=cached.intent == "out_of_regional_scope",
+                golden_case_id=golden_case_id,
+                cache_hit=True,
+                extra={
+                    "seed_id": cached.seed_id,
+                    "seed_version": cached.seed_version,
+                    "cache_score": cached.score,
+                    "answer_mode": cached.answer_mode,
+                },
+            )
+            return RagResponse(
+                text=cached.text,
+                passages=cached.passages,
+                intent=cached.intent,
+                prompt_tokens=0,
+                completion_tokens=len(cached.text) // 4,
+                latency_ms=total_ms,
+                region_detected=cached.region_detected,
+                out_of_regional_scope=cached.intent == "out_of_regional_scope",
+                cache_hit=True,
+                cache_seed_id=cached.seed_id,
+                question_hash=q_hash,
+            )
+
         if intent in {"saudacao", "cortesia"}:
             text = greeting_response(context_hint)
             self._record(
@@ -786,6 +844,7 @@ class RagOrchestrator:
                 completion_tokens=len(text) // 4,
                 latency_ms=timer.total_ms(),
                 region_detected=region,
+                question_hash=q_hash,
             )
 
         doc_types = route_doc_types(check.sanitized)
@@ -810,6 +869,7 @@ class RagOrchestrator:
                 latency_ms=timer.total_ms(),
                 blocked_reason="no_index",
                 region_detected=region,
+                question_hash=q_hash,
             )
 
         if is_out_of_scope(passages, self.config.similarity_threshold):
@@ -821,6 +881,7 @@ class RagOrchestrator:
                 completion_tokens=0,
                 latency_ms=timer.total_ms(),
                 region_detected=region,
+                question_hash=q_hash,
             )
 
         history_summary = self._build_history_summary(history)
@@ -871,7 +932,106 @@ class RagOrchestrator:
             completion_tokens=resp.completion_tokens,
             latency_ms=timer.total_ms(),
             region_detected=region,
+            question_hash=q_hash,
         )
+
+    def stream_events(
+        self,
+        question: str,
+        *,
+        history: list[dict[str, str]] | None = None,
+        context_hint: str | None = None,
+        dataset_version: str | None = None,
+    ) -> Iterator[RagStreamEvent]:
+        timer = _Timer()
+        check = check_input(question)
+        q_hash = hash_question(check.sanitized if check.allowed else question)
+        if not check.allowed:
+            text = check.reason or "Pergunta inválida."
+            yield RagStreamEvent("token", {"text": text})
+            yield self._done_event(q_hash, timer, cache_hit=False)
+            return
+
+        if is_out_of_regional_scope(check.sanitized):
+            yield RagStreamEvent("token", {"text": OUT_OF_REGIONAL_SCOPE_MESSAGE})
+            self._record(
+                question=check.sanitized,
+                intent="out_of_regional_scope",
+                passages=[],
+                prompt_tokens=0,
+                completion_tokens=len(OUT_OF_REGIONAL_SCOPE_MESSAGE) // 4,
+                first_token_ms=timer.total_ms(),
+                total_ms=timer.total_ms(),
+                region_detected=None,
+                out_of_regional_scope=True,
+                golden_case_id=None,
+                cache_hit=True,
+                extra={"seed_id": "regional-scope-refusal"},
+            )
+            yield self._done_event(
+                q_hash,
+                timer,
+                cache_hit=True,
+                seed_id="regional-scope-refusal",
+            )
+            return
+
+        intent = classify_intent(check.sanitized)
+        region = detect_regional_scope(check.sanitized)
+        profile_detail = is_profile_detail_query(check.sanitized)
+        if profile_detail and region in {"CE", "CE+SP"}:
+            yield RagStreamEvent("token", {"text": SP_PROFILE_SCOPE_MESSAGE})
+            yield self._done_event(q_hash, timer, cache_hit=False)
+            return
+        if profile_detail and region is None:
+            region = "SP"
+        elif region is None and intent in ANALYTICAL_INTENTS:
+            region = "CE+SP"
+
+        cached = self._resolve_cached_answer(
+            check.sanitized,
+            intent=intent,
+            region=region,
+            dataset_version=dataset_version,
+        )
+        if cached is not None:
+            yield RagStreamEvent("token", {"text": cached.text})
+            total_ms = timer.total_ms()
+            self._record(
+                question=check.sanitized,
+                intent=cached.intent,
+                passages=cached.passages,
+                prompt_tokens=0,
+                completion_tokens=len(cached.text) // 4,
+                first_token_ms=timer.first_token_ms or total_ms,
+                total_ms=total_ms,
+                region_detected=cached.region_detected,
+                out_of_regional_scope=cached.intent == "out_of_regional_scope",
+                golden_case_id=None,
+                cache_hit=True,
+                extra={
+                    "seed_id": cached.seed_id,
+                    "seed_version": cached.seed_version,
+                    "cache_score": cached.score,
+                    "answer_mode": cached.answer_mode,
+                },
+            )
+            yield self._done_event(
+                q_hash,
+                timer,
+                cache_hit=True,
+                seed_id=cached.seed_id,
+            )
+            return
+
+        for token in self.stream_answer(
+            check.sanitized,
+            history=history,
+            context_hint=context_hint,
+            dataset_version=dataset_version,
+        ):
+            yield RagStreamEvent("token", {"text": token})
+        yield self._done_event(q_hash, timer, cache_hit=False)
 
     def stream_answer(
         self,
@@ -989,6 +1149,47 @@ class RagOrchestrator:
             region_detected=region,
             out_of_regional_scope=False,
             golden_case_id=None,
+        )
+
+    def _resolve_cached_answer(
+        self,
+        question: str,
+        *,
+        intent: str,
+        region: Literal["CE", "SP", "CE+SP"] | None,
+        dataset_version: str | None,
+    ) -> CachedAnswer | None:
+        def load_passages(anchors: list[str]) -> list[Passage]:
+            return self.retriever.get_by_anchors(anchors, dataset_version=dataset_version)
+
+        try:
+            return resolve_known_answer(
+                question,
+                intent=intent,
+                region=region,
+                dataset_hash=dataset_version,
+                passage_loader=load_passages,
+            )
+        except (FileNotFoundError, RuntimeError):
+            return None
+
+    @staticmethod
+    def _done_event(
+        question_hash: str,
+        timer: _Timer,
+        *,
+        cache_hit: bool,
+        seed_id: str | None = None,
+    ) -> RagStreamEvent:
+        return RagStreamEvent(
+            "done",
+            {
+                "ok": True,
+                "question_hash": question_hash,
+                "cache_hit": cache_hit,
+                "cache_seed_id": seed_id,
+                "latency_ms": timer.total_ms(),
+            },
         )
 
     def _top_passages(
@@ -1286,6 +1487,8 @@ class RagOrchestrator:
         region_detected: Literal["CE", "SP", "CE+SP"] | None,
         out_of_regional_scope: bool,
         golden_case_id: str | None,
+        cache_hit: bool = False,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         try:
             regions = sorted({p.region for p in passages if p.region})
@@ -1303,11 +1506,14 @@ class RagOrchestrator:
                 n_passages=len(passages),
                 prompt_tokens=prompt_tokens,
                 completion_tokens=completion_tokens,
-                cache_hit=False,
+                cache_hit=cache_hit,
                 latency_first_token_ms=first_token_ms,
                 latency_total_ms=total_ms,
                 cost_usd_estimated=0.0,  # llama-cpp local
-                extra={"sources": [p.source_path for p in passages]},
+                extra={
+                    "sources": [p.source_path for p in passages],
+                    **(extra or {}),
+                },
             )
             record(self.config.telemetry_path, telemetry)
         except Exception:

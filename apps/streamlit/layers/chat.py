@@ -651,14 +651,15 @@ _CHAT_CSS = """
   padding-left: 46px;
 }
 .fb-row-wrap .stButton > button {
-  width: 28px !important; height: 26px !important;
+  width: 34px !important; height: 30px !important;
   min-height: unset !important;
   padding: 0 !important;
-  border: 1px solid var(--border) !important;
+  border: 1px solid var(--border-strong) !important;
   border-radius: 5px !important;
-  background: var(--surface) !important;
-  color: var(--text-dim) !important;
-  font-size: 12px !important;
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
   display: grid !important;
   place-items: center !important;
   transition: all 140ms var(--ease) !important;
@@ -667,6 +668,10 @@ _CHAT_CSS = """
   color: var(--accent) !important;
   border-color: var(--accent-ring) !important;
   background: var(--accent-soft) !important;
+}
+.fb-row-wrap .stButton > button:focus-visible {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: 2px !important;
 }
 
 /* ── Caret ───────────────────────────────────────────────────────────── */

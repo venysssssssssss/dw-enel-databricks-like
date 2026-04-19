@@ -2,8 +2,16 @@ import { fetchEventSource } from "@microsoft/fetch-event-source";
 
 export type RagEventHandlers = {
   onToken: (token: string) => void;
-  onDone: () => void;
+  onDone: (payload: RagDonePayload) => void;
   onError: (message: string) => void;
+};
+
+export type RagDonePayload = {
+  ok?: boolean;
+  question_hash?: string;
+  cache_hit?: boolean;
+  cache_seed_id?: string | null;
+  latency_ms?: number;
 };
 
 export type RagHistoryTurn = {
@@ -27,12 +35,15 @@ export async function streamRagAnswer(
     },
     body: JSON.stringify({ question, history }),
     onmessage(event) {
-      const payload = JSON.parse(event.data || "{}") as { text?: string; message?: string };
+      const payload = JSON.parse(event.data || "{}") as RagDonePayload & {
+        text?: string;
+        message?: string;
+      };
       if (event.event === "token" && payload.text) {
         handlers.onToken(payload.text);
       }
       if (event.event === "done") {
-        handlers.onDone();
+        handlers.onDone(payload);
       }
       if (event.event === "error") {
         handlers.onError(payload.message ?? "Falha no stream RAG.");
