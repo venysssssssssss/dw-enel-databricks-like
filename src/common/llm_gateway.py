@@ -172,38 +172,38 @@ class LlamaCppProvider:
             verbose=False,
             logits_all=False,
         )
-def complete(
-    self,
-    messages: list[Message],
-    *,
-    max_tokens: int = 512,
-    temperature: float = 0.2,
-    top_p: float = 0.9,
-    stop: list[str] | None = None,
-    tools: list[dict[str, Any]] | None = None,
-) -> LLMResponse:
-    out = self._chat_completion_with_retry(
-        messages=messages,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        top_p=top_p,
-        stop=stop,
-        stream=False,
-        tools=tools,
-    )
-    msg = out["choices"][0]["message"]
-    text = msg.get("content") or ""
-    tool_calls = msg.get("tool_calls")
-    if tool_calls:
-        text = json.dumps({"tool_calls": tool_calls})
-    usage = out.get("usage", {})
-    return LLMResponse(
-        text=text,
-        prompt_tokens=int(usage.get("prompt_tokens", 0)),
-        completion_tokens=int(usage.get("completion_tokens", 0)),
-        provider=self.name,
-        model=self.model,
-    )
+    def complete(
+        self,
+        messages: list[Message],
+        *,
+        max_tokens: int = 512,
+        temperature: float = 0.2,
+        top_p: float = 0.9,
+        stop: list[str] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> LLMResponse:
+        out = self._chat_completion_with_retry(
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            stop=stop,
+            stream=False,
+            tools=tools,
+        )
+        msg = out["choices"][0]["message"]
+        text = msg.get("content") or ""
+        tool_calls = msg.get("tool_calls")
+        if tool_calls:
+            text = json.dumps({"tool_calls": tool_calls})
+        usage = out.get("usage", {})
+        return LLMResponse(
+            text=text,
+            prompt_tokens=int(usage.get("prompt_tokens", 0)),
+            completion_tokens=int(usage.get("completion_tokens", 0)),
+            provider=self.name,
+            model=self.model,
+        )
     def stream(
         self,
         messages: list[Message],
@@ -237,19 +237,23 @@ def complete(
         top_p: float,
         stop: list[str] | None,
         stream: bool,
+        tools: list[dict[str, Any]] | None = None,
     ):
         effective_max = max(self._MIN_COMPLETION_TOKENS, int(max_tokens))
         # Até 3 tentativas para absorver pequenos estouros de contexto.
         for _ in range(3):
             try:
-                return self._llama.create_chat_completion(
-                    messages=messages,
-                    max_tokens=effective_max,
-                    temperature=temperature,
-                    top_p=top_p,
-                    stop=stop or [],
-                    stream=stream,
-                )
+                kwargs = {
+                    "messages": messages,
+                    "max_tokens": effective_max,
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "stop": stop or [],
+                    "stream": stream,
+                }
+                if tools:
+                    kwargs["tools"] = tools
+                return self._llama.create_chat_completion(**kwargs)
             except ValueError as exc:
                 reduced = self._reduce_tokens_from_context_error(
                     exc, current_max=effective_max
@@ -260,14 +264,17 @@ def complete(
                     break
                 effective_max = reduced
         # Última tentativa: mínimo para aumentar chance de sucesso.
-        return self._llama.create_chat_completion(
-            messages=messages,
-            max_tokens=self._MIN_COMPLETION_TOKENS,
-            temperature=temperature,
-            top_p=top_p,
-            stop=stop or [],
-            stream=stream,
-        )
+        kwargs = {
+            "messages": messages,
+            "max_tokens": self._MIN_COMPLETION_TOKENS,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stop": stop or [],
+            "stream": stream,
+        }
+        if tools:
+            kwargs["tools"] = tools
+        return self._llama.create_chat_completion(**kwargs)
 
     def _reduce_tokens_from_context_error(
         self,
@@ -340,6 +347,7 @@ class OllamaProvider:
         temperature: float = 0.2,
         top_p: float = 0.9,
         stop: list[str] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> Iterator[str]:
         import httpx
 
@@ -351,6 +359,8 @@ class OllamaProvider:
         }
         if stop:
             body["options"]["stop"] = stop
+        if tools:
+            body["tools"] = tools
         with httpx.stream("POST", f"{self.host}/api/chat", json=body, timeout=120) as r:
             r.raise_for_status()
             for line in r.iter_lines():
