@@ -47,6 +47,7 @@ class LLMProvider(Protocol):
         temperature: float = 0.2,
         top_p: float = 0.9,
         stop: list[str] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse: ...
 
     def stream(
@@ -57,6 +58,7 @@ class LLMProvider(Protocol):
         temperature: float = 0.2,
         top_p: float = 0.9,
         stop: list[str] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> Iterator[str]: ...
 
 
@@ -170,34 +172,38 @@ class LlamaCppProvider:
             verbose=False,
             logits_all=False,
         )
-
-    def complete(
-        self,
-        messages: list[Message],
-        *,
-        max_tokens: int = 512,
-        temperature: float = 0.2,
-        top_p: float = 0.9,
-        stop: list[str] | None = None,
-    ) -> LLMResponse:
-        out = self._chat_completion_with_retry(
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            stop=stop,
-            stream=False,
-        )
-        text = out["choices"][0]["message"]["content"]
-        usage = out.get("usage", {})
-        return LLMResponse(
-            text=text,
-            prompt_tokens=int(usage.get("prompt_tokens", 0)),
-            completion_tokens=int(usage.get("completion_tokens", 0)),
-            provider=self.name,
-            model=self.model,
-        )
-
+def complete(
+    self,
+    messages: list[Message],
+    *,
+    max_tokens: int = 512,
+    temperature: float = 0.2,
+    top_p: float = 0.9,
+    stop: list[str] | None = None,
+    tools: list[dict[str, Any]] | None = None,
+) -> LLMResponse:
+    out = self._chat_completion_with_retry(
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        stop=stop,
+        stream=False,
+        tools=tools,
+    )
+    msg = out["choices"][0]["message"]
+    text = msg.get("content") or ""
+    tool_calls = msg.get("tool_calls")
+    if tool_calls:
+        text = json.dumps({"tool_calls": tool_calls})
+    usage = out.get("usage", {})
+    return LLMResponse(
+        text=text,
+        prompt_tokens=int(usage.get("prompt_tokens", 0)),
+        completion_tokens=int(usage.get("completion_tokens", 0)),
+        provider=self.name,
+        model=self.model,
+    )
     def stream(
         self,
         messages: list[Message],
@@ -206,6 +212,7 @@ class LlamaCppProvider:
         temperature: float = 0.2,
         top_p: float = 0.9,
         stop: list[str] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> Iterator[str]:
         it = self._chat_completion_with_retry(
             messages=messages,
@@ -214,6 +221,7 @@ class LlamaCppProvider:
             top_p=top_p,
             stop=stop,
             stream=True,
+            tools=tools,
         )
         for chunk in it:
             delta = chunk["choices"][0]["delta"].get("content", "")
@@ -298,6 +306,7 @@ class OllamaProvider:
         temperature: float = 0.2,
         top_p: float = 0.9,
         stop: list[str] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
         import httpx
 
@@ -309,6 +318,8 @@ class OllamaProvider:
         }
         if stop:
             body["options"]["stop"] = stop
+        if tools:
+            body["tools"] = tools
         r = httpx.post(f"{self.host}/api/chat", json=body, timeout=120)
         r.raise_for_status()
         data = r.json()

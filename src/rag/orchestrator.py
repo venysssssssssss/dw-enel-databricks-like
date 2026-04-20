@@ -1147,6 +1147,47 @@ class RagOrchestrator:
             history=history,
             history_summary=history_summary,
         )
+
+        # Sprint 20: Integração de Function Calling
+        tools = [{
+            "type": "function",
+            "function": {
+                "name": "get_metrics_summary",
+                "description": "Obtém resumo de métricas do DataStore real.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }]
+        
+        # Orquestrador detecta quando exige dados vivos e chama a tool
+        if any(term in check.sanitized.lower() for term in ("total", "quant", "resumo", "métrica", "volume")):
+            try:
+                import json
+                from src.data_plane import DataStore
+                store = DataStore()
+                metrics_data = {
+                    "total_cards_indexados": len(store.cards()),
+                    "dataset_version": store.version().hash,
+                    "status": "dados_vivos_ativos"
+                }
+                tool_call_id = "call_metrics_1"
+                messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [{
+                        "id": tool_call_id,
+                        "type": "function",
+                        "function": {"name": "get_metrics_summary", "arguments": "{}"}
+                    }]
+                })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "name": "get_metrics_summary",
+                    "content": json.dumps(metrics_data)
+                })
+            except Exception:
+                pass
+
         acc_text = []
         for chunk in self.provider.stream(
             messages,
@@ -1157,6 +1198,7 @@ class RagOrchestrator:
             ),
             temperature=self.config.temperature,
             top_p=self.config.top_p,
+            tools=tools
         ):
             timer.mark_first_token()
             acc_text.append(chunk)

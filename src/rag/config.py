@@ -113,10 +113,10 @@ def load_rag_config() -> RagConfig:
         collection_name=os.getenv("RAG_COLLECTION", "enel_docs"),
         max_turn_tokens=_env_int("RAG_MAX_TURN_TOKENS", 3000),
         max_context_tokens=_env_int("RAG_MAX_CONTEXT_TOKENS", 4096),
-        rerank_enabled=_env_bool("RAG_RERANK_ENABLED", False),
+        rerank_enabled=_env_bool("RAG_RERANK_ENABLED", True),
         rerank_model=os.getenv(
             "RAG_RERANK_MODEL",
-            "cross-encoder/ms-marco-MiniLM-L-6-v2",
+            "cross-encoder/ms-marco-MiniLM-L-4-v2",
         ),
         stream=_env_bool("RAG_STREAM", True),
         retrieval_k=_env_int("RAG_RETRIEVAL_K", 12),
@@ -133,5 +133,5 @@ def load_rag_config() -> RagConfig:
         api_key=os.getenv("RAG_API_KEY") or None,
         telemetry_path=_env_path("RAG_TELEMETRY_PATH", "data/rag/telemetry.jsonl"),
         feedback_path=_env_path("RAG_FEEDBACK_PATH", "data/rag/feedback.csv"),
-        llm_judge_enabled=_env_bool("RAG_LLM_JUDGE", False),
+        llm_judge_enabled=_env_bool("RAG_LLM_JUDGE", True),
     )

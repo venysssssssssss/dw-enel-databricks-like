@@ -49,11 +49,19 @@ async def lifespan(app: FastAPI):
         rag_config = load_rag_config()
         app.state.rag_config = rag_config
         app.state.rag_orchestrator = RagOrchestrator(rag_config)
+        
+        # Inicia o background worker do LLM Judge
+        from src.rag.judge import run_judge_worker
+        import asyncio
+        app.state.judge_task = asyncio.create_task(run_judge_worker(rag_config))
     except Exception:
         # Nunca quebrar boot da API por falha de inicialização do RAG.
         app.state.rag_orchestrator = None
+        app.state.judge_task = None
     yield
     await app.state.trino.close()
+    if getattr(app.state, "judge_task", None):
+        app.state.judge_task.cancel()
 
 
 def create_app(
