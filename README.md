@@ -8,7 +8,9 @@ Lakehouse analítico open source para ENEL, desenhado para substituir capacidade
 |-------|---------|----------|
 | Fundação lakehouse | 01–06 | Bronze/Silver, qualidade, Airflow, bootstrap SQL, dados sintéticos |
 | Consumo + ML | 07–12 | Gold em dbt, Superset, FastAPI, feature store, treino/scoring, drift, MLflow/Prometheus/Grafana |
-| IA de reclamações | 13 | Ingestão CE+SP, embeddings, BERTopic, classificador, dashboard Streamlit |
+| IA de reclamações | 13–14 | Ingestão CE+SP, embeddings, BERTopic, classificador, dashboard Streamlit, UX Excelência |
+| RAG & Chat ENEL | 15–20 | RAG offline (Qwen2.5/Llama.cpp), Chat Streamlit, Reranker, LLM Judge, Tool Calling |
+| MIS Executivo | 21 | Pipeline CE (Sintoma vs Causa-Raiz), Dash Aconchegante, PII redaction, Batch LLM Inference |
 
 ## Estrutura
 

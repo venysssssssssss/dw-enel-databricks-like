@@ -14,6 +14,9 @@
 | Apache Superset | 4.0+ | Trino connector nativo, filtros melhorados |
 | MLflow | 2.15+ | Model Registry v2, melhor tracking |
 | FastAPI | 0.115+ | Pydantic v2, lifespan events, OpenAPI 3.1 |
+| Streamlit | 1.39+ | Dashboards MIS, Chat RAG e interface executiva |
+| Llama.cpp | 0.3.2+ | Inferência de LLMs (Qwen2.5) 100% offline em CPU |
+| ChromaDB | 1.5+ | Banco de dados vetorial local (RAG) |
 | Great Expectations | 1.0+ | Fluent datasources, checkpoint API simplificada |
 | Prometheus | 2.50+ | Scraping otimizado |
 | Grafana | 11+ | Dashboards e alertas |
@@ -52,6 +55,11 @@ apache-airflow==2.9.*
 # dbt
 dbt-core==1.8.*
 dbt-trino==1.8.*
+
+# RAG & Viz
+streamlit==1.39.*
+llama-cpp-python==0.3.*
+chromadb==1.5.*
 
 # Utilities
 pandas==2.2.*

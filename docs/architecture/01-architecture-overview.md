@@ -8,8 +8,8 @@ A plataforma segue o padrão **Lakehouse** com camada de **Data Warehouse** dime
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        CAMADA DE CONSUMO                           │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │
-│  │ Superset  │  │ FastAPI  │  │  Trino   │  │  MLflow Serving  │   │
-│  │(Dashboards│  │(Exports) │  │(Ad-hoc)  │  │  (Batch Scores)  │   │
+│  │ Superset  │  │ FastAPI  │  │ Streamlit│  │  Trino   / RAG   │   │
+│  │(Dashboards│  │(Exports) │  │(MIS/Chat)│  │(Ad-hoc / Busca)  │   │
 │  └─────┬────┘  └─────┬────┘  └─────┬────┘  └────────┬─────────┘   │
 │        │             │             │                 │              │
 ├────────┴─────────────┴─────────────┴─────────────────┴──────────────┤
@@ -17,9 +17,12 @@ A plataforma segue o padrão **Lakehouse** com camada de **Data Warehouse** dime
 │  Data Marts dimensionais: fato + dimensões conformadas              │
 │  Materialização: dbt Core sobre Spark/Trino                         │
 ├─────────────────────────────────────────────────────────────────────┤
+│                        CAMADA DE MLOps & GENAI                      │
+│  MLflow (Batch Scores), Llama.cpp/Qwen2.5 (LLM Fallback), ChromaDB  │
+├─────────────────────────────────────────────────────────────────────┤
 │                        CAMADA SILVER                                │
 │  Dados tipados, normalizados, deduplicados, historicizados          │
-│  Processamento: Apache Spark (PySpark)                              │
+│  Processamento: Apache Spark (PySpark) e Batch Inference (LLM)      │
 ├─────────────────────────────────────────────────────────────────────┤
 │                        CAMADA BRONZE                                │
 │  Dados brutos exatamente como chegaram da fonte                     │
