@@ -32,3 +32,12 @@ async def get_projecao_meta(
     metrics_service=Depends(get_metrics_service),
 ) -> ProjecaoMetaResponse:
     return await metrics_service.get_projecao_meta()
+
+
+@router.get("/mis-aconchegante")
+async def get_mis_aconchegante(
+    _: AuthenticatedUser,
+    metrics_service=Depends(get_metrics_service)
+):
+    """Endpoint MOCK para servir a camada do MIS BI Aconchegante (Sprint 21)."""
+    return await metrics_service.get_mis_aconchegante_metrics()

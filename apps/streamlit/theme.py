@@ -95,26 +95,26 @@ def css_variables(mode: ThemeMode = "light") -> dict[str, str]:
             "--enel-accent-ring":   "oklch(58% 0.19 15 / 0.28)",
         }
     return {
-        "--enel-bg":            "oklch(98% 0.002 260)",
-        "--enel-bg-soft":       "oklch(99.5% 0.002 260)",
-        "--enel-bg-sidebar":    "oklch(99.5% 0.002 260)",
-        "--enel-surface":       "oklch(100% 0 0)",
-        "--enel-surface-2":     "oklch(97% 0.003 260)",
-        "--enel-surface-3":     "oklch(94% 0.004 260)",
-        "--enel-text":          "oklch(18% 0.008 260)",
-        "--enel-muted":         "oklch(40% 0.006 260)",
-        "--enel-text-dim":      "oklch(54% 0.005 260)",
-        "--enel-text-faint":    "oklch(68% 0.004 260)",
-        "--enel-border":        "oklch(90% 0.004 260)",
-        "--enel-border-strong": "oklch(82% 0.005 260)",
-        "--enel-divider":       "oklch(93% 0.003 260)",
-        "--enel-shadow":        "0 12px 28px rgba(16,20,28,0.08)",
-        "--enel-shadow-sm":     "0 1px 2px rgba(16,20,28,0.05)",
-        "--enel-shadow-md":     "0 4px 18px rgba(16,20,28,0.08)",
-        "--enel-accent-graphite": "oklch(58% 0.19 15)",
-        "--enel-accent-hover":  "oklch(64% 0.20 15)",
-        "--enel-accent-soft":   "oklch(58% 0.19 15 / 0.10)",
-        "--enel-accent-ring":   "oklch(58% 0.19 15 / 0.22)",
+        "--enel-bg":            "oklch(97.2% 0.012 60)", # paper
+        "--enel-bg-soft":       "oklch(95.5% 0.014 60)", # paper-2
+        "--enel-bg-sidebar":    "oklch(95.5% 0.014 60)", # paper-2
+        "--enel-surface":       "oklch(99% 0.006 60)",   # card
+        "--enel-surface-2":     "oklch(93% 0.016 60)",   # paper-3
+        "--enel-surface-3":     "oklch(96% 0.024 55)",   # warm-wash
+        "--enel-text":          "oklch(22% 0.018 40)",   # ink
+        "--enel-muted":         "oklch(36% 0.018 40)",   # ink-2
+        "--enel-text-dim":      "oklch(52% 0.018 40)",   # ink-3
+        "--enel-text-faint":    "oklch(68% 0.014 45)",   # ink-faint
+        "--enel-border":        "oklch(89% 0.012 50)",   # line
+        "--enel-border-strong": "oklch(82% 0.016 50)",   # line-strong
+        "--enel-divider":       "oklch(89% 0.012 50)",
+        "--enel-shadow":        "0 22px 48px oklch(22% 0.02 30 / 0.09), 0 4px 10px oklch(22% 0.02 30 / 0.05)",
+        "--enel-shadow-sm":     "0 1px 2px oklch(22% 0.02 30 / 0.05)",
+        "--enel-shadow-md":     "0 6px 18px oklch(22% 0.02 30 / 0.06), 0 2px 4px oklch(22% 0.02 30 / 0.04)",
+        "--enel-accent-graphite": "oklch(60% 0.17 28)",  # terra
+        "--enel-accent-hover":  "oklch(48% 0.17 24)",    # terra-deep
+        "--enel-accent-soft":   "oklch(60% 0.17 28 / 0.10)",
+        "--enel-accent-ring":   "oklch(60% 0.17 28 / 0.18)",
     }
 
 

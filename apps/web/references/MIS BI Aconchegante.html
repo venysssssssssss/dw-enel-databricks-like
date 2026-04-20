@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>MIS · BI Aconchegante</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  :root{
+    /* Warm "aconchegante" palette — cream paper, ink, terracotta */
+    --paper:        oklch(97.2% 0.012 60);
+    --paper-2:      oklch(95.5% 0.014 60);
+    --paper-3:      oklch(93% 0.016 60);
+    --card:         oklch(99% 0.006 60);
+    --ink:          oklch(22% 0.018 40);
+    --ink-2:        oklch(36% 0.018 40);
+    --ink-3:        oklch(52% 0.018 40);
+    --ink-faint:    oklch(68% 0.014 45);
+    --line:         oklch(89% 0.012 50);
+    --line-strong:  oklch(82% 0.016 50);
+    --warm-wash:    oklch(96% 0.024 55);
+
+    /* Brand warm reds — original, not lifted */
+    --terra:        oklch(60% 0.17 28);   /* CE */
+    --terra-deep:   oklch(48% 0.17 24);
+    --plum:         oklch(36% 0.14 12);   /* SP */
+    --plum-deep:    oklch(28% 0.12 10);
+    --amber:        oklch(74% 0.15 70);
+    --sage:         oklch(58% 0.09 145);
+    --ocean:        oklch(52% 0.11 220);
+
+    --ok:           oklch(60% 0.14 150);
+    --warn:         oklch(70% 0.16 70);
+    --crit:         oklch(58% 0.20 25);
+
+    --shadow-sm:    0 1px 2px oklch(22% 0.02 30 / 0.05);
+    --shadow-md:    0 6px 18px oklch(22% 0.02 30 / 0.06), 0 2px 4px oklch(22% 0.02 30 / 0.04);
+    --shadow-lg:    0 22px 48px oklch(22% 0.02 30 / 0.09), 0 4px 10px oklch(22% 0.02 30 / 0.05);
+    --radius:       14px;
+    --radius-sm:    8px;
+    --radius-lg:    20px;
+
+    --f-serif: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+    --f-sans:  'Inter', system-ui, sans-serif;
+    --f-mono:  'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--paper);color:var(--ink);font-family:var(--f-sans);font-size:14px;line-height:1.45;font-feature-settings:'ss01','cv11','tnum'}
+  body{min-height:100vh}
+  button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+  a{color:inherit}
+
+  /* ───── Shell ───── */
+  .shell{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+
+  /* ───── Sidebar ───── */
+  .sidebar{
+    background:var(--paper-2);
+    border-right:1px solid var(--line);
+    padding:20px 16px 24px;
+    position:sticky;top:0;height:100vh;overflow-y:auto;
+  }
+  .brand{display:flex;align-items:center;gap:10px;padding:4px 6px 18px;border-bottom:1px solid var(--line);margin-bottom:18px}
+  .brand-mark{
+    width:34px;height:34px;border-radius:10px;
+    background:
+      radial-gradient(circle at 30% 30%, oklch(72% 0.17 55) 0%, var(--terra) 45%, var(--plum) 100%);
+    box-shadow: inset 0 -6px 10px oklch(20% 0.05 20 / 0.35), var(--shadow-sm);
+    display:grid;place-items:center;color:#fff;font-family:var(--f-serif);font-weight:600;font-size:16px;font-style:italic;
+  }
+  .brand-text{line-height:1.15}
+  .brand-name{font-family:var(--f-serif);font-weight:600;font-size:15.5px;letter-spacing:-.01em}
+  .brand-sub{font-family:var(--f-mono);font-size:10px;color:var(--ink-faint);letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
+
+  .sb-label{font-size:10.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);margin:18px 8px 8px}
+  .sb-label:first-of-type{margin-top:4px}
+
+  .nav{display:grid;gap:1px}
+  .nav-item{
+    display:grid;grid-template-columns:16px 1fr auto;align-items:center;gap:10px;
+    padding:9px 10px;border-radius:var(--radius-sm);
+    font-size:13px;color:var(--ink-2);cursor:pointer;text-align:left;width:100%;
+    transition:background .14s, color .14s;
+  }
+  .nav-item:hover{background:var(--paper-3);color:var(--ink)}
+  .nav-item.active{background:var(--card);color:var(--ink);box-shadow:var(--shadow-sm);border:1px solid var(--line)}
+  .nav-dot{width:6px;height:6px;border-radius:50%;background:var(--ink-faint);justify-self:center}
+  .nav-item.active .nav-dot{background:var(--terra);box-shadow:0 0 0 3px oklch(60% 0.17 28 / 0.18)}
+  .nav-kbd{font-family:var(--f-mono);font-size:10px;color:var(--ink-faint);background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+
+  .filter-group{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px;margin-bottom:10px}
+  .filter-label{font-size:11px;font-weight:600;color:var(--ink-3);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .filter-label .hint{font-family:var(--f-mono);font-size:10px;color:var(--ink-faint);font-weight:400}
+
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;font-size:12.5px;color:var(--ink-2)}
+  .sw{width:30px;height:17px;background:var(--line-strong);border-radius:999px;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
+  .sw::after{content:'';position:absolute;top:2px;left:2px;width:13px;height:13px;background:#fff;border-radius:50%;transition:left .2s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+  .sw.on{background:var(--terra)}
+  .sw.on::after{left:15px}
+
+  .chip-row{display:flex;flex-wrap:wrap;gap:4px}
+  .chip{
+    padding:4px 9px;border-radius:6px;font-size:11.5px;font-weight:500;
+    border:1px solid var(--line);background:var(--paper);color:var(--ink-2);
+    cursor:pointer;transition:all .14s;
+  }
+  .chip:hover{border-color:var(--terra);color:var(--ink)}
+  .chip.on{background:oklch(60% 0.17 28 / 0.10);border-color:var(--terra);color:var(--terra-deep)}
+  .chip.on.plum{background:oklch(36% 0.14 12 / 0.10);border-color:var(--plum);color:var(--plum-deep)}
+
+  .slider{width:100%;height:4px;background:var(--paper-3);border-radius:2px;position:relative;margin:8px 0 4px;cursor:pointer}
+  .slider .track{position:absolute;height:100%;background:linear-gradient(90deg,var(--terra),var(--plum));border-radius:2px}
+  .slider .thumb{position:absolute;top:50%;width:14px;height:14px;background:var(--card);border:2px solid var(--terra);border-radius:50%;transform:translate(-50%,-50%);box-shadow:var(--shadow-sm)}
+  .slider-label{display:flex;justify-content:space-between;font-family:var(--f-mono);font-size:10.5px;color:var(--ink-3)}
+
+  .sb-footer{margin-top:18px;padding:12px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);font-size:11.5px;color:var(--ink-3);line-height:1.55}
+  .sb-footer .row{display:flex;justify-content:space-between;padding:3px 0}
+  .sb-footer .row + .row{border-top:1px dashed var(--line)}
+  .sb-footer b{color:var(--ink);font-weight:600}
+  .sb-footer .num{font-family:var(--f-mono);color:var(--terra-deep);font-weight:600}
+
+  /* ───── Main ───── */
+  .main{padding:28px 36px 60px;max-width:1500px;width:100%}
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+  .crumbs{font-size:12px;color:var(--ink-3);font-family:var(--f-mono);letter-spacing:.02em}
+  .crumbs b{color:var(--ink);font-weight:600}
+  .status{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink-3)}
+  .pulse{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 0 oklch(60% 0.14 150 / 0.5);animation:pulse 2.5s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 oklch(60% 0.14 150 / 0.5)}70%{box-shadow:0 0 0 8px oklch(60% 0.14 150 / 0)}100%{box-shadow:0 0 0 0 oklch(60% 0.14 150 / 0)}}
+
+  /* ───── Hero ───── */
+  .hero{
+    position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);
+    padding:28px 32px;margin-bottom:22px;overflow:hidden;box-shadow:var(--shadow-md);
+  }
+  .hero::before{
+    content:'';position:absolute;top:-120px;right:-100px;width:380px;height:380px;
+    background:radial-gradient(circle, oklch(60% 0.17 28 / 0.12) 0%, transparent 62%);
+    pointer-events:none;
+  }
+  .hero::after{
+    content:'';position:absolute;bottom:-140px;left:40%;width:340px;height:340px;
+    background:radial-gradient(circle, oklch(36% 0.14 12 / 0.10) 0%, transparent 65%);
+    pointer-events:none;
+  }
+  .hero-grid{position:relative;display:grid;grid-template-columns:1fr 380px;gap:32px;align-items:center}
+  .eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--terra-deep);font-weight:500;display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .eyebrow::before{content:'';width:24px;height:1px;background:var(--terra)}
+  .hero h1{font-family:var(--f-serif);font-weight:500;font-size:42px;line-height:1.04;letter-spacing:-.02em;margin-bottom:14px;max-width:620px}
+  .hero h1 em{font-style:italic;color:var(--terra-deep);font-weight:500}
+  .hero p{color:var(--ink-2);font-size:15px;max-width:540px;line-height:1.55}
+  .hero-metric{
+    background:var(--warm-wash);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px 24px;
+  }
+  .hero-metric .mini{font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  .hero-metric .big{font-family:var(--f-serif);font-size:48px;font-weight:500;letter-spacing:-.02em;line-height:1;margin:6px 0 4px}
+  .hero-metric .delta{font-family:var(--f-mono);font-size:12px;color:var(--crit);font-weight:600}
+  .hero-metric .spark{margin-top:12px;height:42px}
+
+  /* ───── KPI strip ───── */
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:22px}
+  .kpi{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 18px;transition:transform .18s, box-shadow .18s;cursor:pointer;position:relative;overflow:hidden
+  }
+  .kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);border-color:var(--line-strong)}
+  .kpi-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .kpi-label{font-size:11px;font-weight:600;color:var(--ink-3);letter-spacing:.08em;text-transform:uppercase}
+  .kpi-tag{font-family:var(--f-mono);font-size:10px;padding:2px 6px;border-radius:4px;background:var(--paper-3);color:var(--ink-3)}
+  .kpi-val{font-family:var(--f-serif);font-size:32px;font-weight:500;letter-spacing:-.02em;line-height:1}
+  .kpi-sub{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:11.5px;color:var(--ink-3);font-family:var(--f-mono)}
+  .kpi-sub .d-up{color:var(--crit);font-weight:600}
+  .kpi-sub .d-dn{color:var(--ok);font-weight:600}
+  .kpi.dominant{background:linear-gradient(135deg, var(--warm-wash) 0%, var(--card) 70%)}
+  .kpi.dominant .kpi-val{font-size:22px;line-height:1.15}
+
+  /* ───── Cards / charts ───── */
+  .grid-2{display:grid;grid-template-columns:1.2fr 1fr;gap:18px;margin-bottom:18px}
+  .grid-12{display:grid;grid-template-columns:repeat(12,1fr);gap:18px;margin-bottom:18px}
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:20px 22px;box-shadow:var(--shadow-sm);
+  }
+  .card.pad-lg{padding:24px 26px}
+  .col-7{grid-column:span 7}.col-5{grid-column:span 5}
+  .col-6{grid-column:span 6}.col-8{grid-column:span 8}.col-4{grid-column:span 4}
+  .col-12{grid-column:span 12}
+
+  .c-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;gap:16px}
+  .c-title{font-family:var(--f-serif);font-size:20px;font-weight:500;letter-spacing:-.01em;color:var(--ink);line-height:1.2}
+  .c-sub{font-size:12.5px;color:var(--ink-3);margin-top:4px;max-width:520px}
+  .c-actions{display:flex;gap:6px;flex-shrink:0}
+  .c-btn{
+    padding:5px 10px;border-radius:6px;font-size:11.5px;font-weight:500;
+    border:1px solid var(--line);background:var(--paper);color:var(--ink-2);cursor:pointer;
+    font-family:var(--f-mono);letter-spacing:.01em;transition:all .14s;
+  }
+  .c-btn:hover{border-color:var(--terra);color:var(--terra-deep)}
+  .c-btn.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+  /* Story panel */
+  .story{
+    display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start;
+    background:var(--warm-wash);border:1px solid oklch(85% 0.03 50);border-radius:var(--radius);
+    padding:16px 18px;margin-bottom:18px;
+  }
+  .story-icon{
+    width:40px;height:40px;border-radius:10px;display:grid;place-items:center;flex-shrink:0;
+    background:linear-gradient(135deg, var(--terra), var(--plum));color:#fff;font-family:var(--f-serif);font-size:20px;font-weight:500;font-style:italic;
+  }
+  .story-body{font-size:13.5px;color:var(--ink-2);line-height:1.55}
+  .story-body b{color:var(--ink);font-weight:600}
+  .story-body .lead{font-family:var(--f-serif);font-style:italic;font-size:16px;color:var(--ink);margin-bottom:6px;display:block;line-height:1.3}
+  .story-steps{display:flex;gap:18px;margin-top:10px;flex-wrap:wrap}
+  .story-step{display:flex;gap:8px;font-size:12px;color:var(--ink-3)}
+  .story-step .n{font-family:var(--f-mono);font-weight:600;color:var(--terra-deep)}
+
+  .chart{width:100%}
+  .h-360{height:360px}.h-320{height:320px}.h-280{height:280px}.h-240{height:240px}.h-200{height:200px}.h-160{height:160px}
+
+  /* Pareto list */
+  .pareto-list{display:grid;gap:6px}
+  .pareto-row{
+    display:grid;grid-template-columns:170px 1fr 60px 50px;align-items:center;gap:10px;
+    padding:7px 4px;border-radius:6px;cursor:pointer;transition:background .12s;
+  }
+  .pareto-row:hover{background:var(--paper-2)}
+  .pareto-name{font-size:12.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--f-mono)}
+  .pareto-bar{position:relative;height:22px;background:var(--paper-3);border-radius:4px;overflow:hidden}
+  .pareto-bar .fill{
+    position:absolute;top:0;left:0;height:100%;
+    background:linear-gradient(90deg, var(--terra) 0%, var(--plum) 100%);
+    border-radius:4px;transition:width .4s cubic-bezier(.2,.7,.2,1);
+  }
+  .pareto-val{font-family:var(--f-mono);font-size:12px;color:var(--ink);text-align:right;font-weight:600}
+  .pareto-pct{font-family:var(--f-mono);font-size:10.5px;color:var(--ink-faint);text-align:right}
+  .pareto-row.active .fill{background:linear-gradient(90deg, var(--plum-deep), var(--terra-deep))}
+  .pareto-row.active{background:var(--warm-wash)}
+
+  /* Region pill toggle */
+  .seg{display:inline-flex;background:var(--paper-2);border:1px solid var(--line);border-radius:8px;padding:3px;gap:2px}
+  .seg button{padding:5px 12px;font-size:11.5px;font-weight:500;border-radius:5px;color:var(--ink-3);font-family:var(--f-mono);letter-spacing:.02em}
+  .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow-sm)}
+
+  /* Table */
+  table.data{width:100%;border-collapse:collapse;font-size:12.5px}
+  .data th{text-align:left;font-weight:600;color:var(--ink-3);padding:10px 10px;border-bottom:1px solid var(--line);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase}
+  .data td{padding:11px 10px;border-bottom:1px solid var(--line);color:var(--ink-2);vertical-align:middle}
+  .data tr:last-child td{border-bottom:none}
+  .data tr:hover td{background:var(--warm-wash)}
+  .data .mono{font-family:var(--f-mono)}
+  .data .num{font-family:var(--f-mono);text-align:right}
+  .tag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10.5px;font-family:var(--f-mono);font-weight:500}
+  .tag.terra{background:oklch(60% 0.17 28 / 0.12);color:var(--terra-deep)}
+  .tag.plum{background:oklch(36% 0.14 12 / 0.10);color:var(--plum-deep)}
+  .tag.sage{background:oklch(58% 0.09 145 / 0.14);color:oklch(42% 0.1 145)}
+  .tag.amber{background:oklch(74% 0.15 70 / 0.18);color:oklch(48% 0.15 70)}
+  .tag.ocean{background:oklch(52% 0.11 220 / 0.14);color:oklch(38% 0.11 220)}
+
+  /* Health chip strip for data governance */
+  .health-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .health-card{
+    position:relative;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;overflow:hidden;
+  }
+  .health-card .bar{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ok)}
+  .health-card.warn .bar{background:var(--warn)}
+  .health-card.crit .bar{background:var(--crit)}
+  .health-card .hl{font-size:11px;color:var(--ink-3);font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+  .health-card .hv{font-family:var(--f-serif);font-size:26px;font-weight:500;margin:6px 0 4px;letter-spacing:-.01em}
+  .health-card .hs{font-size:11.5px;color:var(--ink-3);font-family:var(--f-mono)}
+
+  /* Topic pills */
+  .topic-pill{
+    display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;
+    background:var(--paper-2);border:1px solid var(--line);font-size:11.5px;color:var(--ink-2);margin:3px;
+    font-family:var(--f-mono);cursor:pointer;transition:all .14s;
+  }
+  .topic-pill:hover{border-color:var(--terra);color:var(--terra-deep);background:var(--card)}
+  .topic-pill .n{font-weight:600;color:var(--ink)}
+
+  /* Narrative callouts inside chart blocks */
+  .insight-box{
+    margin-top:14px;padding:12px 14px;background:var(--paper-2);border-left:3px solid var(--terra);border-radius:0 8px 8px 0;
+    font-size:12.5px;color:var(--ink-2);line-height:1.55
+  }
+  .insight-box b{color:var(--ink)}
+
+  /* Tweaks panel */
+  .tweaks{
+    position:fixed;bottom:22px;right:22px;z-index:100;width:320px;
+    background:var(--card);border:1px solid var(--line-strong);border-radius:var(--radius);
+    box-shadow:var(--shadow-lg);padding:18px 20px 16px;display:none;
+  }
+  .tweaks.open{display:block}
+  .tweaks h4{font-family:var(--f-serif);font-size:16px;font-weight:500;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+  .tweaks h4 .x{font-family:var(--f-mono);font-size:12px;color:var(--ink-faint);cursor:pointer}
+  .tweaks label{display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:12.5px;color:var(--ink-2);border-bottom:1px dashed var(--line)}
+  .tweaks label:last-of-type{border-bottom:none}
+  .tweaks select{
+    font:inherit;font-size:12px;padding:4px 8px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink);font-family:var(--f-mono);
+  }
+  .tweaks-btn{
+    position:fixed;bottom:22px;right:22px;z-index:99;
+    background:var(--ink);color:var(--paper);border-radius:999px;padding:10px 16px;
+    font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    box-shadow:var(--shadow-lg);cursor:pointer;display:flex;align-items:center;gap:8px;
+  }
+  .tweaks-btn::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--amber)}
+
+  /* Screen toggle */
+  .screen{display:none}
+  .screen.on{display:block;animation:fade .28s cubic-bezier(.2,.7,.2,1)}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+  /* Quadrant chart legend */
+  .quadrant-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--ink-3);font-family:var(--f-mono)}
+  .quadrant-legend .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle;background:var(--terra)}
+
+  /* misc */
+  .hr{height:1px;background:var(--line);margin:28px 0}
+  .sep{display:flex;align-items:center;gap:16px;margin:8px 0 14px}
+  .sep-line{flex:1;height:1px;background:var(--line)}
+  .sep-label{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+
+  /* Responsive */
+  @media (max-width:1200px){
+    .shell{grid-template-columns:1fr}
+    .sidebar{position:relative;height:auto;border-right:none;border-bottom:1px solid var(--line)}
+    .hero-grid{grid-template-columns:1fr}
+    .kpis{grid-template-columns:repeat(2,1fr)}
+    .grid-2{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <!-- ───── SIDEBAR ───── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">m</div>
+      <div class="brand-text">
+        <div class="brand-name">MIS Aconchegante</div>
+        <div class="brand-sub">BI · v2.4 · ABR26</div>
+      </div>
+    </div>
+
+    <div class="sb-label">Navegação</div>
+    <div class="nav" id="nav">
+      <button class="nav-item active" data-screen="exec"><span class="nav-dot"></span>Resumo Executivo<span class="nav-kbd">1</span></button>
+      <button class="nav-item" data-screen="ritmo"><span class="nav-dot"></span>Ritmo Operacional<span class="nav-kbd">2</span></button>
+      <button class="nav-item" data-screen="padroes"><span class="nav-dot"></span>Padrões & Concentrações<span class="nav-kbd">3</span></button>
+      <button class="nav-item" data-screen="refat"><span class="nav-dot"></span>Impacto de Refaturamento<span class="nav-kbd">4</span></button>
+      <button class="nav-item" data-screen="tax"><span class="nav-dot"></span>Taxonomia Descoberta<span class="nav-kbd">5</span></button>
+      <button class="nav-item" data-screen="gov"><span class="nav-dot"></span>Governança Analítica<span class="nav-kbd">6</span></button>
+    </div>
+
+    <div class="sb-label">Filtros ativos</div>
+    <div class="filter-group">
+      <div class="filter-label">Região <span class="hint">2 ativas</span></div>
+      <div class="chip-row" id="regChips">
+        <button class="chip on" data-region="CE">CE</button>
+        <button class="chip on plum" data-region="SP">SP</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <div class="filter-label">Severidade <span class="hint">todas</span></div>
+      <div class="chip-row">
+        <button class="chip on">critical</button>
+        <button class="chip on">high</button>
+        <button class="chip on">medium</button>
+        <button class="chip">low</button>
+      </div>
+    </div>
+    <div class="filter-group">
+      <div class="filter-label">Janela temporal <span class="hint">12 meses</span></div>
+      <div class="slider"><div class="track" style="left:8%;right:0%"></div><div class="thumb" style="left:8%"></div><div class="thumb" style="left:100%"></div></div>
+      <div class="slider-label"><span>Abr 25</span><span>Mar 26</span></div>
+    </div>
+
+    <div class="sb-label">Preferências</div>
+    <div class="filter-group" style="padding:6px 12px">
+      <div class="toggle-row">Anonimização PII <div class="sw on" onclick="this.classList.toggle('on')"></div></div>
+      <div class="toggle-row">Mostrar indefinidos <div class="sw" onclick="this.classList.toggle('on')"></div></div>
+      <div class="toggle-row">Narrativa auto <div class="sw on" onclick="this.classList.toggle('on')"></div></div>
+    </div>
+
+    <div class="sb-footer">
+      <div class="row"><span>Ordens carregadas</span><span class="num">17.057</span></div>
+      <div class="row"><span>Reclamações CE</span><span class="num">167.633</span></div>
+      <div class="row"><span>Cache</span><span class="num">4 min atrás</span></div>
+      <div class="row"><span>Modelo IA</span><span class="num">BERTopic v3</span></div>
+    </div>
+  </aside>
+
+  <!-- ───── MAIN ───── -->
+  <main class="main">
+    <div class="topbar">
+      <div class="crumbs">MIS <span style="color:var(--ink-faint)">/</span> <b id="crumbScreen">Resumo Executivo</b></div>
+      <div class="status"><span class="pulse"></span>Silver layer sincronizado · 14:32 · <span style="font-family:var(--f-mono)">Δ 4m</span></div>
+    </div>
+
+    <!-- ═══════════ SCREEN 1: EXECUTIVO ═══════════ -->
+    <section class="screen on" data-screen-label="01 Executivo" data-id="exec">
+
+      <div class="hero">
+        <div class="hero-grid">
+          <div>
+            <div class="eyebrow">Pergunta executiva · abril 2026</div>
+            <h1>Refaturamento responde por <em>63% do volume</em> e cresce duas regiões em direções opostas.</h1>
+            <p>SP concentra o pico operacional recente; CE mantém volume estável mas acumula reincidência. A leitura cruzada sugere que a curva não é ruído, é <b>sazonalidade + política de estimativa</b>.</p>
+          </div>
+          <div class="hero-metric">
+            <div class="mini">Ordens MIS · últimos 12m</div>
+            <div class="big">17.057</div>
+            <div class="delta">↑ 54.9% vs. ano anterior</div>
+            <div class="spark" id="heroSpark"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi">
+          <div class="kpi-head"><div class="kpi-label">Reclamações CE</div><div class="kpi-tag">12m</div></div>
+          <div class="kpi-val">167.633</div>
+          <div class="kpi-sub"><span class="d-up">↑ 18.2%</span> · 131.809 instalações únicas</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-head"><div class="kpi-label">Reincidentes</div><div class="kpi-tag">&ge; 2 ordens</div></div>
+          <div class="kpi-val">23.241</div>
+          <div class="kpi-sub"><span class="d-up">↑ 6.1%</span> · 17.6% do total</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-head"><div class="kpi-label">% Grupo B</div><div class="kpi-tag">BT</div></div>
+          <div class="kpi-val">97.5%</div>
+          <div class="kpi-sub"><span class="d-dn">↓ 0.3 pp</span> · estável</div>
+        </div>
+        <div class="kpi dominant">
+          <div class="kpi-head"><div class="kpi-label">Tema dominante</div><div class="kpi-tag">IA+regra</div></div>
+          <div class="kpi-val" style="color:var(--terra-deep)">Refaturamento & Cobrança</div>
+          <div class="kpi-sub"><span class="d-up">54.9%</span> · 91.891 ordens</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-head"><div class="kpi-label">Causa #1 op.</div><div class="kpi-tag">canônica</div></div>
+          <div class="kpi-val">digitação</div>
+          <div class="kpi-sub"><span style="color:var(--terra-deep);font-weight:600">4.974 ordens</span> · 29% op.</div>
+        </div>
+      </div>
+
+      <div class="story">
+        <div class="story-icon">?</div>
+        <div class="story-body">
+          <span class="lead">O que esta tela responde.</span>
+          <b>Ritmo, concentração e reincidência</b> num só golpe de vista. Use o macrotema dominante como hipótese, depois desça para <b>Ritmo Operacional</b> para confirmar a curva e em <b>Padrões</b> para isolar causa × região.
+          <div class="story-steps">
+            <div class="story-step"><span class="n">1</span>Identifique a curva anômala</div>
+            <div class="story-step"><span class="n">2</span>Cruze com causa canônica</div>
+            <div class="story-step"><span class="n">3</span>Valide na taxonomia IA</div>
+            <div class="story-step"><span class="n">4</span>Leve ao comitê de risco</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Macrotemas de reclamações</div>
+              <div class="c-sub">Ordenado por volume · cor por % do total · clique para filtrar o dashboard</div>
+            </div>
+            <div class="c-actions">
+              <button class="c-btn on">Volume</button>
+              <button class="c-btn">Crescimento</button>
+            </div>
+          </div>
+          <div class="pareto-list" id="macroPareto"></div>
+          <div class="insight-box">
+            <b>Insight:</b> os 3 temas do topo respondem por <b>76.4%</b> das reclamações. Faturamento por Média/Estimativa, embora pequeno em volume, tem <b>variação de +41%</b> no trimestre — observar.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Tendência mensal por macrotema</div>
+              <div class="c-sub">Linhas suavizadas · clique para isolar uma série</div>
+            </div>
+            <div class="seg">
+              <button class="on" data-scale="abs">Absoluto</button>
+              <button data-scale="norm">Normalizado</button>
+            </div>
+          </div>
+          <div id="macroTrend" class="chart h-360"></div>
+        </div>
+      </div>
+
+      <div class="grid-12">
+        <div class="card col-8">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Volume mensal por região · área empilhada</div>
+              <div class="c-sub">SP lidera o pico recente; CE mantém piso plano — divergência exige investigação distinta</div>
+            </div>
+            <div class="seg" id="regToggle">
+              <button class="on">Ambas</button>
+              <button>CE</button>
+              <button>SP</button>
+            </div>
+          </div>
+          <div id="regionStack" class="chart h-320"></div>
+        </div>
+        <div class="card col-4">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Severidade por região</div>
+              <div class="c-sub">Matriz calor · ordens por severidade</div>
+            </div>
+          </div>
+          <div id="sevHeatExec" class="chart h-320"></div>
+          <div class="insight-box">CE tem <b>4.7× mais ordens <span class="tag terra">high</span></b> relativas ao total que SP — sugere pressão operacional concentrada.</div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ═══════════ SCREEN 2: RITMO OPERACIONAL ═══════════ -->
+    <section class="screen" data-screen-label="02 Ritmo Operacional" data-id="ritmo">
+      <div class="story">
+        <div class="story-icon">~</div>
+        <div class="story-body">
+          <span class="lead">O volume está subindo — concentrado em qual região e causa?</span>
+          Série mensal por região combinada com Pareto de causa canônica. <b>Clique numa barra do Pareto</b> para filtrar a série pela causa.
+          <div class="story-steps">
+            <div class="story-step"><span class="n">→</span>Procure quebras de tendência</div>
+            <div class="story-step"><span class="n">→</span>Confirme com a causa dominante</div>
+            <div class="story-step"><span class="n">→</span>Use Padrões para isolar local × causa</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Volume mensal de erros de leitura</div>
+              <div class="c-sub">Mediana móvel 3m sobreposta · pico em jan/26 atingiu 2.627 ordens em SP</div>
+            </div>
+            <div class="c-actions">
+              <button class="c-btn on">Linha</button>
+              <button class="c-btn">Área</button>
+              <button class="c-btn">Barra</button>
+            </div>
+          </div>
+          <div id="ritmoTrend" class="chart h-320"></div>
+          <div class="insight-box">
+            Pico sazonal de <b>nov/25–fev/26</b> coincide com janela de faturamento de verão. Considere ajustar equipe de digitação em <b>+22% FTEs</b> nesse período.
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Pareto de causas canônicas</div>
+              <div class="c-sub">4 causas respondem por 82% do volume · linha cumulativa</div>
+            </div>
+          </div>
+          <div id="ritmoPareto" class="chart h-320"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="c-head">
+          <div>
+            <div class="c-title">Ciclo operacional — como uma causa se propaga</div>
+            <div class="c-sub">Fluxo entre causa → ação → resolução · espessura proporcional ao volume (sankey)</div>
+          </div>
+        </div>
+        <div id="sankey" class="chart h-360"></div>
+      </div>
+    </section>
+
+    <!-- ═══════════ SCREEN 3: PADRÕES ═══════════ -->
+    <section class="screen" data-screen-label="03 Padroes" data-id="padroes">
+      <div class="story">
+        <div class="story-icon">✺</div>
+        <div class="story-body">
+          <span class="lead">Quais padrões se repetem por região, causa e tópico de IA?</span>
+          Use as três lentes abaixo como hipótese para atacar clusters operacionais: geografia, taxonomia e perfil narrativo.
+        </div>
+      </div>
+
+      <div class="grid-12">
+        <div class="card col-7">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Concentração região × causa</div>
+              <div class="c-sub">Matriz ordenada por total · 4 células explicam 68% do volume</div>
+            </div>
+          </div>
+          <div id="heatRegCausa" class="chart h-360"></div>
+        </div>
+        <div class="card col-5">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Perfil relativo por região</div>
+              <div class="c-sub">Radar comparativo · % intra-região por causa</div>
+            </div>
+          </div>
+          <div id="radarRegion" class="chart h-360"></div>
+          <div class="insight-box">CE é dominado por <b>digitação + leitura confirmada improcedente</b>; SP por <b>consumo elevado + autoleitura cliente</b>. <b>Playbooks diferentes.</b></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="c-head">
+          <div>
+            <div class="c-title">Tópicos IA mais recorrentes</div>
+            <div class="c-sub">BERTopic v3 · clique para ver exemplos PII-safe</div>
+          </div>
+          <div class="c-actions">
+            <button class="c-btn on">Top 8</button>
+            <button class="c-btn">Todos</button>
+          </div>
+        </div>
+        <div id="topicPills"></div>
+      </div>
+    </section>
+
+    <!-- ═══════════ SCREEN 4: REFATURAMENTO ═══════════ -->
+    <section class="screen" data-screen-label="04 Refaturamento" data-id="refat">
+      <div class="story">
+        <div class="story-icon">☐</div>
+        <div class="story-body">
+          <span class="lead">Priorize causas com alto volume <u>e</u> alta taxa de refaturamento.</span>
+          Quadrante abaixo: quanto mais à direita + acima, pior o custo operacional. Bolha por categoria da taxonomia.
+        </div>
+      </div>
+
+      <div class="card pad-lg">
+        <div class="c-head">
+          <div>
+            <div class="c-title">Volume × taxa de refaturamento</div>
+            <div class="c-sub">Eixo X: volume (ordens) · Eixo Y: % que exige refaturamento · tamanho: custo estimado R$</div>
+          </div>
+          <div class="c-actions">
+            <button class="c-btn on">Causas</button>
+            <button class="c-btn">Categorias</button>
+          </div>
+        </div>
+        <div id="quadrant" class="chart h-360"></div>
+        <div class="quadrant-legend">
+          <span><span class="sw" style="background:var(--terra)"></span>Alto impacto · atacar agora</span>
+          <span><span class="sw" style="background:var(--amber)"></span>Alto volume · baixo refat</span>
+          <span><span class="sw" style="background:var(--ocean)"></span>Raro mas custoso</span>
+          <span><span class="sw" style="background:var(--sage)"></span>Sob controle</span>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Impacto por categoria da taxonomia</div>
+              <div class="c-sub">Barras agrupadas CE vs SP · nao_classificada ainda pesa</div>
+            </div>
+          </div>
+          <div id="catImpact" class="chart h-280"></div>
+        </div>
+        <div class="card">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Reincidência por instalação</div>
+              <div class="c-sub">Distribuição anonimizada · cauda longa vs pico em 1 recorrência</div>
+            </div>
+          </div>
+          <div id="reincHist" class="chart h-280"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════ SCREEN 5: TAXONOMIA ═══════════ -->
+    <section class="screen" data-screen-label="05 Taxonomia" data-id="tax">
+      <div class="story">
+        <div class="story-icon">Σ</div>
+        <div class="story-body">
+          <span class="lead">O que a IA descobriu nos textos livres e como isso conversa com a taxonomia?</span>
+          Tópicos BERTopic mascarados, palavras-chave e exemplos PII-safe. Use para melhorar rótulos, regras e treinamento.
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Tópicos descobertos por volume</div>
+              <div class="c-sub">Treemap · cor por taxa de refaturamento associada</div>
+            </div>
+          </div>
+          <div id="treemap" class="chart h-360"></div>
+        </div>
+        <div class="card">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Palavras-chave por tópico</div>
+              <div class="c-sub">Contribuição TF-IDF · clique no tópico para destacar</div>
+            </div>
+          </div>
+          <div id="kwBars" class="chart h-360"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="c-head">
+          <div>
+            <div class="c-title">Amostras PII-safe</div>
+            <div class="c-sub">Tokens sensíveis substituídos por <span style="font-family:var(--f-mono);color:var(--terra-deep)">[TELEFONE]</span> <span style="font-family:var(--f-mono);color:var(--terra-deep)">[USUARIO]</span> <span style="font-family:var(--f-mono);color:var(--terra-deep)">[ID_INTERNO]</span> via hash determinístico</div>
+          </div>
+        </div>
+        <table class="data" id="topicTable">
+          <thead>
+            <tr><th style="width:32px">#</th><th>Tópico</th><th class="num">Tam.</th><th>Palavras-chave</th><th>Exemplo</th><th class="num">% refat</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════ SCREEN 6: GOVERNANÇA ═══════════ -->
+    <section class="screen" data-screen-label="06 Governanca" data-id="gov">
+      <div class="story">
+        <div class="story-icon">◆</div>
+        <div class="story-body">
+          <span class="lead">A base está explicável, rotulada e segura o suficiente para decisão?</span>
+          Cobertura de labels, severidade, anonimização por hash e documentação da taxonomia. Monitore indefinidos, baixa cobertura de causa-raiz e classes críticas.
+        </div>
+      </div>
+
+      <div class="health-grid">
+        <div class="health-card"><div class="bar"></div><div class="hl">Registros auditáveis</div><div class="hv">17.057</div><div class="hs">100% com audit log</div></div>
+        <div class="health-card warn"><div class="bar"></div><div class="hl">Indefinidos IA</div><div class="hv">3.678</div><div class="hs">21.6% acima do SLA (≤15%)</div></div>
+        <div class="health-card crit"><div class="bar"></div><div class="hl">Cobertura label origem</div><div class="hv">28.2%</div><div class="hs">⚠ meta trimestral: 50%</div></div>
+        <div class="health-card"><div class="bar"></div><div class="hl">IDs anonimizados</div><div class="hv">97.7%</div><div class="hs">LGPD · hash SHA-256</div></div>
+      </div>
+
+      <div class="grid-2" style="margin-top:18px">
+        <div class="card">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Risco de refaturamento por severidade</div>
+              <div class="c-sub">Células = taxa_refaturamento média · região × severidade</div>
+            </div>
+          </div>
+          <div id="govHeat" class="chart h-280"></div>
+        </div>
+        <div class="card">
+          <div class="c-head">
+            <div>
+              <div class="c-title">Cobertura de label por origem</div>
+              <div class="c-sub">Barras empilhadas · rotulado · auto-IA · indefinido</div>
+            </div>
+          </div>
+          <div id="covBars" class="chart h-280"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="c-head">
+          <div>
+            <div class="c-title">Contrato de segurança e explicabilidade</div>
+            <div class="c-sub">Evidência por camada para o comitê de risco</div>
+          </div>
+        </div>
+        <table class="data">
+          <thead><tr><th>Camada</th><th>Controle</th><th class="num">Status</th><th>Última verificação</th><th>Responsável</th></tr></thead>
+          <tbody>
+            <tr><td>Bronze</td><td>Ingestão rastreável · origem imutável</td><td class="num"><span class="tag sage">OK</span></td><td class="mono">abr 17 · 13:58</td><td>data-plane</td></tr>
+            <tr><td>Silver</td><td>Hash determinístico de ID instalação</td><td class="num"><span class="tag sage">OK</span></td><td class="mono">abr 17 · 14:02</td><td>data-plane</td></tr>
+            <tr><td>Silver</td><td>Mascaramento PII em texto livre</td><td class="num"><span class="tag sage">OK</span></td><td class="mono">abr 17 · 14:02</td><td>rag</td></tr>
+            <tr><td>Gold</td><td>Taxonomia canônica versionada</td><td class="num"><span class="tag amber">v3.2</span></td><td class="mono">abr 15 · 09:40</td><td>analytics</td></tr>
+            <tr><td>Gold</td><td>Cobertura label origem ≥50%</td><td class="num"><span class="tag terra">28.2%</span></td><td class="mono">abr 17 · 14:05</td><td>quality</td></tr>
+            <tr><td>Modelo</td><td>Drift index < 0.15</td><td class="num"><span class="tag sage">0.06</span></td><td class="mono">abr 17 · 12:00</td><td>ml</td></tr>
+            <tr><td>Modelo</td><td>BERTopic explicabilidade salva</td><td class="num"><span class="tag sage">OK</span></td><td class="mono">abr 17 · 12:05</td><td>ml</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Tweaks -->
+<button class="tweaks-btn" id="tweaksBtn">Tweaks</button>
+<div class="tweaks" id="tweaks">
+  <h4>Tweaks <span class="x" id="tweaksClose">esc</span></h4>
+  <label>Paleta
+    <select id="twPalette">
+      <option value="warm">Aconchegante (padrão)</option>
+      <option value="ink">Ink + terracota</option>
+      <option value="mono">Monocromático</option>
+    </select>
+  </label>
+  <label>Tipografia do título
+    <select id="twFont">
+      <option value="serif">Fraunces (serif)</option>
+      <option value="sans">Inter (sans)</option>
+    </select>
+  </label>
+  <label>Densidade
+    <select id="twDensity">
+      <option value="relaxed">Confortável</option>
+      <option value="compact">Compacta</option>
+    </select>
+  </label>
+  <label>Tipo do Pareto
+    <select id="twPareto">
+      <option value="custom">Barras + % (custom)</option>
+      <option value="echarts">ECharts clássico</option>
+    </select>
+  </label>
+  <label>Animação
+    <select id="twAnim">
+      <option value="on">Ativada</option>
+      <option value="off">Desativada</option>
+    </select>
+  </label>
+</div>
+
+<script src="MIS Aconchegante data.js"></script>
+<script src="MIS Aconchegante charts.js"></script>
+
+</body>
+</html>

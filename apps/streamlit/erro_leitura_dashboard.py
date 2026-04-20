@@ -70,8 +70,20 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
 
-    st.sidebar.title("⚙ Controles")
-    st.sidebar.caption("Fontes, filtros e experiência")
+    st.sidebar.title("⚡ Aconchegante MIS")
+    st.sidebar.caption("Inteligência Operacional")
+
+    # Navegação na sidebar
+    st.sidebar.markdown("---")
+    active_tab = st.sidebar.radio(
+        "Navegação",
+        options=TAB_LABELS,
+        index=0,
+        label_visibility="collapsed"
+    )
+    st.sidebar.markdown("---")
+
+    st.sidebar.caption("Fontes e filtros globais")
     _render_onboarding_controls()
 
     silver_path, assignments_path, taxonomy_path = _render_source_controls()
@@ -132,8 +144,12 @@ def main() -> None:
         + "</div>",
         unsafe_allow_html=True,
     )
+
+    # Hero is usually at the top of everything
     render_hero(st, filtered, total_available=len(frame))
     theme = filters.theme
+
+    # RAG helper
     render_react_island(
         st,
         filtered,
@@ -146,27 +162,27 @@ def main() -> None:
         theme=theme,
     )
 
-    tabs = st.tabs(TAB_LABELS)
     context_hint = st.session_state.get("last_dashboard_area")
-    with tabs[0]:
+
+    if active_tab == TAB_LABELS[0]:
         chat.render(st, theme=theme, context_hint=context_hint)
-    with tabs[1]:
+    elif active_tab == TAB_LABELS[1]:
         st.session_state["last_dashboard_area"] = "BI MIS Executivo"
         mis.render(st, filtered, theme=theme)
-    with tabs[2]:
+    elif active_tab == TAB_LABELS[2]:
         st.session_state["last_dashboard_area"] = "CE · Reclamações Totais"
         reclamacoes_ce.render(st, silver_path=silver_path, erro_leitura_frame=frame, theme=theme)
-    with tabs[3]:
+    elif active_tab == TAB_LABELS[3]:
         executive.render(st, filtered, theme=theme)
-    with tabs[4]:
+    elif active_tab == TAB_LABELS[4]:
         patterns.render(st, filtered, theme=theme)
-    with tabs[5]:
+    elif active_tab == TAB_LABELS[5]:
         impact.render(st, filtered, theme=theme)
-    with tabs[6]:
+    elif active_tab == TAB_LABELS[6]:
         taxonomy_layer.render(st, taxonomy_path, theme=theme)
-    with tabs[7]:
+    elif active_tab == TAB_LABELS[7]:
         governance.render(st, filtered, theme=theme)
-    with tabs[8]:
+    elif active_tab == TAB_LABELS[8]:
         educational.render(st, theme=theme)
 
 
