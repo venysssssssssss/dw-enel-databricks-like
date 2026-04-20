@@ -36,7 +36,6 @@ MACRO_TEMA_ORDER: tuple[str, ...] = (
     "media_estimativa",
     "religacao_multas",
     "entrega_fatura",
-    "ouvidoria_juridico",
     "outros",
 )
 
@@ -47,7 +46,6 @@ MACRO_TEMA_LABELS: dict[str, str] = {
     "media_estimativa": "Faturamento por Média/Estimativa",
     "religacao_multas": "Religação & Multas",
     "entrega_fatura": "Entrega da Fatura",
-    "ouvidoria_juridico": "Ouvidoria & Jurídico",
     "outros": "Outros",
 }
 
@@ -58,7 +56,6 @@ MACRO_TEMA_SEVERITY: dict[str, str] = {
     "media_estimativa": "high",
     "religacao_multas": "critical",
     "entrega_fatura": "medium",
-    "ouvidoria_juridico": "critical",
     "outros": "low",
 }
 
@@ -66,7 +63,6 @@ MACRO_TEMA_SEVERITY: dict[str, str] = {
 def _macro_tema_rules() -> list[tuple[str, tuple[str, ...]]]:
     """Ordered rules (first match wins). Tokens matched against uppercased assunto."""
     return [
-        ("ouvidoria_juridico", ("OUV ", "JUR ", "JURID", "3º NIVEL", "3 NIVEL", "GOV ")),
         (
             "geracao_distribuida",
             (" GD", "GD ", "B2G", "RATEIO", "INJETADA", "MICRO GERA", "MINI GERA"),

@@ -111,6 +111,13 @@ def run_pipeline():
     logger.info("Aplicando transformações Silver (PII e regras de negócio)...")
     df_silver = df_bronze.copy()
     
+    # Filtro Crítico: Excluir OUVIDORIA/OUV conforme diretriz de negócio
+    initial_count = len(df_silver)
+    df_silver = df_silver[
+        ~df_silver["assunto"].str.contains("OUV|OUVIDORIA|JURID|3º NIVEL|3 NIVEL|GOV", case=False, na=False)
+    ].copy()
+    logger.info(f"Filtro de Ouvidoria aplicado: {initial_count - len(df_silver)} registros removidos.")
+    
     # Garantir colunas necessárias existem
     for col in ["observacao_ordem", "devolutiva", "assunto"]:
         if col not in df_silver.columns:
