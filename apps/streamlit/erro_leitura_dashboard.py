@@ -31,7 +31,6 @@ from apps.streamlit.components.sidebar import (
     clean_tab_label,
     render_sidebar_brand,
     render_sidebar_section,
-    render_visual_nav,
 )
 from apps.streamlit.components.skeleton import render_skeleton
 from apps.streamlit.layers import (
@@ -81,7 +80,6 @@ def main() -> None:
         render_sidebar_section("Navegação", badge=str(len(TAB_LABELS))),
         unsafe_allow_html=True,
     )
-    nav_slot = st.sidebar.empty()
     active_tab = st.sidebar.radio(
         "Navegação",
         options=TAB_LABELS,
@@ -90,7 +88,6 @@ def main() -> None:
         label_visibility="collapsed",
         key="dashboard_active_tab",
     )
-    nav_slot.markdown(render_visual_nav(active_tab, TAB_LABELS), unsafe_allow_html=True)
 
     st.sidebar.markdown(
         render_sidebar_section("Global", badge="fontes + filtros"),

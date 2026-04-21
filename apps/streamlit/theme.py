@@ -453,62 +453,6 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   color: var(--text-dim);
 }}
 
-/* MIS visual navigation */
-.sb-nav-panel {{
-  display: grid;
-  gap: 3px;
-  margin: 4px 0 8px;
-  padding: 5px;
-  background: color-mix(in srgb, var(--surface) 88%, var(--terra) 12%);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-sm);
-}}
-.sb-nav-item {{
-  display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 7px 9px;
-  border-radius: var(--r-sm);
-  color: var(--text-muted);
-}}
-.sb-nav-item.is-active {{
-  color: var(--text);
-  background: linear-gradient(
-    135deg,
-    var(--accent-soft) 0%,
-    color-mix(in srgb, var(--surface) 72%, var(--plum) 8%) 100%
-  );
-  box-shadow: inset 0 0 0 1px var(--accent-ring);
-}}
-.sb-nav-dot {{
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--text-faint);
-}}
-.sb-nav-item.is-active .sb-nav-dot {{
-  background: var(--terra);
-  box-shadow: 0 0 0 4px var(--accent-ring);
-}}
-.sb-nav-label {{
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12.5px;
-  font-weight: 600;
-}}
-.sb-nav-index {{
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-faint);
-}}
-.sb-nav-item.is-active .sb-nav-index {{
-  color: var(--terra);
-}}
 .sb-mini-note {{
   margin: 6px 0 4px;
   padding: 9px 10px;
@@ -587,22 +531,47 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 90%, var(--terra) 10%);
+  box-shadow: var(--shadow-sm);
 }}
 [data-testid="stSidebar"] [data-testid="stRadio"] [data-testid="stMarkdownContainer"] p {{
-  font-size: 12px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
   color: var(--text-muted);
 }}
 [data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] label {{
-  min-height: 28px;
-  padding: 2px 6px;
+  min-height: 32px;
+  padding: 5px 8px;
   border-radius: var(--r-sm);
+  transition:
+    background 140ms var(--ease),
+    box-shadow 140ms var(--ease),
+    color 140ms var(--ease);
 }}
 [data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] label:hover {{
   background: var(--surface-2);
 }}
+[data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"]
+  label:has([aria-checked="true"]) {{
+  background: linear-gradient(
+    135deg,
+    var(--accent-soft) 0%,
+    color-mix(in srgb, var(--surface) 72%, var(--plum) 8%) 100%
+  );
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}}
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has([aria-checked="true"])
+  [data-testid="stMarkdownContainer"] p {{
+  color: var(--text);
+}}
 [data-testid="stSidebar"] [data-testid="stRadio"] [role="radio"][aria-checked="true"] {{
   border-color: var(--terra) !important;
+  background-color: var(--terra) !important;
+  box-shadow: 0 0 0 4px var(--accent-ring) !important;
 }}
 
 /* Toggle row */
@@ -745,13 +714,6 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 
 @media (max-width: 640px) {{
   .sb-brand-name {{ font-size: 14px; }}
-  .sb-nav-label {{
-    font-size: 12px;
-  }}
-  .sb-nav-item {{
-    grid-template-columns: 10px minmax(0, 1fr) auto;
-    padding: 6px 7px;
-  }}
   .preset-item {{
     grid-template-columns: 10px minmax(0, 1fr) auto;
     padding: 6px 8px;

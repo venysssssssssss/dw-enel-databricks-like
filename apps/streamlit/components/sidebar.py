@@ -58,24 +58,6 @@ def render_sidebar_section(title: str, badge: str | None = None, link: str | Non
 """
 
 
-def render_visual_nav(active_tab: str, tab_labels: list[str] | tuple[str, ...]) -> str:
-    """Render the decorative MIS navigation rail synchronized with the active radio."""
-    items: list[str] = []
-    for idx, tab in enumerate(tab_labels, start=1):
-        active_cls = " is-active" if tab == active_tab else ""
-        label = html.escape(clean_tab_label(tab))
-        items.append(
-            "<div class='sb-nav-item"
-            + active_cls
-            + "'>"
-            + "<span class='sb-nav-dot' aria-hidden='true'></span>"
-            + f"<span class='sb-nav-label'>{label}</span>"
-            + f"<span class='sb-nav-index'>{idx:02d}</span>"
-            + "</div>"
-        )
-    return f"<div class='sb-nav-panel' aria-hidden='true'>{''.join(items)}</div>"
-
-
 def render_filter_metric(label: str, value: str | int) -> str:
     """Render a compact sidebar metric row for summaries and footers."""
     return (
