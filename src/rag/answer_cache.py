@@ -57,6 +57,22 @@ def normalize_question(text: str) -> str:
     return _SPACE_RE.sub(" ", without_punct).strip()
 
 
+import json
+from pathlib import Path
+
+def _load_dynamic_cache() -> list[dict]:
+    # Cache dinâmico do aprendizado contínuo
+    path = Path("data/rag/dynamic_cache.jsonl")
+    entries = []
+    if path.exists():
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    data = json.loads(line)
+                    entries.append(data)
+                except Exception: pass
+    return entries
+
 def find_known_question(
     question: str,
     *,
@@ -67,6 +83,31 @@ def find_known_question(
     if not normalized:
         return None
 
+    # Busca no cache dinâmico de semântica aprendida
+    for entry in _load_dynamic_cache():
+        q_dyn = entry.get("question_preview", "")
+        if not q_dyn: continue
+        dyn_norm = normalize_question(q_dyn)
+        score = SequenceMatcher(None, normalized, dyn_norm).ratio()
+        if score >= 0.92: # Alta similaridade semântica / léxica
+            # Constrói um KnownQuestionSeed fake baseado no cache dinâmico
+            anchors_list = entry.get("anchors", [])
+            # O extra["sources"] da telemetria são paths (e.g. data/silver/erro_leitura.csv#anchor)
+            # Precisamos extrair só a âncora para o passage_loader
+            clean_anchors = tuple(a.split("#")[1] if "#" in a else a for a in anchors_list)
+            
+            fake_seed = KnownQuestionSeed(
+                seed_id=f"dynamic-{hash(q_dyn)}",
+                variants=(q_dyn,),
+                intent=entry.get("intent", intent),
+                region=entry.get("region", region),
+                anchors=clean_anchors,
+                answer_mode="card_summary",
+                min_score=0.92
+            )
+            return KnownAnswerMatch(fake_seed, q_dyn, score)
+
+    # Fallback pro seed estático (original)
     exact: list[KnownAnswerMatch] = []
     fuzzy: list[KnownAnswerMatch] = []
     for seed in KNOWN_QUESTION_SEEDS:

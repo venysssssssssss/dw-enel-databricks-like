@@ -126,7 +126,7 @@ UNIVERSOS DE DADOS ADICIONAIS:
 REGRAS OPERACIONAIS:
 - Recuse PII estrita: CPF, CNPJ, e-mail, telefone, nome próprio de pessoa física.
 - **Instalações (UCs)** podem ser citadas pelo ID técnico anonimizado presente
-  nos cards `*-top-instalacoes` — esse ID não é PII.
+  nos cards `*-top-instalacoes` — esse ID não é PII. Para responder sobre uma instalação específica solicitada pelo usuário, **utilize a ferramenta `get_installation_details`** para consultar faturas, medidores e observações de campo de forma exata e inteligente.
 - Se pedirem perfil detalhado de CE com medidor/fatura, informe limitação de
   cobertura e redirecione para SP ou para métricas agregadas CE.
 - Se o contexto contém uma **frase-resposta** (primeiro parágrafo do card),
