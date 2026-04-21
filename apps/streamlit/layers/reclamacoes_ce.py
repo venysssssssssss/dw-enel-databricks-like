@@ -6,7 +6,12 @@ from typing import Any
 import plotly.express as px
 
 from apps.streamlit.components.narrative import LayerNarrative, download_dataframe, layer_intro
-from apps.streamlit.layers.common import render_chart, render_table_or_empty
+from apps.streamlit.components.premium import KPI, kpi_strip_markdown
+from apps.streamlit.layers.common import (
+    render_assistant_cta,
+    render_chart_section,
+    render_table_or_empty,
+)
 from apps.streamlit.theme import SEQUENTIAL_BLUE, format_int, format_pct
 from src.viz.cache import load_or_build_disk_cache, path_fingerprint
 from src.viz.reclamacoes_ce_dashboard_data import (
@@ -43,12 +48,27 @@ def render(st: Any, *, silver_path: Path, erro_leitura_frame, theme: str = "ligh
         return
 
     kpis = compute_kpis(frame)
-    cols = st.columns(5)
-    cols[0].metric("Reclamações CE", format_int(kpis.total_reclamacoes))
-    cols[1].metric("Instalações únicas", format_int(kpis.unique_instalacoes))
-    cols[2].metric("Reincidentes", format_int(kpis.instalacoes_reincidentes))
-    cols[3].metric("% Grupo B", format_pct(kpis.share_grupo_b))
-    cols[4].metric("Tema dominante", kpis.tema_dominante, format_pct(kpis.share_tema_dominante))
+    st.markdown(
+        kpi_strip_markdown(
+            [
+                KPI(
+                    "Reclamações CE",
+                    format_int(kpis.total_reclamacoes),
+                    tag="total",
+                    dominant=True,
+                ),
+                KPI("Instalações únicas", format_int(kpis.unique_instalacoes), tag="hash"),
+                KPI("Reincidentes", format_int(kpis.instalacoes_reincidentes), tag="≥ 2"),
+                KPI("% Grupo B", format_pct(kpis.share_grupo_b), tag="mix"),
+                KPI(
+                    "Tema dominante",
+                    kpis.tema_dominante,
+                    tag=format_pct(kpis.share_tema_dominante),
+                ),
+            ]
+        ),
+        unsafe_allow_html=True,
+    )
 
     precomputed = _precompute_reclamacoes_ce(silver_path, frame)
     dist = precomputed["macro_tema_distribution"]
@@ -66,10 +86,19 @@ def render(st: Any, *, silver_path: Path, erro_leitura_frame, theme: str = "ligh
             orientation="h",
             color="percentual",
             color_continuous_scale=SEQUENTIAL_BLUE,
-            title="Macrotemas de reclamações CE",
         )
         fig.update_yaxes(categoryorder="total ascending")
-        render_chart(st, fig, key="ce_macro", theme=theme, on_select="rerun")
+        render_chart_section(
+            st,
+            fig,
+            key="ce_macro",
+            title="Macrotemas de reclamações CE",
+            subtitle="Distribuição macro dos assuntos classificados no universo CE.",
+            badge="pareto",
+            theme=theme,
+            height=360,
+            on_select="rerun",
+        )
         download_dataframe(st, "📥 CSV macrotemas", dist, section="ce_macrotemas")
     with right:
         fig = px.line(
@@ -78,9 +107,17 @@ def render(st: Any, *, silver_path: Path, erro_leitura_frame, theme: str = "ligh
             y="qtd",
             color="macro_tema_label",
             line_shape="spline",
-            title="Tendência mensal por macrotema",
         )
-        render_chart(st, fig, key="ce_trend", theme=theme)
+        render_chart_section(
+            st,
+            fig,
+            key="ce_trend",
+            title="Tendência mensal por macrotema",
+            subtitle="Evolução dos macrotemas para separar volume persistente de pico.",
+            badge="linha",
+            theme=theme,
+            height=360,
+        )
 
     if not cross.empty:
         fig = px.bar(
@@ -90,10 +127,18 @@ def render(st: Any, *, silver_path: Path, erro_leitura_frame, theme: str = "ligh
             orientation="h",
             color="qtd_com_erro_leitura",
             color_continuous_scale=SEQUENTIAL_BLUE,
-            title="Cruzamento com instalações que têm erro de leitura",
         )
         fig.update_yaxes(categoryorder="total ascending")
-        render_chart(st, fig, key="ce_cross", theme=theme)
+        render_chart_section(
+            st,
+            fig,
+            key="ce_cross",
+            title="Cruzamento com instalações que têm erro de leitura",
+            subtitle="Percentual de reclamações CE associadas a instalações com erro de leitura.",
+            badge="cruzamento",
+            theme=theme,
+            height=380,
+        )
         download_dataframe(st, "📥 CSV cruzamento", cross, section="ce_cruzamento_erro_leitura")
 
     with st.expander("Pareto de assuntos, heatmap mensal e instalações reincidentes"):
@@ -105,6 +150,7 @@ def render(st: Any, *, silver_path: Path, erro_leitura_frame, theme: str = "ligh
             top_instalacoes_reincidentes(frame, top_n=20),
             section="ce_instalacoes_reincidentes",
         )
+    render_assistant_cta(st, area="CE Totais", key="cta_assistente_ce_totais")
 
 
 def _load_reclamacoes(st: Any, silver_path: Path):

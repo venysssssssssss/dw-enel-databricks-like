@@ -5,13 +5,13 @@ from apps.streamlit.erro_leitura_dashboard import TAB_LABELS
 
 def test_dashboard_preserves_current_tab_order() -> None:
     assert TAB_LABELS == [
-        "💬 Assistente ENEL",
-        "🧭 BI MIS Executivo",
-        "🟧 CE · Reclamacoes Totais",
-        "📈 Ritmo Operacional",
-        "🗺 Padroes & Concentracoes",
-        "💰 Impacto de Refaturamento",
-        "🧬 Taxonomia Descoberta",
-        "🛡 Governanca",
-        "🎓 Sessao Educacional",
+        "BI MIS Executivo",
+        "CE Totais",
+        "Ritmo",
+        "Padrões",
+        "Impacto",
+        "Taxonomia",
+        "Governança",
+        "Sessão Educacional",
+        "Assistente",
     ]

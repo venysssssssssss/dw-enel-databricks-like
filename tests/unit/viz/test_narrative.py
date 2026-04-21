@@ -11,6 +11,7 @@ from apps.streamlit.components.narrative import (
     export_filename,
 )
 from apps.streamlit.components.skeleton import skeleton_block
+from apps.streamlit.layers.common import assistant_cta_markdown, chart_section_markdown
 from apps.streamlit.theme import (
     css_variables,
     dashboard_css,
@@ -34,6 +35,27 @@ def test_build_intro_markdown_contains_story_contract() -> None:
     assert "Pergunta de negócio" in html
     assert "Como lemos" in html
     assert "Próximo passo" in html
+    assert "Ritmo" in html
+    assert "enel-tab-header" in html
+
+
+def test_chart_section_markdown_keeps_title_outside_plotly() -> None:
+    html = chart_section_markdown(
+        title="Volume mensal",
+        subtitle="Série no escopo filtrado",
+        badge="linha",
+    )
+
+    assert "enel-chart-section" in html
+    assert "<h2>Volume mensal</h2>" in html
+    assert "Série no escopo filtrado" in html
+    assert "linha" in html
+
+
+def test_assistant_cta_markdown_carries_context() -> None:
+    html = assistant_cta_markdown("Ritmo")
+
+    assert "Assistente contextual" in html
     assert "Ritmo" in html
 
 

@@ -24,50 +24,42 @@ from apps.streamlit.components.filters import (
     filter_options,
     render_sidebar_filters,
 )
-from apps.streamlit.components.hero import render_hero
 from apps.streamlit.components.narrative import render_empty_state
-from apps.streamlit.components.react_island import render_react_island
 from apps.streamlit.components.sidebar import (
     clean_tab_label,
     render_sidebar_brand,
     render_sidebar_section,
 )
 from apps.streamlit.components.skeleton import render_skeleton
-from apps.streamlit.layers import (
-    chat,
-    educational,
-    executive,
-    governance,
-    impact,
-    mis,
-    patterns,
-    reclamacoes_ce,
-)
-from apps.streamlit.layers import taxonomy as taxonomy_layer
 from apps.streamlit.theme import dashboard_css
-from src.data_plane import DataStore
-from src.viz.cache import path_fingerprint
-from src.viz.erro_leitura_dashboard_data import (
-    DEFAULT_SILVER_PATH,
-    DEFAULT_TOPIC_ASSIGNMENTS_PATH,
-    DEFAULT_TOPIC_TAXONOMY_PATH,
-    load_dashboard_frame,
-)
 
 TAB_LABELS = [
-    "💬 Assistente ENEL",
-    "🧭 BI MIS Executivo",
-    "🟧 CE · Reclamacoes Totais",
-    "📈 Ritmo Operacional",
-    "🗺 Padroes & Concentracoes",
-    "💰 Impacto de Refaturamento",
-    "🧬 Taxonomia Descoberta",
-    "🛡 Governanca",
-    "🎓 Sessao Educacional",
+    "BI MIS Executivo",
+    "CE Totais",
+    "Ritmo",
+    "Padrões",
+    "Impacto",
+    "Taxonomia",
+    "Governança",
+    "Sessão Educacional",
+    "Assistente",
 ]
 
 
 def main() -> None:
+    from apps.streamlit.layers import (
+        chat,
+        educational,
+        executive,
+        governance,
+        impact,
+        mis,
+        patterns,
+        reclamacoes_ce,
+    )
+    from apps.streamlit.layers import taxonomy as taxonomy_layer
+    from src.viz.cache import path_fingerprint
+
     st.set_page_config(
         page_title="Erros de Leitura | Inteligência Operacional ENEL",
         page_icon="⚡",
@@ -80,6 +72,11 @@ def main() -> None:
         render_sidebar_section("Navegação", badge=str(len(TAB_LABELS))),
         unsafe_allow_html=True,
     )
+    pending_tab = st.session_state.pop("dashboard_pending_tab", None)
+    if pending_tab in TAB_LABELS:
+        st.session_state["dashboard_active_tab"] = pending_tab
+    if st.session_state.get("dashboard_active_tab") not in {None, *TAB_LABELS}:
+        st.session_state["dashboard_active_tab"] = TAB_LABELS[0]
     active_tab = st.sidebar.radio(
         "Navegação",
         options=TAB_LABELS,
@@ -158,45 +155,35 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    # Hero is usually at the top of everything
-    render_hero(st, filtered, total_available=len(frame))
     theme = filters.theme
-
-    # RAG helper
-    render_react_island(
-        st,
-        filtered,
-        total_available=len(frame),
-        dataset_hash=DataStore(
-            silver_path=silver_path,
-            topic_assignments_path=assignments_path,
-            topic_taxonomy_path=taxonomy_path,
-        ).version().hash,
-        theme=theme,
-    )
-
     context_hint = st.session_state.get("last_dashboard_area")
 
     if active_tab == TAB_LABELS[0]:
-        chat.render(st, theme=theme, context_hint=context_hint)
-    elif active_tab == TAB_LABELS[1]:
         st.session_state["last_dashboard_area"] = "BI MIS Executivo"
-        mis.render(st, filtered, theme=theme)
-    elif active_tab == TAB_LABELS[2]:
-        st.session_state["last_dashboard_area"] = "CE · Reclamações Totais"
+        mis.render(st, filtered, theme=theme, total_available=len(frame))
+    elif active_tab == TAB_LABELS[1]:
+        st.session_state["last_dashboard_area"] = "CE Totais"
         reclamacoes_ce.render(st, silver_path=silver_path, erro_leitura_frame=frame, theme=theme)
-    elif active_tab == TAB_LABELS[3]:
+    elif active_tab == TAB_LABELS[2]:
+        st.session_state["last_dashboard_area"] = "Ritmo"
         executive.render(st, filtered, theme=theme)
-    elif active_tab == TAB_LABELS[4]:
+    elif active_tab == TAB_LABELS[3]:
+        st.session_state["last_dashboard_area"] = "Padrões"
         patterns.render(st, filtered, theme=theme)
-    elif active_tab == TAB_LABELS[5]:
+    elif active_tab == TAB_LABELS[4]:
+        st.session_state["last_dashboard_area"] = "Impacto"
         impact.render(st, filtered, theme=theme)
-    elif active_tab == TAB_LABELS[6]:
+    elif active_tab == TAB_LABELS[5]:
+        st.session_state["last_dashboard_area"] = "Taxonomia"
         taxonomy_layer.render(st, taxonomy_path, theme=theme)
-    elif active_tab == TAB_LABELS[7]:
+    elif active_tab == TAB_LABELS[6]:
+        st.session_state["last_dashboard_area"] = "Governança"
         governance.render(st, filtered, theme=theme)
-    elif active_tab == TAB_LABELS[8]:
+    elif active_tab == TAB_LABELS[7]:
+        st.session_state["last_dashboard_area"] = "Sessão Educacional"
         educational.render(st, theme=theme)
+    elif active_tab == TAB_LABELS[8]:
+        chat.render(st, theme=theme, context_hint=context_hint)
 
 
 @st.cache_data(show_spinner=False)
@@ -210,6 +197,8 @@ def _load_frame(
     taxonomy_sig: str,
 ):
     """Load dashboard data with explicit file signatures for cache invalidation."""
+    from src.viz.erro_leitura_dashboard_data import load_dashboard_frame
+
     del silver_sig, assignments_sig, taxonomy_sig
     return load_dashboard_frame(
         silver_path=Path(silver_path),
@@ -220,6 +209,12 @@ def _load_frame(
 
 
 def _render_source_controls() -> tuple[Path, Path, Path]:
+    from src.viz.erro_leitura_dashboard_data import (
+        DEFAULT_SILVER_PATH,
+        DEFAULT_TOPIC_ASSIGNMENTS_PATH,
+        DEFAULT_TOPIC_TAXONOMY_PATH,
+    )
+
     with st.sidebar.expander("Fontes de dados", expanded=False):
         silver_path = Path(st.text_input("Dataset Silver", str(DEFAULT_SILVER_PATH)))
         assignments_path = Path(
@@ -245,7 +240,7 @@ def _render_onboarding_controls() -> None:
 def _render_tour(st_module) -> None:
     if st_module.session_state.get("dashboard_tour_seen"):
         return
-    st_module.toast("1/4 Hero: comece pelo escopo e KPIs executivos.", icon="⚡")
+    st_module.toast("1/4 BI MIS: comece pelo escopo e KPIs executivos.", icon="⚡")
     st_module.toast("2/4 Filtros: ficam persistidos entre abas e na URL.", icon="🎛")
     st_module.toast("3/4 Abas: cada camada explica pergunta, método e próximo passo.", icon="🧭")
     st_module.toast("4/4 Sprint 15: este layout já prepara o futuro chat RAG.", icon="💬")

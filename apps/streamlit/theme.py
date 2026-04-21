@@ -303,6 +303,104 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 }}
 .enel-intro strong {{ color: var(--enel-primary); }}
 
+.enel-tab-header {{
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 10px 0 14px;
+  margin: 0 0 10px;
+  border-bottom: 1px solid var(--divider);
+}}
+.enel-tab-icon {{
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+}}
+.enel-tab-copy h1 {{
+  margin: 0 0 4px;
+  color: var(--text) !important;
+  font-size: 22px;
+  line-height: 1.18;
+  font-weight: 700;
+  letter-spacing: 0;
+}}
+.enel-tab-copy p {{
+  margin: 1px 0;
+  color: var(--text-muted) !important;
+  font-size: 12.5px;
+  line-height: 1.45;
+}}
+.enel-tab-copy strong {{
+  color: var(--text);
+  font-weight: 700;
+}}
+
+.enel-chart-section {{
+  margin: 12px 0 6px;
+}}
+.enel-chart-head {{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 0 2px 6px;
+}}
+.enel-chart-head h2 {{
+  margin: 0;
+  color: var(--text) !important;
+  font-size: 16px;
+  line-height: 1.25;
+  font-weight: 700;
+  letter-spacing: 0;
+}}
+.enel-chart-head p {{
+  margin: 2px 0 0;
+  color: var(--text-dim) !important;
+  font-size: 12px;
+  line-height: 1.35;
+}}
+.enel-chart-head span {{
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  background: var(--surface-2);
+  white-space: nowrap;
+}}
+
+.enel-assistant-cta {{
+  display: grid;
+  gap: 3px;
+  margin: 16px 0 6px;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}}
+.enel-assistant-cta b {{
+  display: block;
+  color: var(--text);
+  font-size: 12.5px;
+  margin-bottom: 2px;
+}}
+.enel-assistant-cta span {{
+  color: var(--text-dim);
+  font-size: 12px;
+}}
+
 .enel-chip {{
   display: inline-flex;
   align-items: center;

@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Aba '💬 Assistente ENEL' — chat RAG embarcado no dashboard."""
 
 from __future__ import annotations
@@ -754,17 +755,26 @@ def render(st: Any, *, theme: str = "light", context_hint: str | None = None) ->
     provider_name = getattr(orch.provider, "name", "stub")
     model_name = getattr(orch.provider, "model", "?")
 
-    _render_chat_header(st, provider_name, model_name, corpus_ready)
+    _render_chat_header(st, provider_name, model_name, corpus_ready, context_hint)
     _render_suggested_panel(st)
     _render_chat_area(st, orch, config, context_hint, theme=theme)
 
 
 def _render_chat_header(
-    st: Any, provider: str, model: str, corpus_ready: bool
+    st: Any,
+    provider: str,
+    model: str,
+    corpus_ready: bool,
+    context_hint: str | None,
 ) -> None:
     corpus_cls = "ok" if corpus_ready else "warn"
     corpus_lbl = "pronto" if corpus_ready else "vazio"
     provider_cls = "ok" if provider == "llama_cpp" else "warn"
+    context_html = (
+        f"<br>Contexto recebido: <code>{html.escape(context_hint)}</code>"
+        if context_hint
+        else ""
+    )
     st.markdown(
         f"""
         <div class="chat-header">
@@ -772,7 +782,7 @@ def _render_chat_header(
             <h1 class="chat-title">Assistente analítico</h1>
             <p class="chat-subtitle">RAG open-source, execução local em CPU.
               Indexa <code>docs/**</code> + data cards reais CE/SP
-              (reclamações totais + N1).</p>
+              (reclamações totais + N1).{context_html}</p>
           </div>
           <div class="status-strip">
             <div class="status-cell">

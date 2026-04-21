@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from apps.streamlit.components.premium import KPI, kpi_strip_markdown
 from apps.streamlit.theme import (
     PALETTE,
     format_int,
     format_pct,
     plotly_template,
 )
-from src.viz.erro_leitura_dashboard_data import compute_kpis
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -40,6 +40,8 @@ def render_hero(  # pragma: no cover - exercised by Streamlit smoke/e2e.
     total_available: int,
     baseline_kpis: Any | None = None,
 ) -> None:
+    from src.viz.erro_leitura_dashboard_data import compute_kpis
+
     st.markdown(
         hero_markdown(total_filtered=len(frame), total_available=total_available),
         unsafe_allow_html=True,
@@ -47,44 +49,41 @@ def render_hero(  # pragma: no cover - exercised by Streamlit smoke/e2e.
     kpis = compute_kpis(frame)
     coverage = kpis.total_registros / total_available if total_available else 0.0
 
-    cols = st.columns(5)
-    cols[0].metric(
-        "Registros analisados",
-        format_int(kpis.total_registros),
-        delta=f"{format_pct(coverage)} do total",
-        delta_color="off",
-        help="Quantidade de ordens no escopo filtrado atual vs total disponível.",
-    )
-    cols[1].metric(
-        "Regiões",
-        format_int(kpis.regioes),
-        help="Número de regiões presentes após filtros.",
-    )
-    cols[2].metric(
-        "Tópicos IA",
-        format_int(kpis.topicos),
-        help="Tópicos BERTopic distintos no escopo atual.",
-    )
-
     refat_delta: str | None = None
-    refat_delta_color: str = "off"
+    refat_intent = "neutral"
     if baseline_kpis is not None and getattr(baseline_kpis, "taxa_refaturamento", None):
         diff = kpis.taxa_refaturamento - baseline_kpis.taxa_refaturamento
         if abs(diff) >= 0.001:
             sign = "+" if diff > 0 else ""
             refat_delta = f"{sign}{diff * 100:.1f} pp vs base"
-            refat_delta_color = "inverse"  # menor refaturamento é melhor
-    cols[3].metric(
-        "Taxa refaturamento",
-        format_pct(kpis.taxa_refaturamento),
-        delta=refat_delta,
-        delta_color=refat_delta_color,
-        help="Média de `flag_resolvido_com_refaturamento` no escopo filtrado.",
-    )
-    cols[4].metric(
-        "Instalações reincidentes",
-        format_int(kpis.instalacoes_reincidentes),
-        help="Instalações anonimizadas com mais de uma ordem no período filtrado.",
+            refat_intent = "up_bad" if diff > 0 else "down_good"
+    st.markdown(
+        kpi_strip_markdown(
+            [
+                KPI(
+                    "Registros analisados",
+                    format_int(kpis.total_registros),
+                    tag="escopo",
+                    delta=f"{format_pct(coverage)} do total",
+                    dominant=True,
+                ),
+                KPI("Regiões", format_int(kpis.regioes), tag="ativas"),
+                KPI("Tópicos IA", format_int(kpis.topicos), tag="BERTopic"),
+                KPI(
+                    "Taxa refaturamento",
+                    format_pct(kpis.taxa_refaturamento),
+                    tag="média",
+                    delta=refat_delta or "escopo atual",
+                    delta_intent=refat_intent,
+                ),
+                KPI(
+                    "Instalações reincidentes",
+                    format_int(kpis.instalacoes_reincidentes),
+                    tag="≥ 2 ordens",
+                ),
+            ]
+        ),
+        unsafe_allow_html=True,
     )
 
     _render_volume_sparkline(st, frame)

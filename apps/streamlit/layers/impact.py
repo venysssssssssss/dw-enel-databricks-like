@@ -8,7 +8,8 @@ from apps.streamlit.components.narrative import LayerNarrative, download_datafra
 from apps.streamlit.layers.common import (
     aggregate,
     color_sequence,
-    render_chart,
+    render_assistant_cta,
+    render_chart_section,
     render_table_or_empty,
 )
 from apps.streamlit.theme import SEQUENTIAL_ORANGE
@@ -44,7 +45,6 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
             size="qtd_erros",
             color="causa_canonica",
             hover_name="causa_canonica",
-            title="Volume × taxa de refaturamento",
             color_discrete_sequence=color_sequence(),
             labels={
                 "qtd_erros": "Volume de ordens",
@@ -60,7 +60,17 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 "Refaturamento: %{y:.1f}%<extra></extra>"
             ),
         )
-        render_chart(st, fig, key="impact_refat", theme=theme, on_select="rerun")
+        render_chart_section(
+            st,
+            fig,
+            key="impact_refat",
+            title="Volume × taxa de refaturamento",
+            subtitle="Bolhas maiores e mais altas concentram retrabalho financeiro.",
+            badge="dispersão",
+            theme=theme,
+            height=360,
+            on_select="rerun",
+        )
         download_dataframe(st, "📥 CSV refaturamento", refat, section="impacto_refaturamento")
     else:
         render_table_or_empty(st, refat, section="impacto_refaturamento")
@@ -74,14 +84,22 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 y="qtd_erros",
                 color="regiao",
                 barmode="group",
-                title="Impacto por categoria da taxonomia",
                 color_discrete_sequence=color_sequence(),
                 labels={"categoria": "Categoria", "qtd_erros": "Ordens", "regiao": "Região"},
             )
             fig.update_traces(
                 hovertemplate="<b>%{x}</b> · %{fullData.name}<br>%{y:,d} ordens<extra></extra>",
             )
-            render_chart(st, fig, key="impact_categories", theme=theme, height=380)
+            render_chart_section(
+                st,
+                fig,
+                key="impact_categories",
+                title="Impacto por categoria da taxonomia",
+                subtitle="Volume por categoria operacional e região.",
+                badge="barras",
+                theme=theme,
+                height=360,
+            )
             download_dataframe(st, "📥 CSV categorias", categories, section="impacto_categorias")
     with right:
         if not reincidence.empty:
@@ -91,7 +109,6 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 y="qtd_instalacoes",
                 color="regiao",
                 color_discrete_sequence=SEQUENTIAL_ORANGE,
-                title="Reincidência por instalação anonimizada",
                 labels={
                     "faixa": "Reincidências",
                     "qtd_instalacoes": "Instalações",
@@ -104,4 +121,14 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                     "%{fullData.name}: %{y:,d} instalações<extra></extra>"
                 ),
             )
-            render_chart(st, fig, key="impact_reincidence", theme=theme, height=380)
+            render_chart_section(
+                st,
+                fig,
+                key="impact_reincidence",
+                title="Reincidência por instalação anonimizada",
+                subtitle="Faixas de instalações com múltiplas ordens no período filtrado.",
+                badge="reincidência",
+                theme=theme,
+                height=360,
+            )
+    render_assistant_cta(st, area="Impacto", key="cta_assistente_impacto")

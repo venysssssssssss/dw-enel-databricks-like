@@ -9,7 +9,8 @@ from apps.streamlit.components.narrative import LayerNarrative, download_datafra
 from apps.streamlit.layers.common import (
     aggregate,
     color_sequence,
-    render_chart,
+    render_assistant_cta,
+    render_chart_section,
     render_table_or_empty,
 )
 from apps.streamlit.theme import SEQUENTIAL_BLUE, SEQUENTIAL_GREEN
@@ -47,7 +48,6 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
             y="causa_canonica",
             z="qtd_erros",
             color_continuous_scale=SEQUENTIAL_BLUE,
-            title="Concentração região × causa",
             labels={"regiao": "Região", "causa_canonica": "Causa", "qtd_erros": "Ordens"},
             text_auto=True,
         )
@@ -56,7 +56,17 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
             textfont={"size": 10, "color": "#F8F9FB" if theme == "dark" else "#1D1F24"},
         )
         fig.update_layout(coloraxis_colorbar={"title": "Ordens", "thickness": 12})
-        render_chart(st, fig, key="patterns_heatmap", theme=theme, height=520, on_select="rerun")
+        render_chart_section(
+            st,
+            fig,
+            key="patterns_heatmap",
+            title="Concentração região × causa",
+            subtitle="Células com maior volume indicam clusters operacionais candidatos a ação.",
+            badge="heatmap",
+            theme=theme,
+            height=500,
+            on_select="rerun",
+        )
         download_dataframe(st, "📥 CSV heatmap", long_matrix, section="padroes_heatmap")
 
     left, right = st.columns([1.1, 1])
@@ -72,7 +82,6 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 color="taxa_refaturamento",
                 color_continuous_scale=SEQUENTIAL_GREEN,
                 hover_data={"topic_keywords": True, "taxa_refaturamento": ":.1%"},
-                title="Tópicos IA mais recorrentes",
                 labels={
                     "qtd_erros": "Ordens",
                     "topic_name": "Tópico",
@@ -82,7 +91,17 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
             )
             fig.update_yaxes(categoryorder="total ascending")
             fig.update_layout(coloraxis_colorbar={"title": "Refat.", "tickformat": ".0%"})
-            render_chart(st, fig, key="patterns_topics", theme=theme, on_select="rerun")
+            render_chart_section(
+                st,
+                fig,
+                key="patterns_topics",
+                title="Tópicos IA mais recorrentes",
+                subtitle="Ranking BERTopic com taxa de refaturamento para priorização.",
+                badge="top 14",
+                theme=theme,
+                height=380,
+                on_select="rerun",
+            )
             download_dataframe(st, "📥 CSV tópicos", topics, section="padroes_topicos")
     with right:
         if not radar.empty:
@@ -94,7 +113,6 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 theta="causa_canonica",
                 color="regiao",
                 line_close=True,
-                title="Perfil relativo por região",
                 color_discrete_sequence=color_sequence(),
             )
             fig.update_traces(
@@ -113,4 +131,14 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                     "bgcolor": "rgba(0,0,0,0)",
                 },
             )
-            render_chart(st, fig, key="patterns_radar", theme=theme, height=460)
+            render_chart_section(
+                st,
+                fig,
+                key="patterns_radar",
+                title="Perfil relativo por região",
+                subtitle="Comparação percentual entre regiões nas principais causas.",
+                badge="radar",
+                theme=theme,
+                height=440,
+            )
+    render_assistant_cta(st, area="Padrões", key="cta_assistente_padroes")

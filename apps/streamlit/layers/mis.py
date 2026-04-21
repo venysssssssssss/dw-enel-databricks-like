@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import pandas as pd
 import plotly.express as px
 
+from apps.streamlit.components.hero import render_hero
 from apps.streamlit.components.narrative import download_dataframe
 from apps.streamlit.components.premium import (
     KPI,
@@ -18,7 +18,7 @@ from apps.streamlit.components.premium import (
 from apps.streamlit.layers.common import (
     aggregate,
     color_sequence,
-    render_chart,
+    render_chart_section,
     render_table_or_empty,
 )
 from apps.streamlit.theme import SEQUENTIAL_BLUE, SEQUENTIAL_ORANGE, format_int, format_pct
@@ -29,8 +29,12 @@ from src.viz.erro_leitura_dashboard_data import (
     taxonomy_reference,
 )
 
+if TYPE_CHECKING:
+    import pandas as pd
 
-def render(st: Any, frame, *, theme: str = "light") -> None:
+
+def render(st: Any, frame, *, theme: str = "light", total_available: int | None = None) -> None:
+    render_hero(st, frame, total_available=total_available or len(frame))
     render_topbar(st, crumb="MIS / BI MIS Executivo", status="Silver sincronizado")
     render_story(
         st,
@@ -85,7 +89,6 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 color="regiao",
                 markers=True,
                 line_shape="spline",
-                title="Tendência mensal por região",
                 color_discrete_sequence=color_sequence(),
                 labels={
                     "mes_ingresso": "Mês de ingresso",
@@ -96,9 +99,21 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
             fig.update_traces(
                 line={"width": 2.5},
                 marker={"size": 7, "line": {"width": 1.5, "color": "rgba(255,255,255,0.85)"}},
-                hovertemplate="<b>%{x|%b/%Y}</b><br>%{fullData.name}: %{y:,d} ordens<extra></extra>",
+                hovertemplate=(
+                    "<b>%{x|%b/%Y}</b><br>"
+                    "%{fullData.name}: %{y:,d} ordens<extra></extra>"
+                ),
             )
-            render_chart(st, fig, key="mis_monthly", theme=theme, height=360)
+            render_chart_section(
+                st,
+                fig,
+                key="mis_monthly",
+                title="Tendência mensal por região",
+                subtitle="Volume mensal no escopo filtrado, segmentado por região.",
+                badge="linha",
+                theme=theme,
+                height=340,
+            )
             download_dataframe(st, "📥 CSV tendência MIS", monthly, section="mis_tendencia")
 
     # ── Severidade heatmap com insight ──
@@ -109,7 +124,6 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
             y="regiao",
             z="qtd_erros",
             color_continuous_scale=SEQUENTIAL_ORANGE + SEQUENTIAL_BLUE,
-            title="Severidade por região",
             labels={"severidade": "Severidade", "regiao": "Região", "qtd_erros": "Ordens"},
             text_auto=True,
         )
@@ -118,7 +132,16 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
             textfont={"size": 11, "color": "#F8F9FB" if theme == "dark" else "#1D1F24"},
         )
         fig.update_layout(coloraxis_colorbar={"title": "Ordens", "thickness": 12})
-        render_chart(st, fig, key="mis_severity", theme=theme, height=360)
+        render_chart_section(
+            st,
+            fig,
+            key="mis_severity",
+            title="Severidade por região",
+            subtitle="Mapa de calor para priorizar células de maior volume e criticidade.",
+            badge="heatmap",
+            theme=theme,
+            height=380,
+        )
         st.markdown(
             '<div class="enel-insight"><span class="label">Insight</span>'
             f"{_severity_insight(severity)}</div>",
@@ -163,7 +186,11 @@ def _render_kpi_strip(st: Any, summary: pd.DataFrame, frame: pd.DataFrame) -> No
                 dominant=True,
             )
         )
-        refat = float((summary["taxa_refaturamento"] * summary["volume_total"]).sum() / total) if total else 0.0
+        refat = (
+            float((summary["taxa_refaturamento"] * summary["volume_total"]).sum() / total)
+            if total
+            else 0.0
+        )
         kpis.append(
             KPI(
                 label="Taxa refaturamento",

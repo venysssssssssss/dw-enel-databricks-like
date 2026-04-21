@@ -8,7 +8,8 @@ from apps.streamlit.components.narrative import LayerNarrative, download_datafra
 from apps.streamlit.layers.common import (
     aggregate,
     color_sequence,
-    render_chart,
+    render_assistant_cta,
+    render_chart_section,
     render_table_or_empty,
 )
 from apps.streamlit.theme import SEQUENTIAL_BLUE
@@ -37,7 +38,6 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 y="qtd_erros",
                 color="regiao",
                 markers=True,
-                title="Volume mensal de erros de leitura",
                 color_discrete_sequence=color_sequence(),
                 labels={
                     "mes_ingresso": "Mês",
@@ -49,7 +49,16 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 line={"width": 2.2, "shape": "spline"},
                 hovertemplate="<b>%{x|%b/%Y}</b><br>%{fullData.name}: %{y:,d}<extra></extra>",
             )
-            render_chart(st, fig, key="executive_monthly", theme=theme)
+            render_chart_section(
+                st,
+                fig,
+                key="executive_monthly",
+                title="Volume mensal de erros de leitura",
+                subtitle="Série operacional para localizar aceleração por região.",
+                badge="área",
+                theme=theme,
+                height=360,
+            )
             download_dataframe(st, "📥 CSV volume mensal", monthly, section="ritmo_volume_mensal")
     with right:
         if causes.empty:
@@ -62,7 +71,6 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 orientation="h",
                 color="qtd_erros",
                 color_continuous_scale=SEQUENTIAL_BLUE,
-                title="Pareto de causas canônicas",
                 labels={"qtd_erros": "Ordens", "causa_canonica": "Causa"},
                 text="qtd_erros",
             )
@@ -74,5 +82,16 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
                 hovertemplate="<b>%{y}</b><br>%{x:,d} ordens<extra></extra>",
             )
             fig.update_layout(coloraxis_showscale=False)
-            render_chart(st, fig, key="executive_causes", theme=theme, on_select="rerun")
+            render_chart_section(
+                st,
+                fig,
+                key="executive_causes",
+                title="Pareto de causas canônicas",
+                subtitle="Ranking de causas para priorizar investigação de primeira ordem.",
+                badge="top 14",
+                theme=theme,
+                height=360,
+                on_select="rerun",
+            )
             download_dataframe(st, "📥 CSV Pareto", causes, section="ritmo_pareto_causas")
+    render_assistant_cta(st, area="Ritmo", key="cta_assistente_ritmo")

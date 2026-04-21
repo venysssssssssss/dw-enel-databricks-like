@@ -13,7 +13,11 @@ from apps.streamlit.components.premium import (
     render_topbar,
     topic_pills_markdown,
 )
-from apps.streamlit.layers.common import render_chart, render_table_or_empty
+from apps.streamlit.layers.common import (
+    render_assistant_cta,
+    render_chart_section,
+    render_table_or_empty,
+)
 from apps.streamlit.theme import SEQUENTIAL_GREEN, format_int
 from src.viz.erro_leitura_dashboard_data import safe_topic_taxonomy_for_display, taxonomy_reference
 
@@ -67,15 +71,24 @@ def render(st: Any, taxonomy_path: Path, *, theme: str = "light") -> None:
             orientation="h",
             color="topic_size",
             color_continuous_scale=SEQUENTIAL_GREEN,
-            title="Tópicos descobertos por volume",
         )
         fig.update_yaxes(categoryorder="total ascending")
-        render_chart(st, fig, key="taxonomy_topics", theme=theme, height=520)
+        render_chart_section(
+            st,
+            fig,
+            key="taxonomy_topics",
+            title="Tópicos descobertos por volume",
+            subtitle="Top 20 tópicos PII-safe ordenados por documentos atribuídos.",
+            badge="BERTopic",
+            theme=theme,
+            height=500,
+        )
         download_dataframe(st, "📥 CSV tópicos descobertos", safe, section="taxonomia_topicos")
 
     render_table_or_empty(st, safe, section="taxonomia_descoberta")
     with st.expander("Taxonomia canônica usada pelo classificador"):
         render_table_or_empty(st, taxonomy_reference(), section="taxonomia_canonica")
+    render_assistant_cta(st, area="Taxonomia", key="cta_assistente_taxonomia")
 
 
 def _read_taxonomy(path: Path) -> pd.DataFrame:

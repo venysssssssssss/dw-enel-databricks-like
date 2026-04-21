@@ -11,7 +11,12 @@ from apps.streamlit.components.premium import (
     render_story,
     render_topbar,
 )
-from apps.streamlit.layers.common import aggregate, render_chart, render_table_or_empty
+from apps.streamlit.layers.common import (
+    aggregate,
+    render_assistant_cta,
+    render_chart_section,
+    render_table_or_empty,
+)
 from apps.streamlit.theme import SEQUENTIAL_BLUE, format_int, format_pct
 from src.viz.erro_leitura_dashboard_data import severity_heatmap, taxonomy_reference
 
@@ -84,9 +89,17 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
             y="regiao",
             z="taxa_refaturamento",
             color_continuous_scale=SEQUENTIAL_BLUE,
-            title="Risco de refaturamento por severidade",
         )
-        render_chart(st, fig, key="governance_severity", theme=theme, height=360)
+        render_chart_section(
+            st,
+            fig,
+            key="governance_severity",
+            title="Risco de refaturamento por severidade",
+            subtitle="Taxa média de refaturamento por região e severidade.",
+            badge="risco",
+            theme=theme,
+            height=380,
+        )
         st.markdown(
             '<div class="enel-insight"><span class="label">Leitura</span>'
             "Células escuras = <b>taxa média de refaturamento</b> mais alta. "
@@ -104,3 +117,4 @@ def render(st: Any, frame, *, theme: str = "light") -> None:
 """
         )
         render_table_or_empty(st, taxonomy_reference(), section="governanca_taxonomia")
+    render_assistant_cta(st, area="Governança", key="cta_assistente_governanca")

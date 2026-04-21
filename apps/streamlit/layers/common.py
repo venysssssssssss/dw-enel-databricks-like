@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from html import escape
 from typing import TYPE_CHECKING, Any
 
 from apps.streamlit.components.narrative import download_dataframe, render_empty_state
@@ -40,12 +41,8 @@ def apply_layout(fig: Any, *, theme: str = "light", height: int = 420) -> Any:
             "font": {"size": 12, "color": template["font"]["color"]},
             "bgcolor": "rgba(0,0,0,0)",
         },
-        title={
-            "font": {"size": 15, "color": template["font"]["color"], "family": "Inter, sans-serif"},
-            "x": 0.0,
-            "xanchor": "left",
-            "pad": {"l": 4, "t": 4},
-        },
+        title_text=None,
+        margin={"l": 8, "r": 16, "t": 24, "b": 36},
         separators=",.",  # PT-BR: vírgula decimal, ponto milhar
     )
     fig.update_xaxes(
@@ -67,6 +64,28 @@ def apply_layout(fig: Any, *, theme: str = "light", height: int = 420) -> Any:
     return fig
 
 
+def chart_section_markdown(
+    *,
+    title: str,
+    subtitle: str = "",
+    badge: str = "",
+) -> str:
+    subtitle_html = f'<p>{escape(subtitle)}</p>' if subtitle else ""
+    badge_html = f'<span>{escape(badge)}</span>' if badge else ""
+    return (
+        '<section class="enel-chart-section" aria-label="'
+        f'{escape(title)}">'
+        '<div class="enel-chart-head">'
+        "<div>"
+        f"<h2>{escape(title)}</h2>"
+        f"{subtitle_html}"
+        "</div>"
+        f"{badge_html}"
+        "</div>"
+        "</section>"
+    )
+
+
 def render_chart(
     st: Any,
     fig: Any,
@@ -77,6 +96,7 @@ def render_chart(
     on_select: str | None = None,
 ) -> Any:
     apply_layout(fig, theme=theme, height=height)
+    fig.update_layout(title_text=None)
     kwargs: dict[str, Any] = {
         "use_container_width": True,
         "key": key,
@@ -91,6 +111,61 @@ def render_chart(
     if on_select:
         kwargs["selection_mode"] = ("points", "box", "lasso")
     return st.plotly_chart(fig, **kwargs)
+
+
+def render_chart_section(
+    st: Any,
+    fig: Any,
+    *,
+    key: str,
+    title: str,
+    subtitle: str = "",
+    badge: str = "",
+    theme: str = "light",
+    height: int = 420,
+    on_select: str | None = None,
+) -> Any:
+    st.markdown(
+        chart_section_markdown(title=title, subtitle=subtitle, badge=badge),
+        unsafe_allow_html=True,
+    )
+    return render_chart(
+        st,
+        fig,
+        key=key,
+        theme=theme,
+        height=height,
+        on_select=on_select,
+    )
+
+
+def assistant_cta_markdown(area: str) -> str:
+    return (
+        '<div class="enel-assistant-cta" role="note">'
+        "<div>"
+        "<b>Assistente contextual</b>"
+        f"<span>Levar o contexto de {escape(area)} para uma pergunta guiada.</span>"
+        "</div>"
+        "</div>"
+    )
+
+
+def render_assistant_cta(
+    st: Any,
+    *,
+    area: str,
+    key: str,
+    assistant_tab_label: str = "Assistente",
+) -> None:
+    st.markdown(assistant_cta_markdown(area), unsafe_allow_html=True)
+    if st.button(
+        "Abrir assistente com este contexto",
+        key=key,
+        use_container_width=True,
+    ):
+        st.session_state["last_dashboard_area"] = area
+        st.session_state["dashboard_pending_tab"] = assistant_tab_label
+        st.rerun()
 
 
 def render_table_or_empty(st: Any, frame: pd.DataFrame, *, section: str) -> None:
