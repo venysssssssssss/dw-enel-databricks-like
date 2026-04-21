@@ -19,6 +19,7 @@ from apps.streamlit.components.filters import (
     normalize_filters,
     preset_filters,
 )
+from apps.streamlit.components.sidebar import clean_tab_label
 
 
 def _frame() -> pd.DataFrame:
@@ -172,3 +173,10 @@ def test_active_filter_chips_and_markup() -> None:
     assert "Tema escuro" in chips
     assert html.count("chip") >= len(chips)
     assert "Sem filtros restritivos" in chips_markdown(())
+
+
+def test_clean_tab_label_removes_icons_and_restores_accents() -> None:
+    assert clean_tab_label("💬 Assistente ENEL") == "Assistente ENEL"
+    assert clean_tab_label("🟧 CE · Reclamacoes Totais") == "CE · Reclamações Totais"
+    assert clean_tab_label("🗺 Padroes & Concentracoes") == "Padrões & Concentrações"
+    assert clean_tab_label("🎓 Sessao Educacional") == "Sessão Educacional"

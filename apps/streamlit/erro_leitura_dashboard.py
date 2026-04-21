@@ -27,6 +27,12 @@ from apps.streamlit.components.filters import (
 from apps.streamlit.components.hero import render_hero
 from apps.streamlit.components.narrative import render_empty_state
 from apps.streamlit.components.react_island import render_react_island
+from apps.streamlit.components.sidebar import (
+    clean_tab_label,
+    render_sidebar_brand,
+    render_sidebar_section,
+    render_visual_nav,
+)
 from apps.streamlit.components.skeleton import render_skeleton
 from apps.streamlit.layers import (
     chat,
@@ -70,23 +76,33 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
 
-    st.sidebar.title("⚡ Aconchegante MIS")
-    st.sidebar.caption("Inteligência Operacional")
-
-    # Navegação na sidebar
-    st.sidebar.markdown("---")
+    st.sidebar.markdown(render_sidebar_brand(version_label="BI · silver"), unsafe_allow_html=True)
+    st.sidebar.markdown(
+        render_sidebar_section("Navegação", badge=str(len(TAB_LABELS))),
+        unsafe_allow_html=True,
+    )
+    nav_slot = st.sidebar.empty()
     active_tab = st.sidebar.radio(
         "Navegação",
         options=TAB_LABELS,
         index=0,
-        label_visibility="collapsed"
+        format_func=clean_tab_label,
+        label_visibility="collapsed",
+        key="dashboard_active_tab",
     )
-    st.sidebar.markdown("---")
+    nav_slot.markdown(render_visual_nav(active_tab, TAB_LABELS), unsafe_allow_html=True)
 
-    st.sidebar.caption("Fontes e filtros globais")
+    st.sidebar.markdown(
+        render_sidebar_section("Global", badge="fontes + filtros"),
+        unsafe_allow_html=True,
+    )
     _render_onboarding_controls()
 
     silver_path, assignments_path, taxonomy_path = _render_source_controls()
+    st.sidebar.markdown(
+        render_sidebar_section("Escopo", badge="CE + SP"),
+        unsafe_allow_html=True,
+    )
     include_total = st.sidebar.toggle(
         "Incluir reclamação_total",
         value=_query_bool("total"),
@@ -219,7 +235,14 @@ def _render_source_controls() -> tuple[Path, Path, Path]:
 def _render_onboarding_controls() -> None:
     if st.sidebar.button("Ver tour de novo", use_container_width=True):
         st.session_state["dashboard_tour_seen"] = False
-    st.sidebar.caption("Tour curto no primeiro acesso: hero → filtros → abas → Sprint 15/chat.")
+    st.sidebar.markdown(
+        """
+<div class="sb-mini-note">
+  Tour curto no primeiro acesso: hero → filtros → abas → Sprint 15/chat.
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
 
 def _render_tour(st_module) -> None:

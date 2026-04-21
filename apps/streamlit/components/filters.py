@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
+from apps.streamlit.components.sidebar import render_filter_metric, render_sidebar_section
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -215,34 +217,6 @@ def chips_markdown(chips: tuple[str, ...]) -> str:
     return "".join(f'<span class="chip is-accent">{chip}</span>' for chip in chips)
 
 
-def _sidebar_brand(total_rows: int) -> str:
-    rows_fmt = f"{total_rows:,}".replace(",", ".")
-    return f"""
-<div class="sb-brand">
-  <div class="sb-brand-mark">D</div>
-  <div class="sb-brand-text">
-    <div class="sb-brand-name">Reclamações · Analítico</div>
-    <div class="sb-brand-sub">{rows_fmt} registros</div>
-  </div>
-</div>
-"""
-
-
-def _section_header(title: str, badge: str | None = None, link: str | None = None) -> str:
-    if badge is not None:
-        right = f'<span class="sb-section-badge">{badge}</span>'
-    elif link is not None:
-        right = f'<span class="sb-section-link">{link}</span>'
-    else:
-        right = ""
-    return f"""
-<div class="sb-section">
-  <div class="sb-section-title">{title}</div>
-  {right}
-</div>
-"""
-
-
 def _preset_stack_html(current: str, presets: list[str]) -> str:
     """Render a visual preset-stack showing which item is active. Decorative only."""
     items: list[str] = []
@@ -276,18 +250,9 @@ def _sb_summary_html(filtered_count: int, total_count: int, period_days: int | N
     period_str = f"{period_days} d" if period_days else "—"
     return f"""
 <div class="sb-summary" aria-live="polite">
-  <div class="sb-summary-row">
-    <span>Registros filtrados</span>
-    <b class="num">{filtered_fmt}</b>
-  </div>
-  <div class="sb-summary-row">
-    <span>de universo</span>
-    <span>{total_fmt}</span>
-  </div>
-  <div class="sb-summary-row">
-    <span>período</span>
-    <span>{period_str}</span>
-  </div>
+  {render_filter_metric("Registros filtrados", filtered_fmt)}
+  {render_filter_metric("Universo", total_fmt)}
+  {render_filter_metric("Período", period_str)}
 </div>
 """
 
@@ -305,9 +270,6 @@ def render_sidebar_filters(
         current = query_filters
     current = normalize_filters(replace(current, include_total=include_total), options)
 
-    # ── Brand header ────────────────────────────────────────────────────────
-    st.sidebar.markdown(_sidebar_brand(len(frame)), unsafe_allow_html=True)
-
     # ── Presets ─────────────────────────────────────────────────────────────
     # Preset as single source of truth (session_state["_preset_radio"]).
     # On first render, seed from current filter state; after that, user choice wins.
@@ -315,7 +277,7 @@ def render_sidebar_filters(
         st.session_state["_preset_radio"] = _current_preset(current, options)
 
     st.sidebar.markdown(
-        _section_header("Presets", badge=str(len(_PRESETS))),
+        render_sidebar_section("Presets", badge=str(len(_PRESETS))),
         unsafe_allow_html=True,
     )
     st.sidebar.markdown(
@@ -347,7 +309,7 @@ def render_sidebar_filters(
 
     # ── Period ───────────────────────────────────────────────────────────────
     st.sidebar.markdown(
-        _section_header("Período", link="Resetar"),
+        render_sidebar_section("Período", link="datas"),
         unsafe_allow_html=True,
     )
     date_cols = st.sidebar.columns(2)
@@ -369,7 +331,7 @@ def render_sidebar_filters(
     # ── Dimension filters ────────────────────────────────────────────────────
     active_chips = active_filter_chips(current, options)
     st.sidebar.markdown(
-        _section_header("Filtros", badge=f"{len(active_chips)} ativos"),
+        render_sidebar_section("Filtros", badge=f"{len(active_chips)} ativos"),
         unsafe_allow_html=True,
     )
     regions = tuple(
@@ -401,7 +363,7 @@ def render_sidebar_filters(
     )
 
     # ── Options ──────────────────────────────────────────────────────────────
-    st.sidebar.markdown(_section_header("Opções"), unsafe_allow_html=True)
+    st.sidebar.markdown(render_sidebar_section("Preferências"), unsafe_allow_html=True)
     st.sidebar.markdown(
         _toggle_row_html("Somente refaturamento", "Filtra ordens com flag ACF/ASF"),
         unsafe_allow_html=True,
@@ -410,7 +372,7 @@ def render_sidebar_filters(
         "Somente refaturamento", value=current.only_refaturamento, label_visibility="collapsed"
     )
     st.sidebar.markdown(
-        _toggle_row_html("Incluir reclamação_total", "Tabelas consolidadas CE+SP"),
+        _toggle_row_html("Tema escuro", "Contraste alto para análise em tela"),
         unsafe_allow_html=True,
     )
     theme_dark = st.sidebar.toggle(
@@ -418,20 +380,17 @@ def render_sidebar_filters(
     )
 
     # ── Fontes de dados (collapsible) ────────────────────────────────────────
+    st.sidebar.markdown(render_sidebar_section("Fontes", badge="cache"), unsafe_allow_html=True)
     with st.sidebar.expander("Fontes de dados"):
         st.markdown(
             f"""
             <div style='font-size:12px; color:var(--text-muted); font-family:var(--font-mono);'>
-              silver/reclamacoes_ce &nbsp;<span style='color:var(--text-faint)'>{len(frame):,}</span>
+              silver/reclamacoes_ce &nbsp;
+              <span style='color:var(--text-faint)'>{len(frame):,}</span>
             </div>
             """.replace(",", "."),
             unsafe_allow_html=True,
         )
-
-    # ── Summary ──────────────────────────────────────────────────────────────
-    period_days: int | None = None
-    if current.start_date and current.end_date:
-        period_days = (current.end_date - current.start_date).days
 
     updated = normalize_filters(
         DashboardFilters(
@@ -450,6 +409,9 @@ def render_sidebar_filters(
     st.query_params.update(filters_to_query_params(updated))
 
     filtered_frame = apply_dashboard_filters(frame, updated)
+    period_days: int | None = None
+    if updated.start_date and updated.end_date:
+        period_days = (updated.end_date - updated.start_date).days
     st.sidebar.markdown(
         _sb_summary_html(len(filtered_frame), len(frame), period_days),
         unsafe_allow_html=True,

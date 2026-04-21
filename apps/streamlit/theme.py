@@ -108,9 +108,15 @@ def css_variables(mode: ThemeMode = "light") -> dict[str, str]:
         "--enel-border":        "oklch(89% 0.012 50)",   # line
         "--enel-border-strong": "oklch(82% 0.016 50)",   # line-strong
         "--enel-divider":       "oklch(89% 0.012 50)",
-        "--enel-shadow":        "0 22px 48px oklch(22% 0.02 30 / 0.09), 0 4px 10px oklch(22% 0.02 30 / 0.05)",
+        "--enel-shadow": (
+            "0 22px 48px oklch(22% 0.02 30 / 0.09), "
+            "0 4px 10px oklch(22% 0.02 30 / 0.05)"
+        ),
         "--enel-shadow-sm":     "0 1px 2px oklch(22% 0.02 30 / 0.05)",
-        "--enel-shadow-md":     "0 6px 18px oklch(22% 0.02 30 / 0.06), 0 2px 4px oklch(22% 0.02 30 / 0.04)",
+        "--enel-shadow-md": (
+            "0 6px 18px oklch(22% 0.02 30 / 0.06), "
+            "0 2px 4px oklch(22% 0.02 30 / 0.04)"
+        ),
         "--enel-accent-graphite": "oklch(60% 0.17 28)",  # terra
         "--enel-accent-hover":  "oklch(48% 0.17 24)",    # terra-deep
         "--enel-accent-soft":   "oklch(60% 0.17 28 / 0.10)",
@@ -147,6 +153,13 @@ def dashboard_css(mode: ThemeMode = "light") -> str:
   --surface:      var(--enel-surface);
   --surface-2:    var(--enel-surface-2);
   --surface-3:    var(--enel-surface-3);
+  --paper:        var(--enel-bg);
+  --paper-2:      var(--enel-bg-sidebar);
+  --paper-3:      var(--enel-surface-2);
+  --ink:          var(--enel-text);
+  --ink-2:        var(--enel-muted);
+  --ink-3:        var(--enel-text-dim);
+  --line:         var(--enel-border);
   --border:       var(--enel-border);
   --border-strong: var(--enel-border-strong);
   --divider:      var(--enel-divider);
@@ -350,6 +363,16 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   background: var(--bg-sidebar);
   border-right: 1px solid var(--divider);
 }}
+[data-testid="stSidebar"] > div:first-child {{
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--paper-2) 92%, var(--terra) 8%) 0%,
+      var(--paper-2) 42%
+    ),
+    var(--paper-2);
+  padding-top: 1.1rem;
+}}
 [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {{
   margin-bottom: 0.25rem;
 }}
@@ -359,29 +382,30 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-bottom: 16px;
+  padding: 4px 2px 16px;
   border-bottom: 1px solid var(--divider);
   margin-bottom: 18px;
 }}
 .sb-brand-mark {{
-  width: 28px; height: 28px;
-  border-radius: 7px;
-  background: linear-gradient(135deg, var(--accent) 0%, oklch(45% 0.18 15) 100%);
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--terra) 0%, var(--plum) 100%);
   display: grid; place-items: center;
-  font-family: var(--font-mono);
-  font-weight: 600;
-  font-size: 12px;
+  font-family: var(--font-serif);
+  font-weight: 700;
+  font-size: 19px;
+  line-height: 1;
   color: #fff;
   flex-shrink: 0;
-  box-shadow: inset 0 -6px 10px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.3);
+  box-shadow: inset 0 -8px 12px rgba(0,0,0,0.20), 0 8px 18px var(--accent-ring);
   user-select: none;
 }}
 .sb-brand-text {{ display: flex; flex-direction: column; line-height: 1.15; }}
 .sb-brand-name {{
-  font-family: var(--font-display);
+  font-family: var(--font-serif);
   font-weight: 600;
-  font-size: 13.5px;
-  letter-spacing: -0.01em;
+  font-size: 16px;
+  letter-spacing: 0;
   color: var(--text);
 }}
 .sb-brand-sub {{
@@ -390,6 +414,12 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   color: var(--text-faint);
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}}
+.sb-mis-brand {{
+  margin-bottom: 14px;
 }}
 
 /* Section headers */
@@ -401,7 +431,7 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   margin: 18px 0 8px;
 }}
 .sb-section-title {{
-  font-family: var(--font-display);
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.1em;
@@ -421,9 +451,73 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 .sb-section-link {{
   font-size: 11px;
   color: var(--text-dim);
-  cursor: pointer;
-  text-decoration: underline;
-  text-decoration-style: dotted;
+}}
+
+/* MIS visual navigation */
+.sb-nav-panel {{
+  display: grid;
+  gap: 3px;
+  margin: 4px 0 8px;
+  padding: 5px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--terra) 12%);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+}}
+.sb-nav-item {{
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+}}
+.sb-nav-item.is-active {{
+  color: var(--text);
+  background: linear-gradient(
+    135deg,
+    var(--accent-soft) 0%,
+    color-mix(in srgb, var(--surface) 72%, var(--plum) 8%) 100%
+  );
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}}
+.sb-nav-dot {{
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-faint);
+}}
+.sb-nav-item.is-active .sb-nav-dot {{
+  background: var(--terra);
+  box-shadow: 0 0 0 4px var(--accent-ring);
+}}
+.sb-nav-label {{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+}}
+.sb-nav-index {{
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}}
+.sb-nav-item.is-active .sb-nav-index {{
+  color: var(--terra);
+}}
+.sb-mini-note {{
+  margin: 6px 0 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface) 82%, var(--terra) 8%);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.45;
 }}
 
 /* Preset stack */
@@ -489,11 +583,26 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   display: none !important;
 }}
 [data-testid="stSidebar"] [data-testid="stRadio"] > div {{
-  gap: 2px;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
 }}
 [data-testid="stSidebar"] [data-testid="stRadio"] [data-testid="stMarkdownContainer"] p {{
   font-size: 12px;
   color: var(--text-muted);
+}}
+[data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] label {{
+  min-height: 28px;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+}}
+[data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] label:hover {{
+  background: var(--surface-2);
+}}
+[data-testid="stSidebar"] [data-testid="stRadio"] [role="radio"][aria-checked="true"] {{
+  border-color: var(--terra) !important;
 }}
 
 /* Toggle row */
@@ -583,6 +692,28 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
 .sb-summary-row + .sb-summary-row {{
   border-top: 1px dashed var(--divider);
 }}
+.sb-filter-metric {{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+  border-top: 1px dashed var(--divider);
+}}
+.sb-filter-metric:first-child {{
+  border-top: 0;
+}}
+.sb-filter-metric span {{
+  color: var(--text-muted);
+}}
+.sb-filter-metric b {{
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-align: right;
+}}
+.sb-filter-metric:first-child b {{
+  color: var(--terra);
+}}
 
 /* Multiselect tags — match chip style */
 [data-baseweb="tag"] {{
@@ -592,6 +723,39 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   border-radius: 5px !important;
   font-family: var(--font-mono) !important;
   font-size: 11px !important;
+}}
+[data-testid="stSidebar"] [data-testid="stDateInput"],
+[data-testid="stSidebar"] [data-testid="stMultiSelect"],
+[data-testid="stSidebar"] [data-testid="stTextInput"] {{
+  margin-bottom: 0.55rem;
+}}
+[data-testid="stSidebar"] [data-baseweb="select"] > div,
+[data-testid="stSidebar"] [data-testid="stDateInput"] input,
+[data-testid="stSidebar"] [data-testid="stTextInput"] input {{
+  border-radius: var(--r-md) !important;
+  min-height: 38px;
+  box-shadow: none !important;
+}}
+[data-testid="stSidebar"] [data-baseweb="select"] > div:focus-within,
+[data-testid="stSidebar"] [data-testid="stDateInput"] input:focus,
+[data-testid="stSidebar"] [data-testid="stTextInput"] input:focus {{
+  border-color: var(--terra) !important;
+  box-shadow: 0 0 0 3px var(--accent-ring) !important;
+}}
+
+@media (max-width: 640px) {{
+  .sb-brand-name {{ font-size: 14px; }}
+  .sb-nav-label {{
+    font-size: 12px;
+  }}
+  .sb-nav-item {{
+    grid-template-columns: 10px minmax(0, 1fr) auto;
+    padding: 6px 7px;
+  }}
+  .preset-item {{
+    grid-template-columns: 10px minmax(0, 1fr) auto;
+    padding: 6px 8px;
+  }}
 }}
 
 /* ===== Animations — Sprint 17.3 ===== */
@@ -706,7 +870,10 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   color: var(--text) !important;
   font-weight: 600 !important;
   box-shadow: var(--shadow-sm) !important;
-  transition: transform 160ms var(--ease), border-color 160ms var(--ease), background 160ms var(--ease);
+  transition:
+    transform 160ms var(--ease),
+    border-color 160ms var(--ease),
+    background 160ms var(--ease);
 }}
 [data-testid="stDownloadButton"] > button:hover {{
   background: var(--accent-soft) !important;
@@ -822,7 +989,10 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   border-radius: var(--r-lg);
   padding: 16px 18px;
   box-shadow: var(--shadow-sm);
-  transition: transform 200ms var(--ease), box-shadow 200ms var(--ease), border-color 200ms var(--ease);
+  transition:
+    transform 200ms var(--ease),
+    box-shadow 200ms var(--ease),
+    border-color 200ms var(--ease);
   position: relative;
   overflow: hidden;
   animation: enelFade 360ms var(--ease) both;
@@ -832,7 +1002,12 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   border-color: var(--accent-ring);
   box-shadow: 0 14px 30px rgba(16,20,28,0.09);
 }}
-.enel-kpi-head {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }}
+.enel-kpi-head {{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}}
 .enel-kpi-label {{
   font-size: 11px;
   font-weight: 700;
@@ -1000,7 +1175,11 @@ code, pre, [data-testid="stMetricValue"], .enel-mono {{
   color: var(--text-muted);
   font-family: var(--font-mono);
   cursor: default;
-  transition: border-color 140ms var(--ease), color 140ms var(--ease), background 140ms var(--ease), transform 140ms var(--ease);
+  transition:
+    border-color 140ms var(--ease),
+    color 140ms var(--ease),
+    background 140ms var(--ease),
+    transform 140ms var(--ease);
 }}
 .enel-topic-pill:hover {{
   border-color: var(--accent);
