@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import plotly.graph_objects as go
 
 from apps.streamlit.components.hero import hero_markdown
 from apps.streamlit.components.narrative import (
@@ -11,7 +12,11 @@ from apps.streamlit.components.narrative import (
     export_filename,
 )
 from apps.streamlit.components.skeleton import skeleton_block
-from apps.streamlit.layers.common import assistant_cta_markdown, chart_section_markdown
+from apps.streamlit.layers.common import (
+    apply_layout,
+    assistant_cta_markdown,
+    chart_section_markdown,
+)
 from apps.streamlit.theme import (
     css_variables,
     dashboard_css,
@@ -50,6 +55,14 @@ def test_chart_section_markdown_keeps_title_outside_plotly() -> None:
     assert "<h2>Volume mensal</h2>" in html
     assert "Série no escopo filtrado" in html
     assert "linha" in html
+
+
+def test_apply_layout_overrides_template_margin_once() -> None:
+    fig = apply_layout(go.Figure(), height=320)
+
+    assert fig.layout.height == 320
+    assert fig.layout.title.text is None
+    assert fig.layout.margin.t == 24
 
 
 def test_assistant_cta_markdown_carries_context() -> None:

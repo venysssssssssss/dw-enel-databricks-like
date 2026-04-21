@@ -27,6 +27,7 @@ def apply_layout(fig: Any, *, theme: str = "light", height: int = 420) -> Any:
     """Aplica template + defaults profissionais (grid suave, hover, tipografia)."""
     is_dark = theme == "dark"
     template = plotly_template("dark" if is_dark else "light")
+    template = {**template, "margin": {"l": 8, "r": 16, "t": 24, "b": 36}}
     grid_color = "rgba(244, 248, 252, 0.06)" if is_dark else "rgba(15, 76, 129, 0.06)"
     axis_color = "#A9B8C8" if is_dark else "#596879"
     fig.update_layout(
@@ -42,7 +43,6 @@ def apply_layout(fig: Any, *, theme: str = "light", height: int = 420) -> Any:
             "bgcolor": "rgba(0,0,0,0)",
         },
         title_text=None,
-        margin={"l": 8, "r": 16, "t": 24, "b": 36},
         separators=",.",  # PT-BR: vírgula decimal, ponto milhar
     )
     fig.update_xaxes(
