@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 import re
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -287,7 +288,8 @@ def _load_embedder(model_name: str):
     Se `RAG_EMBEDDING_MODEL` apontar para um modelo SentenceTransformer instalado,
     usamos esse modelo; se apontar para um diretório ONNX, usamos a engine ultrarrápida
     em Rust (enel_core.OnnxEmbedder). Se a dependência/modelo não estiver disponível,
-    caímos para hashing sem quebrar o chat.
+    caímos para hashing sem quebrar o chat, exceto quando
+    `RAG_REQUIRE_ONNX_EMBEDDING=1` estiver ativo.
     """
     if model_name.strip().lower() in {"", "hashing", "hash", "local-hashing", "stub"}:
         try:
@@ -315,6 +317,16 @@ def _load_embedder(model_name: str):
 
             return rust_onnx_embed
         except Exception as exc:
+            if os.getenv("RAG_REQUIRE_ONNX_EMBEDDING", "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }:
+                raise RuntimeError(
+                    "RAG_REQUIRE_ONNX_EMBEDDING=1, mas o modelo ONNX em Rust "
+                    f"não pôde ser carregado de {model_name!r}: {exc}"
+                ) from exc
             print(
                 "Aviso: falha ao carregar modelo ONNX via Rust "
                 f"({exc}). Caindo para SentenceTransformers/Hashing."

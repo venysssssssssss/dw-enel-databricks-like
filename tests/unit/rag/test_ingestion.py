@@ -124,3 +124,16 @@ def test_load_embedder_uses_rust_onnx_when_model_path_mentions_onnx(monkeypatch)
     embed = _load_embedder("/models/enel-minilm-onnx")
 
     assert embed(["abc", "de"]) == [[3.0, 1.0], [2.0, 1.0]]
+
+
+def test_load_embedder_requires_onnx_when_strict_mode_is_enabled(monkeypatch) -> None:
+    class FailingOnnxEmbedder:
+        def __init__(self, model_path: str) -> None:
+            raise FileNotFoundError(model_path)
+
+    fake_module = types.SimpleNamespace(OnnxEmbedder=FailingOnnxEmbedder)
+    monkeypatch.setitem(sys.modules, "enel_core", fake_module)
+    monkeypatch.setenv("RAG_REQUIRE_ONNX_EMBEDDING", "1")
+
+    with pytest.raises(RuntimeError, match="RAG_REQUIRE_ONNX_EMBEDDING=1"):
+        _load_embedder("/models/enel-minilm-onnx")
