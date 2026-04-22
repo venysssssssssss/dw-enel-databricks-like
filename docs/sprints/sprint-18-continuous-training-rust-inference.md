@@ -17,8 +17,19 @@ Treinar o modelo de embedding com o dataset de tripletos utilizando `sentence-tr
 ### 3. Exportação para ONNX
 Exportar o modelo gerado (PyTorch) para o formato ONNX (quantizado opcionalmente), permitindo inferência vetorizada ultrarrápida independente do PyTorch.
 
+O exportador em `scripts/train_embedding_cpu.py` grava um diretório completo em
+`data/rag/models/enel-minilm-onnx/`, incluindo `model.onnx`, `tokenizer.json`,
+`vocab.txt` e `config.json`. O grafo ONNX expõe:
+
+- `sentence_embedding`: vetor já mean-pooled e normalizado L2, pronto para ChromaDB.
+- `last_hidden_state`: saída compatível com runtimes antigos que ainda fazem pooling fora do grafo.
+
 ### 4. Inferência em Rust (`enel_core`) via ONNX Runtime
 Atualizar a biblioteca Rust do projeto (`enel_core`) com a crate `ort` para rodar o modelo ONNX diretamente na CPU, usando `tokenizers` para pré-processamento. A integração deverá ser exposta de volta ao Python.
+
+`enel_core.OnnxEmbedder` deve preferir `sentence_embedding` quando disponível e
+manter fallback para `last_hidden_state`. Em ambientes sem wheel Rust instalada,
+`src/rag/ingestion.py` usa `onnxruntime` em Python antes de cair para hashing.
 
 ### 5. Atualização do Orquestrador RAG
 Alterar os componentes `ingestion.py` e `retriever.py` para utilizarem nativamente a inferência ONNX em Rust quando o modelo estiver disponível.
