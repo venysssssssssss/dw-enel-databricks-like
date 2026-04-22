@@ -102,13 +102,13 @@ def rag_feedback(body: FeedbackBody) -> dict[str, bool]:
     from src.rag.config import load_rag_config
 
     config = load_rag_config()
-    log_feedback(
+    recorded = log_feedback(
         config.feedback_path,
         question_hash=body.question_hash,
         rating=body.rating,
         comment=body.comment,
     )
-    return {"ok": True}
+    return {"ok": recorded}
 
 
 def _dataset_cache_ttl_sec() -> float:

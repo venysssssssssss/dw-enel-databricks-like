@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -54,16 +57,21 @@ def record(path: Path, turn: TurnTelemetry) -> None:
         fh.write(json.dumps(asdict(turn), ensure_ascii=False) + "\n")
 
 
-def log_feedback(path: Path, *, question_hash: str, rating: str, comment: str = "") -> None:
+def log_feedback(path: Path, *, question_hash: str, rating: str, comment: str = "") -> bool:
     """Append-only CSV. Valida rating {up, down}."""
     rating = rating.lower().strip()
     if rating not in {"up", "down"}:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
+        return False
     ts = datetime.now(UTC).isoformat()
-    header_needed = not path.exists()
     comment_clean = comment.replace("\n", " ").replace(",", ";")[:300]
-    with path.open("a", encoding="utf-8") as fh:
-        if header_needed:
-            fh.write("timestamp,question_hash,rating,comment\n")
-        fh.write(f"{ts},{question_hash},{rating},{comment_clean}\n")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        header_needed = not path.exists()
+        with path.open("a", encoding="utf-8") as fh:
+            if header_needed:
+                fh.write("timestamp,question_hash,rating,comment\n")
+            fh.write(f"{ts},{question_hash},{rating},{comment_clean}\n")
+    except OSError as exc:
+        logger.warning("Could not write RAG feedback to %s: %s", path, exc)
+        return False
+    return True

@@ -1644,14 +1644,18 @@ def _render_feedback_row(st: Any, turn: dict[str, Any], *, idx: int) -> None:
     cols = st.columns([1, 1, 1, 1, 10])
     with cols[0]:
         if st.button("↑", key=f"fb_up_{idx}", help="Útil"):
-            log_feedback(config.feedback_path, question_hash=q_hash, rating="up")
-            turn["feedback_sent"] = True
-            st.toast("Obrigado pelo feedback!", icon="✨")
+            if log_feedback(config.feedback_path, question_hash=q_hash, rating="up"):
+                turn["feedback_sent"] = True
+                st.toast("Obrigado pelo feedback!", icon="✨")
+            else:
+                st.toast("Não foi possível registrar o feedback.", icon="⚠")
     with cols[1]:
         if st.button("↓", key=f"fb_down_{idx}", help="Não útil"):
-            log_feedback(config.feedback_path, question_hash=q_hash, rating="down")
-            turn["feedback_sent"] = True
-            st.toast("Feedback registrado para melhoria.", icon="🛠")
+            if log_feedback(config.feedback_path, question_hash=q_hash, rating="down"):
+                turn["feedback_sent"] = True
+                st.toast("Feedback registrado para melhoria.", icon="🛠")
+            else:
+                st.toast("Não foi possível registrar o feedback.", icon="⚠")
     with cols[2]:
         st.button("⧉", key=f"fb_copy_{idx}", help="Copiar")
     with cols[3]:
