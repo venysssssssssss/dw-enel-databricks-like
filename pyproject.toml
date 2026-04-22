@@ -48,6 +48,7 @@ ml = [
   "shap>=0.45,<0.46",
   "umap-learn>=0.5,<1.0",
   "xgboost>=2.1,<3.0",
+  "optimum[onnxruntime] (>=1.23,<2.0)",
 ]
 api = [
   "fastapi>=0.115,<1.0",
