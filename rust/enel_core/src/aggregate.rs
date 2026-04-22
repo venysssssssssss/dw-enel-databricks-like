@@ -32,7 +32,8 @@ pub fn aggregate(
         metrics: &metrics,
         bytes_read: raw.len(),
     };
-    let payload = serde_json::to_vec(&manifest).map_err(|exc| PyOSError::new_err(exc.to_string()))?;
+    let payload =
+        serde_json::to_vec(&manifest).map_err(|exc| PyOSError::new_err(exc.to_string()))?;
     response_cache().insert(cache_key, Arc::new(payload.clone()));
     Ok(payload)
 }

@@ -60,10 +60,7 @@ fn tokenize(text: &str) -> Vec<String> {
         .collect()
 }
 
-fn document_frequency(
-    tokenized: &[Vec<String>],
-    query_terms: &[String],
-) -> HashMap<String, usize> {
+fn document_frequency(tokenized: &[Vec<String>], query_terms: &[String]) -> HashMap<String, usize> {
     let wanted: HashSet<&str> = query_terms.iter().map(String::as_str).collect();
     let mut df: HashMap<String, usize> = HashMap::new();
     for doc in tokenized {

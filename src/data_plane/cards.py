@@ -223,8 +223,9 @@ def _by_region_cards(by_region: pd.DataFrame, *, total: int) -> list[DataCard]:
         body = (
             f"Região **{region}** concentra **{_fmt_n(count)} ordens** "
             f"({_fmt_share(count, total)} do total filtrado). "
-            f"Refaturamento resolve **{_fmt_pct(float(row.taxa_refaturamento))}** dos casos, "
-            f"com **{_fmt_n(row.causas_rotuladas)}** ordens com causa-raiz rotulada."
+            f"Tem taxa de refaturamento de **{_fmt_pct(float(row.taxa_refaturamento))}**. "
+            f"Ordens refaturadas: **{_fmt_n(row.ordens_refaturadas)}**. "
+            f"Causas rotuladas: **{_fmt_n(row.causas_rotuladas)}**."
         )
         cards.append(DataCard(f"regiao-{region.lower()}", f"Reclamações na região {region}", body))
     return cards
@@ -1215,7 +1216,8 @@ def _sp_faturas_altas_card(data: pd.DataFrame) -> DataCard:
     lines = [
         "Maiores faturas reclamadas em SP por instalação e mês/data de fatura disponível.",
         (
-            f"Maior valor: instalação **{top['instalacao']}**, fatura **{top['fat_reclamada_top']}**, "
+            f"Maior valor: instalação **{top['instalacao']}**, "
+            f"fatura **{top['fat_reclamada_top']}**, "
             f"valor máximo **{_fmt_money(top['valor_fatura_reclamada_max'])}**, "
             f"medidor **{top['tipo_medidor_dominante'] or 'n/d'}**."
         ),

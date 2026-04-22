@@ -15,7 +15,7 @@ services:
       - ../data:/app/data:rw
     environment:
       ENEL_UI: react
-      RAG_EMBEDDING_MODEL: hashing
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-hashing}
       RAG_CHROMADB_PATH: /app/data/rag/chromadb
       RAG_TELEMETRY_PATH: /app/data/rag/telemetry.jsonl
       RAG_FEEDBACK_PATH: /app/data/rag/feedback.csv
@@ -54,7 +54,7 @@ services:
     environment:
       ENEL_PROJECT_ROOT: /app
       ENEL_UI: streamlit
-      RAG_EMBEDDING_MODEL: hashing
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-hashing}
       RAG_CHROMADB_PATH: /app/data/rag/chromadb
       RAG_TELEMETRY_PATH: /app/data/rag/telemetry.jsonl
       RAG_FEEDBACK_PATH: /app/data/rag/feedback.csv

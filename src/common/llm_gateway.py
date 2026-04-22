@@ -81,12 +81,13 @@ class StubProvider:
         temperature: float = 0.2,
         top_p: float = 0.9,
         stop: list[str] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
-        del max_tokens, temperature, top_p, stop
+        del max_tokens, temperature, top_p, stop, tools
         text = _stub_answer(messages)
         return LLMResponse(
             text=text,
-            prompt_tokens=sum(len(m.get("content", "")) // 4 for m in messages),
+            prompt_tokens=sum(len(m.get("content") or "") // 4 for m in messages),
             completion_tokens=len(text) // 4,
             provider=self.name,
             model=self.model,

@@ -954,7 +954,10 @@ class RagOrchestrator:
                 "type": "function",
                 "function": {
                     "name": "get_installation_details",
-                    "description": "Obtém dados detalhados (faturas, medidores, observações) de uma instalação específica.",
+                    "description": (
+                        "Obtém dados detalhados de faturas, medidores e observações "
+                        "de uma instalação específica."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -969,81 +972,6 @@ class RagOrchestrator:
             }
         ]
 
-        if any(term in check.sanitized.lower() for term in ("total", "quant", "resumo", "métrica", "volume")):
-            try:
-                import json
-                from src.data_plane import DataStore
-                store = DataStore()
-                metrics_data = {
-                    "total_cards_indexados": len(store.cards()),
-                    "dataset_version": store.version().hash,
-                    "status": "dados_vivos_ativos"
-                }
-                tool_call_id = "call_metrics_1"
-                messages.append({
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [{
-                        "id": tool_call_id,
-                        "type": "function",
-                        "function": {"name": "get_metrics_summary", "arguments": "{}"}
-                    }]
-                })
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "name": "get_metrics_summary",
-                    "content": json.dumps(metrics_data)
-                })
-            except Exception:
-                pass
-
-        if "instala" in check.sanitized.lower() or "uc " in check.sanitized.lower() or "medidor" in check.sanitized.lower() or "fatura" in check.sanitized.lower():
-            try:
-                import json
-                import re
-                from src.data_plane import DataStore
-                
-                match = re.search(r'\b(\d{5,})\b', check.sanitized)
-                if match:
-                    instalacao_id = match.group(1)
-                    store = DataStore()
-                    df = store.load_silver(include_total=True)
-                    sub = df[df["instalacao"].astype(str) == instalacao_id]
-                    if not sub.empty:
-                        recs = sub.head(3).to_dict(orient="records")
-                        obs = [str(r.get("texto_completo", "")) for r in recs if r.get("texto_completo")]
-                        faturas = [str(r.get("fat_reclamada_top", "")) for r in recs if str(r.get("fat_reclamada_top", "")) != "nan" and str(r.get("fat_reclamada_top", "")) != "None"]
-                        medidores = [str(r.get("tipo_medidor_dominante", "")) for r in recs if str(r.get("tipo_medidor_dominante", "")) != "nan" and str(r.get("tipo_medidor_dominante", "")) != "None"]
-                        
-                        inst_data = {
-                            "instalacao_id": instalacao_id,
-                            "qtd_reclamacoes": len(sub),
-                            "assunto": str(recs[0].get("assunto", "")),
-                            "causa_canonica": str(recs[0].get("causa_canonica", "")),
-                            "faturas_reclamadas": list(set(faturas)),
-                            "tipos_medidor": list(set(medidores)),
-                            "observacoes_de_campo": obs[:2]
-                        }
-                        tool_call_id = "call_inst_1"
-                        messages.append({
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [{
-                                "id": tool_call_id,
-                                "type": "function",
-                                "function": {"name": "get_installation_details", "arguments": json.dumps({"instalacao_id": instalacao_id})}
-                            }]
-                        })
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call_id,
-                            "name": "get_installation_details",
-                            "content": json.dumps(inst_data)
-                        })
-            except Exception:
-                pass
-
         resp = self.provider.complete(
             messages,
             max_tokens=self._answer_budget(
@@ -1053,7 +981,7 @@ class RagOrchestrator:
             ),
             temperature=self.config.temperature,
             top_p=self.config.top_p,
-            tools=tools
+            tools=tools,
         )
         timer.mark_first_token()
         text = sanitize_output(resp.text).strip()
@@ -1267,7 +1195,10 @@ class RagOrchestrator:
                 "type": "function",
                 "function": {
                     "name": "get_installation_details",
-                    "description": "Obtém dados detalhados (faturas, medidores, observações) de uma instalação específica.",
+                    "description": (
+                        "Obtém dados detalhados de faturas, medidores e observações "
+                        "de uma instalação específica."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -1281,82 +1212,6 @@ class RagOrchestrator:
                 }
             }
         ]
-        
-        # Orquestrador detecta quando exige dados vivos e chama a tool
-        if any(term in check.sanitized.lower() for term in ("total", "quant", "resumo", "métrica", "volume")):
-            try:
-                import json
-                from src.data_plane import DataStore
-                store = DataStore()
-                metrics_data = {
-                    "total_cards_indexados": len(store.cards()),
-                    "dataset_version": store.version().hash,
-                    "status": "dados_vivos_ativos"
-                }
-                tool_call_id = "call_metrics_1"
-                messages.append({
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [{
-                        "id": tool_call_id,
-                        "type": "function",
-                        "function": {"name": "get_metrics_summary", "arguments": "{}"}
-                    }]
-                })
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "name": "get_metrics_summary",
-                    "content": json.dumps(metrics_data)
-                })
-            except Exception:
-                pass
-
-        if "instala" in check.sanitized.lower() or "uc " in check.sanitized.lower() or "medidor" in check.sanitized.lower() or "fatura" in check.sanitized.lower():
-            try:
-                import json
-                import re
-                from src.data_plane import DataStore
-                
-                match = re.search(r'\b(\d{5,})\b', check.sanitized)
-                if match:
-                    instalacao_id = match.group(1)
-                    store = DataStore()
-                    df = store.load_silver(include_total=True)
-                    sub = df[df["instalacao"].astype(str) == instalacao_id]
-                    if not sub.empty:
-                        recs = sub.head(3).to_dict(orient="records")
-                        obs = [str(r.get("texto_completo", "")) for r in recs if r.get("texto_completo")]
-                        faturas = [str(r.get("fat_reclamada_top", "")) for r in recs if str(r.get("fat_reclamada_top", "")) != "nan" and str(r.get("fat_reclamada_top", "")) != "None"]
-                        medidores = [str(r.get("tipo_medidor_dominante", "")) for r in recs if str(r.get("tipo_medidor_dominante", "")) != "nan" and str(r.get("tipo_medidor_dominante", "")) != "None"]
-                        
-                        inst_data = {
-                            "instalacao_id": instalacao_id,
-                            "qtd_reclamacoes": len(sub),
-                            "assunto": str(recs[0].get("assunto", "")),
-                            "causa_canonica": str(recs[0].get("causa_canonica", "")),
-                            "faturas_reclamadas": list(set(faturas)),
-                            "tipos_medidor": list(set(medidores)),
-                            "observacoes_de_campo": obs[:2]
-                        }
-                        tool_call_id = "call_inst_1"
-                        messages.append({
-                            "role": "assistant",
-                            "content": None,
-                            "tool_calls": [{
-                                "id": tool_call_id,
-                                "type": "function",
-                                "function": {"name": "get_installation_details", "arguments": json.dumps({"instalacao_id": instalacao_id})}
-                            }]
-                        })
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call_id,
-                            "name": "get_installation_details",
-                            "content": json.dumps(inst_data)
-                        })
-            except Exception:
-                pass
 
         acc_text = []
         for chunk in self.provider.stream(
@@ -1368,7 +1223,7 @@ class RagOrchestrator:
             ),
             temperature=self.config.temperature,
             top_p=self.config.top_p,
-            tools=tools
+            tools=tools,
         ):
             timer.mark_first_token()
             acc_text.append(chunk)

@@ -285,8 +285,9 @@ def _load_embedder(model_name: str):
     `hashing` é o backend default porque é stateless: indexação e consulta sempre
     geram vetores com a mesma dimensão, inclusive dentro do container Streamlit.
     Se `RAG_EMBEDDING_MODEL` apontar para um modelo SentenceTransformer instalado,
-    usamos esse modelo; se a dependência/modelo não estiver disponível, caímos para
-    hashing sem quebrar o chat.
+    usamos esse modelo; se apontar para um diretório ONNX, usamos a engine ultrarrápida
+    em Rust (enel_core.OnnxEmbedder). Se a dependência/modelo não estiver disponível,
+    caímos para hashing sem quebrar o chat.
     """
     if model_name.strip().lower() in {"", "hashing", "hash", "local-hashing", "stub"}:
         try:
@@ -300,6 +301,24 @@ def _load_embedder(model_name: str):
         except Exception:
             pass
         return _hashing_embedder()
+
+    # Via Rust ONNX (Performance extrema CPU)
+    if "onnx" in model_name.lower():
+        try:
+            import enel_core
+
+            # model_name deve ser o caminho do diretório contendo model.onnx e tokenizer.json
+            embedder = enel_core.OnnxEmbedder(model_name)
+
+            def rust_onnx_embed(texts: list[str]) -> list[list[float]]:
+                return embedder.embed(texts)
+
+            return rust_onnx_embed
+        except Exception as exc:
+            print(
+                "Aviso: falha ao carregar modelo ONNX via Rust "
+                f"({exc}). Caindo para SentenceTransformers/Hashing."
+            )
 
     try:
         from sentence_transformers import SentenceTransformer

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+import types
 from typing import TYPE_CHECKING
 
 import pytest
@@ -106,3 +108,19 @@ def test_hashing_embedder_is_stateless_and_fixed_dimension() -> None:
     assert len(single_vector) == 256
     assert single_vector == batch_vector
     assert any(value != 0 for value in single_vector)
+
+
+def test_load_embedder_uses_rust_onnx_when_model_path_mentions_onnx(monkeypatch) -> None:
+    class FakeOnnxEmbedder:
+        def __init__(self, model_path: str) -> None:
+            self.model_path = model_path
+
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[float(len(text)), 1.0] for text in texts]
+
+    fake_module = types.SimpleNamespace(OnnxEmbedder=FakeOnnxEmbedder)
+    monkeypatch.setitem(sys.modules, "enel_core", fake_module)
+
+    embed = _load_embedder("/models/enel-minilm-onnx")
+
+    assert embed(["abc", "de"]) == [[3.0, 1.0], [2.0, 1.0]]

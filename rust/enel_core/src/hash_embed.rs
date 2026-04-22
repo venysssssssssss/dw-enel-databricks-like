@@ -5,6 +5,7 @@ use std::io::Cursor;
 use unicode_segmentation::UnicodeSegmentation;
 
 #[pyfunction]
+#[pyo3(signature = (texts, dim=None))]
 pub fn hash_embed(texts: Vec<String>, dim: Option<usize>) -> PyResult<Vec<Vec<f32>>> {
     let width = dim.unwrap_or(384).max(1);
     let vectors = texts
