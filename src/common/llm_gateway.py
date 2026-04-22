@@ -101,7 +101,9 @@ class StubProvider:
         temperature: float = 0.2,
         top_p: float = 0.9,
         stop: list[str] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ) -> Iterator[str]:
+        del tools
         resp = self.complete(
             messages,
             max_tokens=max_tokens,

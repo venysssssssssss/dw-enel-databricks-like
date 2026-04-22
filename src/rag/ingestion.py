@@ -304,8 +304,9 @@ def _load_embedder(model_name: str):
             pass
         return _hashing_embedder()
 
-    # Via Rust ONNX (Performance extrema CPU)
+    # Via Rust ONNX (Performance extrema CPU), com fallback Python/onnxruntime.
     if "onnx" in model_name.lower():
+        onnx_error: Exception | None = None
         try:
             import enel_core
 
@@ -317,6 +318,12 @@ def _load_embedder(model_name: str):
 
             return rust_onnx_embed
         except Exception as exc:
+            onnx_error = exc
+            try:
+                return _load_python_onnx_embedder(model_name)
+            except Exception as python_exc:
+                onnx_error = python_exc
+
             if os.getenv("RAG_REQUIRE_ONNX_EMBEDDING", "").strip().lower() in {
                 "1",
                 "true",
@@ -324,12 +331,12 @@ def _load_embedder(model_name: str):
                 "on",
             }:
                 raise RuntimeError(
-                    "RAG_REQUIRE_ONNX_EMBEDDING=1, mas o modelo ONNX em Rust "
-                    f"não pôde ser carregado de {model_name!r}: {exc}"
-                ) from exc
+                    "RAG_REQUIRE_ONNX_EMBEDDING=1, mas o modelo ONNX "
+                    f"não pôde ser carregado de {model_name!r}: {onnx_error}"
+                ) from onnx_error
             print(
-                "Aviso: falha ao carregar modelo ONNX via Rust "
-                f"({exc}). Caindo para SentenceTransformers/Hashing."
+                "Aviso: falha ao carregar modelo ONNX "
+                f"({onnx_error}). Caindo para SentenceTransformers/Hashing."
             )
 
     try:
@@ -344,6 +351,78 @@ def _load_embedder(model_name: str):
         return embed
     except Exception:  # pragma: no cover - fallback em ambiente sem ST
         return _hashing_embedder()
+
+
+def _load_python_onnx_embedder(model_name: str):
+    """Carrega embedder ONNX puro Python para ambientes sem enel_core."""
+    import numpy as np
+    import onnxruntime as ort
+    from transformers import AutoTokenizer
+
+    model_dir = Path(model_name)
+    model_path = model_dir / "model.onnx"
+    if not model_path.exists():
+        raise FileNotFoundError(model_path)
+
+    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    session_options = ort.SessionOptions()
+    session_options.intra_op_num_threads = _env_positive_int("RAG_ONNX_INTRA_OP_THREADS", 2)
+    session_options.inter_op_num_threads = _env_positive_int("RAG_ONNX_INTER_OP_THREADS", 1)
+    session = ort.InferenceSession(
+        str(model_path),
+        sess_options=session_options,
+        providers=["CPUExecutionProvider"],
+    )
+    input_names = [item.name for item in session.get_inputs()]
+    output_names = [item.name for item in session.get_outputs()]
+    batch_size = _env_positive_int("RAG_ONNX_BATCH_SIZE", 16)
+
+    def embed(texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        batches: list[list[list[float]]] = []
+        for start in range(0, len(texts), batch_size):
+            batches.append(_embed_onnx_batch(texts[start : start + batch_size]))
+        return [vector for batch in batches for vector in batch]
+
+    def _embed_onnx_batch(batch_texts: list[str]) -> list[list[float]]:
+        encoded = tokenizer(
+            batch_texts,
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors="np",
+        )
+        inputs = {
+            name: encoded[name].astype("int64")
+            for name in input_names
+            if name in encoded
+        }
+        outputs = dict(zip(output_names, session.run(output_names, inputs), strict=True))
+        if "sentence_embedding" in outputs:
+            vectors = outputs["sentence_embedding"]
+        else:
+            token_embeddings = outputs["last_hidden_state"]
+            attention_mask = encoded["attention_mask"].astype("float32")
+            mask = np.expand_dims(attention_mask, axis=-1)
+            vectors = np.sum(token_embeddings * mask, axis=1)
+            vectors = vectors / np.clip(np.sum(mask, axis=1), a_min=1e-9, a_max=None)
+
+        norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+        vectors = vectors / np.where(norms == 0.0, 1.0, norms)
+        return vectors.astype("float32").tolist()
+
+    return embed
+
+
+def _env_positive_int(key: str, default: int) -> int:
+    raw = os.getenv(key, "").strip()
+    if not raw:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
 
 
 def _hashing_embedder():

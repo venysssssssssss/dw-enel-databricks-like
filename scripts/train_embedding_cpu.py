@@ -67,6 +67,82 @@ def load_triplets(path: Path, input_example_cls: type) -> list[Any]:
     return examples
 
 
+def export_feature_extractor_to_onnx(model: Any, output_dir: Path) -> None:
+    """Export the underlying transformer encoder to ONNX for CPU inference."""
+    import torch
+
+    transformer = model[0]
+    tokenizer = model.tokenizer
+    auto_model = transformer.auto_model
+    auto_model.eval()
+    auto_model.to("cpu")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    tokenizer.save_pretrained(str(output_dir))
+    auto_model.config.save_pretrained(str(output_dir))
+
+    encoded = tokenizer(
+        ["Exemplo de texto para exportação ONNX."],
+        padding=True,
+        truncation=True,
+        max_length=128,
+        return_tensors="pt",
+    )
+    input_names = ["input_ids", "attention_mask"]
+    inputs = (encoded["input_ids"], encoded["attention_mask"])
+    if "token_type_ids" in encoded:
+        input_names.append("token_type_ids")
+        inputs = (*inputs, encoded["token_type_ids"])
+
+    class EmbeddingWrapper(torch.nn.Module):
+        def __init__(self, wrapped_model: torch.nn.Module) -> None:
+            super().__init__()
+            self.wrapped_model = wrapped_model
+
+        def forward(
+            self,
+            input_ids: torch.Tensor,
+            attention_mask: torch.Tensor,
+            *args: torch.Tensor,
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            token_type_ids = args[0] if args else None
+            outputs = self.wrapped_model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                return_dict=True,
+            )
+            token_embeddings = outputs.last_hidden_state
+            mask = (
+                attention_mask.unsqueeze(-1)
+                .expand(token_embeddings.size())
+                .to(token_embeddings.dtype)
+            )
+            sentence_embedding = torch.sum(token_embeddings * mask, dim=1)
+            sentence_embedding = sentence_embedding / torch.clamp(mask.sum(dim=1), min=1e-9)
+            sentence_embedding = torch.nn.functional.normalize(sentence_embedding, p=2, dim=1)
+            return sentence_embedding, token_embeddings
+
+    dynamic_axes = {
+        name: {0: "batch_size", 1: "sequence_length"} for name in input_names
+    }
+    dynamic_axes["sentence_embedding"] = {0: "batch_size"}
+    dynamic_axes["last_hidden_state"] = {0: "batch_size", 1: "sequence_length"}
+
+    wrapper = EmbeddingWrapper(auto_model).eval()
+    with torch.no_grad():
+        torch.onnx.export(
+            wrapper,
+            inputs,
+            output_dir / "model.onnx",
+            input_names=input_names,
+            output_names=["sentence_embedding", "last_hidden_state"],
+            dynamic_axes=dynamic_axes,
+            dynamo=False,
+            opset_version=18,
+        )
+
+
 def main() -> None:
     input_example_cls, sentence_transformer_cls, losses_module, data_loader_cls = (
         _load_training_deps()
@@ -103,22 +179,14 @@ def main() -> None:
     temp_dir = base_dir / "data/rag/models/temp_pytorch"
     model.save(str(temp_dir))
 
-    # Exportar para ONNX usando Optimum
+    # Exportar para ONNX sem depender de APIs internas do Optimum/PyTorch.
     try:
-        from optimum.onnxruntime import ORTModelForFeatureExtraction
-        from transformers import AutoTokenizer
-
-        logger.info("Convertendo para formato ONNX O4 (Otimizado para CPU)...")
-        ort_model = ORTModelForFeatureExtraction.from_pretrained(str(temp_dir), export=True)
-        tokenizer = AutoTokenizer.from_pretrained(str(temp_dir))
-
-        model_output_dir.mkdir(parents=True, exist_ok=True)
-        ort_model.save_pretrained(str(model_output_dir))
-        tokenizer.save_pretrained(str(model_output_dir))
+        logger.info("Convertendo encoder para ONNX para inferência em CPU...")
+        export_feature_extractor_to_onnx(model, model_output_dir)
         logger.info("Modelo ONNX salvo em: %s", model_output_dir)
 
-    except ImportError:
-        logger.error("Optimum não instalado. Exportação ONNX pulada.")
+    except Exception:
+        logger.exception("Falha ao exportar ONNX. Mantendo modelo PyTorch salvo.")
         logger.info("Modelo PyTorch salvo em: %s", temp_dir)
 
 

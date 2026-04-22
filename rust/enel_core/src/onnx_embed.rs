@@ -118,7 +118,23 @@ impl OnnxEmbedder {
             .run(inputs)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
-        // Extract last_hidden_state [batch_size, seq_len, hidden_size]
+        if let Some(sentence_output) = outputs.get("sentence_embedding") {
+            let (shape, data) = sentence_output
+                .try_extract_tensor::<f32>()
+                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+            let embedding_dim = shape[1] as usize;
+            let mut embeddings = Vec::with_capacity(batch_size);
+
+            for i in 0..batch_size {
+                let start = i * embedding_dim;
+                let end = start + embedding_dim;
+                embeddings.push(data[start..end].to_vec());
+            }
+
+            return Ok(embeddings);
+        }
+
+        // Backward compatibility for older exports: pool last_hidden_state here.
         let (shape, data) = outputs["last_hidden_state"]
             .try_extract_tensor::<f32>()
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
