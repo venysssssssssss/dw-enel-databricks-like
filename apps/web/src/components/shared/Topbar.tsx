@@ -11,7 +11,9 @@ const CRUMB_MAP: Record<string, [string, string]> = {
   "/bi/impact": ["BI", "Impacto"],
   "/bi/taxonomy": ["BI", "Taxonomia"],
   "/bi/governance": ["Governo", "Governança"],
-  "/bi/educational": ["Governo", "Sessão Educacional"]
+  "/bi/educational": ["Governo", "Sessão Educacional"],
+  "/bi/severidade-alta": ["Severidade", "Alta · SP"],
+  "/bi/severidade-critica": ["Severidade", "Crítica · SP"]
 };
 
 export function Topbar() {

@@ -471,6 +471,274 @@ def reincidence_matrix(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+_SEVERIDADE_ALIAS = {
+    "alta": "high",
+    "high": "high",
+    "critica": "critical",
+    "critical": "critical",
+    "media": "medium",
+    "medium": "medium",
+    "baixa": "low",
+    "low": "low",
+}
+
+
+def _attach_severidade(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    meta = taxonomy_metadata()[["classe", "categoria", "severidade", "peso_severidade"]]
+    merged = frame.merge(meta, left_on="causa_canonica", right_on="classe", how="left")
+    merged["severidade"] = merged["severidade"].fillna("low")
+    merged["categoria"] = merged["categoria"].fillna("nao_classificada")
+    merged["peso_severidade"] = merged["peso_severidade"].fillna(1.0)
+    return merged
+
+
+def _filter_sp_severidade(frame: pd.DataFrame, severidade: str) -> pd.DataFrame:
+    sev_key = _SEVERIDADE_ALIAS.get((severidade or "").lower(), severidade)
+    df = _attach_severidade(frame)
+    if df.empty:
+        return df
+    if "regiao" in df.columns:
+        df = df.loc[df["regiao"].astype(str).str.upper().eq("SP")]
+    df = df.loc[df["severidade"].eq(sev_key)]
+    return df
+
+
+def sp_severidade_overview(frame: pd.DataFrame, *, severidade: str = "high") -> pd.DataFrame:
+    """KPIs para a página de Severidade (SP): totais, procedência, reincidência e valor."""
+    columns = [
+        "total",
+        "procedentes",
+        "improcedentes",
+        "pct_procedentes",
+        "reincidentes_clientes",
+        "valor_medio_fatura",
+        "categorias_count",
+        "top3_share",
+        "delta_trimestre",
+    ]
+    df = _filter_sp_severidade(frame, severidade)
+    if df.empty:
+        return pd.DataFrame([{col: 0 for col in columns}])
+
+    total = int(df["ordem"].nunique())
+    procedentes = int(df["flag_resolvido_com_refaturamento"].fillna(False).astype(bool).sum())
+    improcedentes = total - procedentes
+    pct_proc = (procedentes / total) if total else 0.0
+
+    reinc_series = (
+        df.loc[df["instalacao_hash"].ne("")]
+        .groupby("instalacao_hash")["ordem"]
+        .nunique()
+    )
+    reincidentes = int(reinc_series.gt(1).sum())
+
+    valor_col = (
+        "valor_fatura_reclamada_medio"
+        if "valor_fatura_reclamada_medio" in df.columns
+        else None
+    )
+    valor_medio = (
+        float(df[valor_col].dropna().mean()) if valor_col and df[valor_col].notna().any() else 0.0
+    )
+
+    cat_group = df.groupby("categoria")["ordem"].nunique().sort_values(ascending=False)
+    categorias_count = int((cat_group > 0).sum())
+    top3 = cat_group.head(3).sum()
+    top3_share = float(top3 / total) if total else 0.0
+
+    delta_tri = 0.0
+    if "mes_ingresso" in df.columns and df["mes_ingresso"].notna().any():
+        monthly = (
+            df.dropna(subset=["mes_ingresso"])
+            .groupby("mes_ingresso")["ordem"]
+            .nunique()
+            .sort_index()
+        )
+        if len(monthly) >= 6:
+            last_q = monthly.iloc[-3:].sum()
+            prev_q = monthly.iloc[-6:-3].sum()
+            if prev_q:
+                delta_tri = float((last_q - prev_q) / prev_q)
+
+    return pd.DataFrame(
+        [
+            {
+                "total": total,
+                "procedentes": procedentes,
+                "improcedentes": improcedentes,
+                "pct_procedentes": round(pct_proc, 4),
+                "reincidentes_clientes": reincidentes,
+                "valor_medio_fatura": round(valor_medio, 2),
+                "categorias_count": categorias_count,
+                "top3_share": round(top3_share, 4),
+                "delta_trimestre": round(delta_tri, 4),
+            }
+        ]
+    )
+
+
+def sp_severidade_mensal(frame: pd.DataFrame, *, severidade: str = "high") -> pd.DataFrame:
+    """Série mensal de volume para SP filtrado por severidade."""
+    cols = ["mes_ingresso", "qtd_erros", "procedentes", "improcedentes"]
+    df = _filter_sp_severidade(frame, severidade)
+    if df.empty or "mes_ingresso" not in df.columns:
+        return pd.DataFrame(columns=cols)
+    monthly = (
+        df.dropna(subset=["mes_ingresso"])
+        .assign(
+            procedente=lambda x: x["flag_resolvido_com_refaturamento"].fillna(False).astype(bool),
+        )
+        .groupby("mes_ingresso", as_index=False)
+        .agg(
+            qtd_erros=("ordem", "nunique"),
+            procedentes=("procedente", "sum"),
+        )
+        .sort_values("mes_ingresso")
+    )
+    monthly["improcedentes"] = monthly["qtd_erros"] - monthly["procedentes"]
+    monthly["procedentes"] = monthly["procedentes"].astype(int)
+    monthly["improcedentes"] = monthly["improcedentes"].astype(int)
+    monthly["mes_ingresso"] = monthly["mes_ingresso"].astype(str)
+    return monthly
+
+
+def sp_severidade_categorias(
+    frame: pd.DataFrame, *, severidade: str = "high", limit: int = 12
+) -> pd.DataFrame:
+    """Distribuição por categoria taxonômica para SP filtrado por severidade."""
+    cols = ["categoria_id", "categoria", "vol", "pct"]
+    df = _filter_sp_severidade(frame, severidade)
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+    grouped = (
+        df.groupby("categoria", as_index=False)
+        .agg(vol=("ordem", "nunique"))
+        .sort_values("vol", ascending=False)
+    )
+    total = float(grouped["vol"].sum()) or 1.0
+    grouped["pct"] = (grouped["vol"] / total * 100).round(2)
+    grouped["categoria_id"] = grouped["categoria"].str.replace(r"[^a-z0-9]+", "_", regex=True)
+    head = grouped.head(limit).copy()
+    if len(grouped) > limit:
+        rest_vol = int(grouped.iloc[limit:]["vol"].sum())
+        rest_pct = round(rest_vol / total * 100, 2)
+        head = pd.concat(
+            [
+                head,
+                pd.DataFrame(
+                    [
+                        {
+                            "categoria_id": "outros",
+                            "categoria": f"Demais ({len(grouped) - limit})",
+                            "vol": rest_vol,
+                            "pct": rest_pct,
+                        }
+                    ]
+                ),
+            ],
+            ignore_index=True,
+        )
+    return head[cols]
+
+
+def sp_severidade_causas(
+    frame: pd.DataFrame, *, severidade: str = "high", limit: int = 14
+) -> pd.DataFrame:
+    """Dispersão causa canônica × volume × procedência × reincidência (SP)."""
+    cols = ["id", "nome", "vol", "proc", "reinc", "cat"]
+    df = _filter_sp_severidade(frame, severidade)
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    vol = df.groupby("causa_canonica")["ordem"].nunique()
+    proc = (
+        df.groupby("causa_canonica")["flag_resolvido_com_refaturamento"]
+        .apply(lambda s: float(s.fillna(False).astype(bool).mean()) * 100)
+    )
+    cat = df.groupby("causa_canonica")["categoria"].agg(lambda s: s.mode().iat[0] if len(s) else "")
+    reinc = (
+        df.loc[df["instalacao_hash"].ne("")]
+        .groupby(["causa_canonica", "instalacao_hash"])["ordem"]
+        .nunique()
+        .reset_index()
+        .groupby("causa_canonica")["ordem"]
+        .apply(lambda s: int((s > 1).sum()))
+    )
+
+    out = (
+        pd.DataFrame({"vol": vol, "proc": proc.round(2), "reinc": reinc, "cat": cat})
+        .reset_index()
+        .rename(columns={"causa_canonica": "nome"})
+    )
+    out["reinc"] = out["reinc"].fillna(0).astype(int)
+    out = out.sort_values("vol", ascending=False).head(limit)
+    out.insert(0, "id", [f"c{i+1:02d}" for i in range(len(out))])
+    return out[cols]
+
+
+def sp_severidade_ranking(
+    frame: pd.DataFrame, *, severidade: str = "high", limit: int = 10
+) -> pd.DataFrame:
+    """Top-N instalações reincidentes em SP para a severidade escolhida."""
+    cols = ["inst", "cat", "causa", "reinc", "valor", "spark", "cidade"]
+    df = _filter_sp_severidade(frame, severidade)
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    df = df.loc[df["instalacao_hash"].ne("")].copy()
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    grouped = df.groupby("instalacao_hash")
+    reinc = grouped["ordem"].nunique()
+    top_idx = reinc.loc[reinc > 1].sort_values(ascending=False).head(limit).index
+    if len(top_idx) == 0:
+        return pd.DataFrame(columns=cols)
+
+    inst_labels = grouped["instalacao"].agg(lambda s: s.dropna().astype(str).iloc[0] if s.dropna().size else "")
+    top_cat = grouped["categoria"].agg(lambda s: s.mode().iat[0] if len(s) else "")
+    top_causa = grouped["causa_canonica"].agg(lambda s: s.mode().iat[0] if len(s) else "")
+
+    valor_col = "valor_fatura_reclamada_medio" if "valor_fatura_reclamada_medio" in df.columns else None
+    valor = grouped[valor_col].mean() if valor_col else pd.Series(0.0, index=reinc.index)
+
+    cidade_col = "municipio" if "municipio" in df.columns else None
+    cidade = (
+        grouped[cidade_col].agg(lambda s: s.mode().iat[0] if len(s) else "SP")
+        if cidade_col
+        else pd.Series("SP", index=reinc.index)
+    )
+
+    records: list[dict] = []
+    for hash_key in top_idx:
+        sub = df.loc[df["instalacao_hash"].eq(hash_key)]
+        spark = (
+            sub.dropna(subset=["mes_ingresso"])
+            .groupby("mes_ingresso")["ordem"]
+            .nunique()
+            .sort_index()
+            .tail(9)
+            .astype(int)
+            .tolist()
+        )
+        if len(spark) < 9:
+            spark = [0] * (9 - len(spark)) + spark
+        records.append(
+            {
+                "inst": inst_labels.loc[hash_key] or f"INS-{hash_key[:7].upper()}",
+                "cat": top_cat.loc[hash_key],
+                "causa": top_causa.loc[hash_key],
+                "reinc": int(reinc.loc[hash_key]),
+                "valor": float(valor.loc[hash_key]) if pd.notna(valor.loc[hash_key]) else 0.0,
+                "spark": spark,
+                "cidade": f"{cidade.loc[hash_key]}/SP" if cidade.loc[hash_key] else "SP",
+            }
+        )
+    return pd.DataFrame(records, columns=cols)
+
+
 def taxonomy_reference() -> pd.DataFrame:
     """Expoe a taxonomia v2 para a aba MIS (classes + descricoes + severidade)."""
     meta = taxonomy_metadata()

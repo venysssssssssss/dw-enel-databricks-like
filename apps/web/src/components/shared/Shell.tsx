@@ -12,7 +12,9 @@ const ACONCHEGANTE_ROUTES = new Set<string>([
   "/bi/executive",
   "/bi/impact",
   "/bi/governance",
-  "/bi/educational"
+  "/bi/educational",
+  "/bi/severidade-alta",
+  "/bi/severidade-critica"
 ]);
 
 export function Shell({ children }: { children: ReactNode }) {

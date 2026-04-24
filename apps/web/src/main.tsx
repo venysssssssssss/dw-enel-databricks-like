@@ -29,6 +29,12 @@ const GovernanceRoute = lazy(() =>
 const EducationalRoute = lazy(() =>
   import("./app/routes/bi.educational").then((module) => ({ default: module.EducationalRoute }))
 );
+const SeveridadeAltaRoute = lazy(() =>
+  import("./app/routes/bi.severidade").then((module) => ({ default: module.SeveridadeAltaRoute }))
+);
+const SeveridadeCriticaRoute = lazy(() =>
+  import("./app/routes/bi.severidade").then((module) => ({ default: module.SeveridadeCriticaRoute }))
+);
 
 function RouteBoundary({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<div className="route-loading">Carregando...</div>}>{children}</Suspense>;
@@ -152,6 +158,26 @@ const educationalRoute = createRoute({
   )
 });
 
+const severidadeAltaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/bi/severidade-alta",
+  component: () => (
+    <RouteBoundary>
+      <SeveridadeAltaRoute />
+    </RouteBoundary>
+  )
+});
+
+const severidadeCriticaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/bi/severidade-critica",
+  component: () => (
+    <RouteBoundary>
+      <SeveridadeCriticaRoute />
+    </RouteBoundary>
+  )
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   chatRoute,
@@ -162,7 +188,9 @@ const routeTree = rootRoute.addChildren([
   taxonomyRoute,
   ceTotaisRoute,
   governanceRoute,
-  educationalRoute
+  educationalRoute,
+  severidadeAltaRoute,
+  severidadeCriticaRoute
 ]);
 
 const router = createRouter({ routeTree });
