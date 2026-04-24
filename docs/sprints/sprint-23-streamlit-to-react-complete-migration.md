@@ -1,4 +1,4 @@
-# Sprint 23 — Migração Completa do MVP Streamlit para Web React/TypeScript
+                                                                              # Sprint 23 — Migração Completa do MVP Streamlit para Web React/TypeScript
 
 **Executor principal**: Claude Opus 4.7  
 **Modo esperado**: reasoning `medium`  
