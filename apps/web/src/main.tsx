@@ -20,6 +20,15 @@ const ImpactRoute = lazy(() =>
 const TaxonomyRoute = lazy(() =>
   import("./app/routes/bi.taxonomy").then((module) => ({ default: module.TaxonomyRoute }))
 );
+const CeTotaisRoute = lazy(() =>
+  import("./app/routes/bi.ce-totais").then((module) => ({ default: module.CeTotaisRoute }))
+);
+const GovernanceRoute = lazy(() =>
+  import("./app/routes/bi.governance").then((module) => ({ default: module.GovernanceRoute }))
+);
+const EducationalRoute = lazy(() =>
+  import("./app/routes/bi.educational").then((module) => ({ default: module.EducationalRoute }))
+);
 
 function RouteBoundary({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<div className="route-loading">Carregando...</div>}>{children}</Suspense>;
@@ -113,6 +122,36 @@ const taxonomyRoute = createRoute({
   )
 });
 
+const ceTotaisRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/bi/ce-totais",
+  component: () => (
+    <RouteBoundary>
+      <CeTotaisRoute />
+    </RouteBoundary>
+  )
+});
+
+const governanceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/bi/governance",
+  component: () => (
+    <RouteBoundary>
+      <GovernanceRoute />
+    </RouteBoundary>
+  )
+});
+
+const educationalRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/bi/educational",
+  component: () => (
+    <RouteBoundary>
+      <EducationalRoute />
+    </RouteBoundary>
+  )
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   chatRoute,
@@ -120,7 +159,10 @@ const routeTree = rootRoute.addChildren([
   executiveRoute,
   patternsRoute,
   impactRoute,
-  taxonomyRoute
+  taxonomyRoute,
+  ceTotaisRoute,
+  governanceRoute,
+  educationalRoute
 ]);
 
 const router = createRouter({ routeTree });

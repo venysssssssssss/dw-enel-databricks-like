@@ -1,5 +1,9 @@
 import { KpiStrip } from "../../components/bi/KpiStrip";
 import { VolumeBars } from "../../components/bi/Charts";
+import { PageHeading } from "../../components/shared/PageHeading";
+import { FilterChips } from "../../components/shared/FilterChips";
+import { AssistantCta } from "../../components/shared/AssistantCta";
+import { StoryBlock } from "../../components/bi/StoryBlock";
 import { useAggregation } from "../../hooks/useAggregation";
 
 type Summary = {
@@ -18,30 +22,57 @@ export function ImpactRoute() {
   const summary = useAggregation<Summary>("refaturamento_summary");
   const causes = useAggregation<Cause>("refaturamento_by_cause");
   const row = summary.data?.data[0];
+  const causeRows = causes.data?.data ?? [];
+  const topCause = [...causeRows].sort((a, b) => b.taxa_refaturamento - a.taxa_refaturamento)[0];
 
   return (
     <div className="route-stack">
-      <section className="page-heading">
-        <p>Impacto</p>
-        <h1>Refaturamento como desfecho operacional</h1>
-      </section>
+      <PageHeading
+        eyebrow="BI / Impacto"
+        title="Refaturamento como desfecho operacional"
+        emphasis="desfecho"
+      />
+      <FilterChips />
       <KpiStrip
         items={[
-          { label: "Ordens", value: row?.total ?? "..." },
-          { label: "Refaturadas", value: row?.refaturadas ?? "..." },
+          {
+            label: "Ordens",
+            value: row ? formatNumber(row.total) : "…",
+            tag: "universo",
+            dominant: true
+          },
+          { label: "Refaturadas", value: row ? formatNumber(row.refaturadas) : "…", tag: "desfecho" },
           {
             label: "Taxa",
-            value: row ? `${(row.taxa_refaturamento * 100).toFixed(1)}%` : "..."
+            value: row ? `${(row.taxa_refaturamento * 100).toFixed(1)}%` : "…",
+            tag: "global"
+          },
+          {
+            label: "Causa crítica",
+            value: topCause?.causa_canonica ?? "…",
+            tag: topCause ? `${(topCause.taxa_refaturamento * 100).toFixed(1)}%` : ""
           }
         ]}
       />
-      <section className="chart-section">
-        <div>
-          <h2>Causas com maior taxa</h2>
-          <p>Ranking por taxa e volume.</p>
+      <StoryBlock lead="Onde o retrabalho sangra mais?">
+        Refaturamento é o sinal terminal de erro. Causas com <b>alta taxa</b> mas volume baixo são
+        candidatas a <b>auditoria focada</b>; causas com volume alto e taxa média pedem{" "}
+        <b>ajuste de processo</b>.
+      </StoryBlock>
+      <section className="card">
+        <div className="card-head">
+          <div>
+            <h2 className="card-title">Causas com maior taxa</h2>
+            <p className="card-sub">Ranking por taxa e volume.</p>
+          </div>
         </div>
-        <VolumeBars data={causes.data?.data ?? []} xKey="causa_canonica" yKey="qtd_erros" />
+        <VolumeBars data={causeRows} xKey="causa_canonica" yKey="qtd_erros" />
       </section>
+      <AssistantCta area="Impacto" />
     </div>
   );
+}
+
+function formatNumber(n: number | string): string {
+  return Number(n).toLocaleString("pt-BR");
 }

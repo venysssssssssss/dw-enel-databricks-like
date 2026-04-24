@@ -1,3 +1,6 @@
+import { PageHeading } from "../../components/shared/PageHeading";
+import { AssistantCta } from "../../components/shared/AssistantCta";
+import { StoryBlock } from "../../components/bi/StoryBlock";
 import { useAggregation } from "../../hooks/useAggregation";
 
 type Taxonomy = {
@@ -14,10 +17,16 @@ export function TaxonomyRoute() {
 
   return (
     <div className="route-stack">
-      <section className="page-heading">
-        <p>Taxonomia</p>
-        <h1>Classes, severidade e descrição operacional</h1>
-      </section>
+      <PageHeading
+        eyebrow="BI / Taxonomia"
+        title="Classes, severidade e descrição operacional"
+        emphasis="taxonomia"
+      />
+      <StoryBlock lead="O dicionário de causas canônicas.">
+        Toda agregação acima depende deste mapa. Severidade e peso são herdados pelos{" "}
+        <b>scores de criticidade</b>. Divergências aqui se propagam para dashboards — trate como{" "}
+        <b>fonte única</b>.
+      </StoryBlock>
       <section className="table-section">
         <table>
           <thead>
@@ -32,7 +41,9 @@ export function TaxonomyRoute() {
           <tbody>
             {rows.map((row) => (
               <tr key={row["Causa canonica"]}>
-                <td>{row["Causa canonica"]}</td>
+                <td>
+                  <b>{row["Causa canonica"]}</b>
+                </td>
                 <td>{row.Categoria}</td>
                 <td>{row.Severidade}</td>
                 <td>{row.Peso}</td>
@@ -42,6 +53,7 @@ export function TaxonomyRoute() {
           </tbody>
         </table>
       </section>
+      <AssistantCta area="Taxonomia" />
     </div>
   );
 }
