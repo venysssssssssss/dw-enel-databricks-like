@@ -22,6 +22,12 @@ from src.viz.erro_leitura_dashboard_data import (
     taxonomy_reference,
     topic_distribution,
 )
+from src.viz.reclamacoes_ce_dashboard_data import (
+    cruzamento_com_erro_leitura as _ce_cruzamento_com_erro_leitura,
+    macro_tema_distribution as _ce_macro_tema_distribution,
+    monthly_trend_by_tema as _ce_monthly_trend_by_tema,
+    prepare_reclamacoes_ce_frame,
+)
 
 
 class ViewCallable(Protocol):
@@ -1221,7 +1227,129 @@ VIEW_REGISTRY: dict[str, ViewSpec] = {
         FILTER_FIELDS,
         playbook_dificuldade_acoes_view,
     ),
+    "ce_macro_distribution": ViewSpec(
+        "ce_macro_distribution",
+        ("macro_tema_label",),
+        ("qtd", "percentual"),
+        FILTER_FIELDS,
+        lambda frame: ce_macro_distribution_view(frame),
+    ),
+    "ce_monthly_trend_by_tema": ViewSpec(
+        "ce_monthly_trend_by_tema",
+        ("ano_mes", "macro_tema_label"),
+        ("qtd",),
+        FILTER_FIELDS,
+        lambda frame: ce_monthly_trend_view(frame),
+    ),
+    "ce_cruzamento_erro_leitura": ViewSpec(
+        "ce_cruzamento_erro_leitura",
+        ("macro_tema_label",),
+        ("qtd_com_erro_leitura", "qtd_total", "percentual"),
+        FILTER_FIELDS,
+        lambda frame: ce_cruzamento_view(frame),
+    ),
+    "governance_health": ViewSpec(
+        "governance_health",
+        ("label",),
+        ("value", "status"),
+        FILTER_FIELDS,
+        lambda frame: governance_health_view(frame),
+    ),
 }
+
+
+def _ce_scope_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    required = {"_source_region", "_data_type", "assunto", "ordem", "dt_ingresso"}
+    if not required.issubset(frame.columns):
+        return pd.DataFrame()
+    try:
+        return prepare_reclamacoes_ce_frame(frame)
+    except ValueError:
+        return pd.DataFrame()
+
+
+def ce_macro_distribution_view(frame: pd.DataFrame) -> pd.DataFrame:
+    ce = _ce_scope_frame(frame)
+    result = _ce_macro_tema_distribution(ce)
+    if result.empty:
+        return result
+    out = result.copy()
+    out["percentual"] = out["percentual"] / 100.0
+    return out
+
+
+def ce_monthly_trend_view(frame: pd.DataFrame) -> pd.DataFrame:
+    ce = _ce_scope_frame(frame)
+    return _ce_monthly_trend_by_tema(ce)
+
+
+def ce_cruzamento_view(frame: pd.DataFrame) -> pd.DataFrame:
+    ce = _ce_scope_frame(frame)
+    erro = frame
+    if "_data_type" in frame.columns:
+        erro = frame.loc[frame["_data_type"] != "reclamacao_total"]
+    result = _ce_cruzamento_com_erro_leitura(ce, erro)
+    if result.empty:
+        return result
+    out = result.copy()
+    out["percentual"] = out["percentual"] / 100.0
+    return out
+
+
+def governance_health_view(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty:
+        return pd.DataFrame(columns=["label", "value", "sub", "status"])
+    total = int(len(frame))
+    regioes = int(frame["regiao"].nunique()) if "regiao" in frame.columns else 0
+    cobertura_causa = 0.0
+    if "causa_canonica" in frame.columns:
+        labeled = frame["causa_canonica"].fillna("").astype(str).str.strip()
+        cobertura_causa = float(labeled.ne("").mean())
+    cobertura_topico = 0.0
+    if "topic_name" in frame.columns:
+        topic = frame["topic_name"].fillna("").astype(str).str.strip()
+        cobertura_topico = float(topic.ne("").mean())
+    freshness_status = "ok"
+    freshness_value = "—"
+    freshness_sub = None
+    if "dt_ingresso" in frame.columns:
+        dt = pd.to_datetime(frame["dt_ingresso"], errors="coerce")
+        max_dt = dt.max()
+        if pd.notna(max_dt):
+            days = int((pd.Timestamp.now().normalize() - max_dt.normalize()).days)
+            freshness_value = f"{max_dt.date().isoformat()}"
+            freshness_sub = f"há {days} dias"
+            freshness_status = "ok" if days <= 7 else ("warn" if days <= 30 else "crit")
+
+    rows = [
+        {
+            "label": "Volume carregado",
+            "value": f"{total:,}".replace(",", "."),
+            "sub": f"{regioes} regiões",
+            "status": "ok" if total > 0 else "crit",
+        },
+        {
+            "label": "Cobertura taxonomia",
+            "value": f"{cobertura_causa * 100:.1f}%",
+            "sub": "causa_canonica não-vazia",
+            "status": "ok" if cobertura_causa >= 0.85 else ("warn" if cobertura_causa >= 0.6 else "crit"),
+        },
+        {
+            "label": "Cobertura tópicos ML",
+            "value": f"{cobertura_topico * 100:.1f}%",
+            "sub": "topic_name não-vazio",
+            "status": "ok" if cobertura_topico >= 0.8 else ("warn" if cobertura_topico >= 0.5 else "crit"),
+        },
+        {
+            "label": "Frescor do dataset",
+            "value": freshness_value,
+            "sub": freshness_sub,
+            "status": freshness_status,
+        },
+    ]
+    return pd.DataFrame(rows)
 
 
 def get_view(view_id: str) -> ViewSpec:
