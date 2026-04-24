@@ -12,6 +12,14 @@ export type RagDonePayload = {
   cache_hit?: boolean;
   cache_seed_id?: string | null;
   latency_ms?: number;
+  intent?: string;
+  tokens?: number;
+  sources?: Array<{
+    doc_id?: string;
+    path?: string;
+    score?: number;
+    section?: string;
+  }>;
 };
 
 export type RagHistoryTurn = {
@@ -24,8 +32,11 @@ export async function streamRagAnswer(
   datasetHash: string,
   handlers: RagEventHandlers,
   signal?: AbortSignal,
-  history: RagHistoryTurn[] = []
+  history: RagHistoryTurn[] = [],
+  contextHint?: string
 ): Promise<void> {
+  const body: Record<string, unknown> = { question, history };
+  if (contextHint) body.context_hint = contextHint;
   await fetchEventSource("/v1/rag/stream", {
     method: "POST",
     signal,
@@ -33,7 +44,7 @@ export async function streamRagAnswer(
       "Content-Type": "application/json",
       "X-Dataset-Version": datasetHash
     },
-    body: JSON.stringify({ question, history }),
+    body: JSON.stringify(body),
     onmessage(event) {
       const payload = JSON.parse(event.data || "{}") as RagDonePayload & {
         text?: string;

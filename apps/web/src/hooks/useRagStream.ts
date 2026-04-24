@@ -1,16 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { streamRagAnswer } from "../lib/sse";
 
+export type RagSource = {
+  doc_id?: string;
+  path?: string;
+  score?: number;
+  section?: string;
+};
+
+export type RagMeta = {
+  intent?: string;
+  tokens?: number;
+  latency_ms?: number;
+  first_token_ms?: number;
+  sources_count?: number;
+};
+
 export type RagMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  createdAt: number;
   questionHash?: string;
   cacheHit?: boolean;
   feedbackSent?: boolean;
+  sources?: RagSource[];
+  meta?: RagMeta;
+  firstTokenAt?: number;
 };
 
-export function useRagStream(datasetHash: string) {
+export function useRagStream(datasetHash: string, contextHint?: string) {
   const [messages, setMessages] = useState<RagMessage[]>([]);
   const [status, setStatus] = useState<"idle" | "streaming" | "done" | "error">("idle");
   const abortRef = useRef<AbortController | null>(null);
@@ -31,14 +50,15 @@ export function useRagStream(datasetHash: string) {
       setStatus("streaming");
       const userId = makeMessageId("user");
       const assistantId = makeMessageId("assistant");
+      const startedAt = Date.now();
       const history = messagesRef.current.slice(-8).map((turn) => ({
         role: turn.role,
         content: turn.content
       }));
       setMessages((current) => [
         ...current,
-        { id: userId, role: "user", content: question },
-        { id: assistantId, role: "assistant", content: "" }
+        { id: userId, role: "user", content: question, createdAt: startedAt },
+        { id: assistantId, role: "assistant", content: "", createdAt: startedAt }
       ]);
       await streamRagAnswer(
         question,
@@ -48,7 +68,11 @@ export function useRagStream(datasetHash: string) {
             setMessages((current) => {
               const copy = [...current];
               const last = copy[copy.length - 1];
-              copy[copy.length - 1] = { ...last, content: `${last.content}${token}` };
+              copy[copy.length - 1] = {
+                ...last,
+                content: `${last.content}${token}`,
+                firstTokenAt: last.firstTokenAt ?? Date.now()
+              };
               return copy;
             });
           },
@@ -60,7 +84,17 @@ export function useRagStream(datasetHash: string) {
                   ? {
                       ...message,
                       questionHash: payload.question_hash,
-                      cacheHit: Boolean(payload.cache_hit)
+                      cacheHit: Boolean(payload.cache_hit),
+                      sources: payload.sources ?? [],
+                      meta: {
+                        intent: payload.intent,
+                        tokens: payload.tokens,
+                        latency_ms: payload.latency_ms,
+                        first_token_ms: message.firstTokenAt
+                          ? message.firstTokenAt - startedAt
+                          : undefined,
+                        sources_count: payload.sources?.length
+                      }
                     }
                   : message
               )
@@ -77,10 +111,11 @@ export function useRagStream(datasetHash: string) {
           }
         },
         controller.signal,
-        history
+        history,
+        contextHint
       );
     },
-    [datasetHash]
+    [datasetHash, contextHint]
   );
 
   const markFeedbackSent = useCallback((messageId: string) => {
