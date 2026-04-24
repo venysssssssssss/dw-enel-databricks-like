@@ -1,6 +1,4 @@
-# Caddy reverse proxy para Streamlit (Erros de Leitura)
-#
-# Expoe o dashboard Streamlit em :8080 com gzip/zstd e headers de seguranca.
+# Caddy reverse proxy — cutover React (web) default, Streamlit em /legacy.
 #
 # Para gerar hash de senha:
 #   docker run --rm caddy caddy hash-password --plaintext 'suasenha'
@@ -27,13 +25,40 @@
 		-Server
 	}
 
-	# Streamlit usa WebSocket em /_stcore/stream. O Caddy detecta Upgrade:
-	# websocket automaticamente e faz o switch.
-	reverse_proxy streamlit:8501 {
+	# Stream SSE: desabilita buffering e estende timeout p/ RAG.
+	@sse path /v1/rag/stream*
+	reverse_proxy @sse api:8000 {
+		flush_interval -1
 		transport http {
-			keepalive 30s
-			read_timeout 300s
+			read_timeout 600s
 		}
+	}
+
+	# API + métricas: roteamento direto ao backend.
+	handle /v1/* {
+		reverse_proxy api:8000
+	}
+	handle /metrics {
+		reverse_proxy api:8000
+	}
+
+	# Fallback Streamlit (transição): /legacy → Streamlit.
+	handle_path /legacy/* {
+		reverse_proxy streamlit:8501 {
+			transport http {
+				keepalive 30s
+				read_timeout 300s
+			}
+		}
+	}
+	# Streamlit websocket — mantido na raiz p/ reload do legacy.
+	handle /_stcore/* {
+		reverse_proxy streamlit:8501
+	}
+
+	# Default: React SPA (nginx serve index.html + assets + try_files).
+	handle {
+		reverse_proxy web:8080
 	}
 
 	log {
