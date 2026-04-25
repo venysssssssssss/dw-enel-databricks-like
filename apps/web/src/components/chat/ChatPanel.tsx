@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { useRagStream, type RagMessage } from "../../hooks/useRagStream";
+import { useRagStream, type RagMessage, type RagStage } from "../../hooks/useRagStream";
 import { sendRagFeedback } from "../../lib/api";
 
 const SUGGESTIONS: Array<{ cat: string; q: string }> = [
@@ -168,9 +168,10 @@ function MessageView({ message, streaming, onFeedback }: MessageViewProps) {
             <div className="typing" aria-live="polite">
               <div className="typing-label">
                 <span className="pulse"></span>
-                Recuperando passagens · gerando resposta
+                Pipeline do agente em execução
                 <span className="caret"></span>
               </div>
+              <PipelineStages stages={message.stages} />
               <div className="shimmer"></div>
               <div className="shimmer s2"></div>
               <div className="shimmer s3"></div>
@@ -267,6 +268,20 @@ function MessageView({ message, streaming, onFeedback }: MessageViewProps) {
           ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+function PipelineStages({ stages }: { stages?: RagStage[] }) {
+  if (!stages || stages.length === 0) return null;
+  return (
+    <div className="agent-pipeline" aria-label="Pipeline do agente">
+      {stages.map((stage) => (
+        <div className={`agent-step ${stage.status}`} key={stage.key}>
+          <span className="agent-dot" aria-hidden="true"></span>
+          <span className="agent-label">{stage.label}</span>
+        </div>
+      ))}
     </div>
   );
 }
