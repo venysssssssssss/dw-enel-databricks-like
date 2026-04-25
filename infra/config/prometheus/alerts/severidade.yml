@@ -5,15 +5,14 @@ groups:
       - alert: SeveridadeCacheDegraded
         expr: |
           (
-            sum by (view_id) (rate(enel_cache_events_total{layer="memory",route="aggregation",result="miss"}[10m]))
+            sum by (view_id) (rate(enel_cache_events_total{view_id=~"sp_severidade_.*",layer="memory",route="aggregation",result="miss"}[10m]))
             /
             clamp_min(
-              sum by (view_id) (rate(enel_cache_events_total{layer="memory",route="aggregation"}[10m])),
+              sum by (view_id) (rate(enel_cache_events_total{view_id=~"sp_severidade_.*",layer="memory",route="aggregation"}[10m])),
               1
             )
           ) > 0.8
-          and on (view_id) (sum by (view_id) (rate(enel_cache_events_total{layer="memory",route="aggregation"}[10m])) > 0)
-          and on (view_id) (label_replace(vector(1), "view_id", "$1", "view_id", "(sp_severidade_.*)"))
+          and on (view_id) (sum by (view_id) (rate(enel_cache_events_total{view_id=~"sp_severidade_.*",layer="memory",route="aggregation"}[10m])) > 0)
         for: 10m
         labels:
           severity: warning
@@ -46,7 +45,8 @@ groups:
       - alert: SeveridadeNoTraffic
         expr: |
           sum by (view_id) (rate(enel_aggregation_latency_seconds_count{view_id=~"sp_severidade_.*"}[30m])) == 0
-          and on() (hour() >= 8 < 22)
+          and on() (hour() >= 8)
+          and on() (hour() < 22)
         for: 30m
         labels:
           severity: info

@@ -1,148 +1,108 @@
 import { expect, test, type Route } from "@playwright/test";
 
-const DATASET_HASH = "dataset-severidade-1234567890";
+const dataset = { hash: "dataset-sev-123", sources: ["silver.csv"], generated_at: "2026-01-01" };
 
-const OVERVIEW_PAYLOAD = {
-  total: 3502,
-  procedentes: 0,
-  improcedentes: 3502,
-  pct_procedentes: 0.0,
-  reincidentes_clientes: 49,
-  valor_medio_fatura: 759.15,
-  categorias_count: 5,
-  top3_share: 0.9817,
-  delta_trimestre: 0.3449
-};
-
-const MONTHLY_PAYLOAD = [
-  { mes_ingresso: "2025-07-01", qtd_erros: 337, procedentes: 0, improcedentes: 337 },
-  { mes_ingresso: "2025-08-01", qtd_erros: 412, procedentes: 0, improcedentes: 412 },
-  { mes_ingresso: "2025-09-01", qtd_erros: 488, procedentes: 0, improcedentes: 488 }
-];
-
-const CATEGORIAS_PAYLOAD = [
-  { categoria_id: "contestacao_cliente", categoria: "contestacao_cliente", vol: 2908, pct: 83.04 },
-  { categoria_id: "operacional", categoria: "operacional", vol: 401, pct: 11.45 }
-];
-
-const CAUSAS_PAYLOAD = [
-  { id: "c01", nome: "autoleitura_cliente", vol: 2908, proc: 0.0, reinc: 33, cat: "contestacao_cliente" },
-  { id: "c02", nome: "impedimento_acesso", vol: 401, proc: 0.0, reinc: 7, cat: "operacional" }
-];
-
-const RANKING_PAYLOAD = [
-  {
-    inst: "INS-A",
-    cat: "contestacao_cliente",
-    causa: "autoleitura_cliente",
-    reinc: 5,
-    valor: 1284.4,
-    spark: [0, 0, 0, 1, 1, 2, 2, 3, 5],
-    cidade: "São Paulo/SP"
-  },
-  {
-    inst: "INS-B",
-    cat: "operacional",
-    causa: "impedimento_acesso",
-    reinc: 3,
-    valor: 482.1,
-    spark: [0, 0, 0, 0, 0, 1, 1, 2, 3],
-    cidade: "Osasco/SP"
-  },
-  {
-    inst: "INS-C",
-    cat: "contestacao_cliente",
-    causa: "autoleitura_cliente",
-    reinc: 2,
-    valor: 612.5,
-    spark: [0, 0, 0, 0, 0, 0, 1, 1, 2],
-    cidade: "São Paulo/SP"
-  }
-];
-
-function aggregationFor(viewId: string) {
+function aggregationPayload(viewId: string) {
+  const common = { view_id: viewId, dataset_hash: dataset.hash, filters: {} };
   if (viewId.endsWith("_overview")) {
-    return [OVERVIEW_PAYLOAD];
+    const critical = viewId.includes("critica");
+    return {
+      ...common,
+      data: [
+        {
+          total: critical ? 1399 : 4223,
+          procedentes: critical ? 1171 : 2867,
+          improcedentes: critical ? 228 : 1356,
+          pct_procedentes: critical ? 0.837 : 0.679,
+          reincidentes_clientes: critical ? 298 : 624,
+          valor_medio_fatura: critical ? 2847.6 : 487.3,
+          categorias_count: critical ? 9 : 14,
+          top3_share: critical ? 0.622 : 0.553,
+          delta_trimestre: critical ? 0.118 : 0.072
+        }
+      ]
+    };
   }
   if (viewId.endsWith("_mensal")) {
-    return MONTHLY_PAYLOAD;
+    return {
+      ...common,
+      data: [
+        { mes_ingresso: "2026-01-01", qtd_erros: 310, procedentes: 180, improcedentes: 130 },
+        { mes_ingresso: "2026-02-01", qtd_erros: 420, procedentes: 260, improcedentes: 160 },
+        { mes_ingresso: "2026-03-01", qtd_erros: 510, procedentes: 310, improcedentes: 200 }
+      ]
+    };
   }
   if (viewId.endsWith("_categorias")) {
-    return CATEGORIAS_PAYLOAD;
+    return {
+      ...common,
+      data: [
+        { categoria_id: "faturamento", categoria: "Faturamento por estimativa", vol: 982, pct: 23.3 },
+        { categoria_id: "medidor", categoria: "Medidor com defeito", vol: 741, pct: 17.5 }
+      ]
+    };
   }
   if (viewId.endsWith("_causas")) {
-    return CAUSAS_PAYLOAD;
+    return {
+      ...common,
+      data: [
+        { id: "c01", nome: "Digitação", vol: 782, proc: 71.2, reinc: 148, cat: "operacional" },
+        { id: "c02", nome: "Estimativa prolongada", vol: 621, proc: 84.7, reinc: 132, cat: "estimativa" }
+      ]
+    };
   }
   if (viewId.endsWith("_ranking")) {
-    return RANKING_PAYLOAD;
+    return {
+      ...common,
+      data: [
+        { inst: "INS-4782901", cat: "Faturamento por estimativa", causa: "Estimativa prolongada", reinc: 9, valor: 1284.4, spark: [2, 3, 4, 4, 5, 5, 6, 7, 9], cidade: "SP/SP" },
+        { inst: "INS-3918205", cat: "Leitura divergente", causa: "Digitação", reinc: 8, valor: 987.12, spark: [1, 2, 3, 4, 4, 5, 6, 7, 8], cidade: "SP/SP" },
+        { inst: "INS-5620144", cat: "Consumo atípico", causa: "Sensor TC/TP", reinc: 7, valor: 2104.88, spark: [1, 1, 2, 3, 4, 5, 5, 6, 7], cidade: "SP/SP" }
+      ]
+    };
   }
-  return [];
+  return { ...common, data: [] };
 }
 
-async function fulfillAggregations(route: Route) {
-  const url = route.request().url();
-  const match = /aggregations\/([^/?#]+)/.exec(url);
-  const viewId = match ? match[1] : "unknown";
-  await route.fulfill({
-    json: {
-      view_id: viewId,
-      dataset_hash: DATASET_HASH,
-      filters: {},
-      data: aggregationFor(viewId)
-    }
-  });
+async function mockApi(route: Route) {
+  const url = new URL(route.request().url());
+  if (url.pathname === "/v1/dataset/version") {
+    await route.fulfill({ json: dataset });
+    return;
+  }
+  const match = url.pathname.match(/\/v1\/aggregations\/([^/]+)/);
+  if (match) {
+    await route.fulfill({ json: aggregationPayload(match[1]) });
+    return;
+  }
+  await route.continue();
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.route("**/v1/dataset/version", async (route) => {
-    await route.fulfill({
-      json: { hash: DATASET_HASH, sources: ["silver.csv"], generated_at: "2026-04-24" }
-    });
-  });
-  await page.route("**/v1/aggregations/**", fulfillAggregations);
+  await page.route("**/v1/**", mockApi);
 });
 
-test("severidade alta — KPI total renders with real number", async ({ page }) => {
+test("severity pages render, filter and navigate with keyboard shortcuts", async ({ page }) => {
   await page.goto("/bi/severidade-alta");
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await expect(page.getByText(/3\.502/)).toBeVisible();
-  await expect(page.getByText(/Total Alta/i)).toBeVisible();
-});
 
-test("severidade alta — categoria HBar toggles active state", async ({ page }) => {
-  await page.goto("/bi/severidade-alta");
-  const firstRow = page.locator(".sev-hbar-row").first();
-  await firstRow.waitFor();
-  await firstRow.click();
-  await expect(firstRow).toHaveClass(/is-active/);
-  await expect(page.getByRole("link", { name: /limpar filtro/i })).toBeVisible();
-});
+  await expect(page.getByText("ENEL Analytics")).toBeVisible();
+  await expect(page.getByText("Severidade /")).toBeVisible();
+  await expect(page.locator(".crumbs").getByText("Alta · SP")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Pressão operacional/ })).toBeVisible();
+  await expect(page.getByText("4.223").first()).toBeVisible();
 
-test("severidade alta — keyboard 3 navigates to crítica", async ({ page }) => {
-  await page.goto("/bi/severidade-alta");
-  await expect(page.getByText(/Alta · SP/i)).toBeVisible();
-  await page.locator('a[href="/bi/severidade-critica"]').click();
-  await expect(page.getByText(/Crítica · SP/i)).toBeVisible();
-});
+  const firstCategory = page.locator(".sev-hbar-row").first();
+  await firstCategory.click();
+  await expect(firstCategory).toHaveClass(/is-active/);
+  await expect(page.getByRole("link", { name: "limpar filtro" })).toBeVisible();
 
-test("severidade — ranking marks top-3 rows", async ({ page }) => {
-  await page.goto("/bi/severidade-alta");
-  const rows = page.locator(".sev-rank-table tr.rank-row");
-  await rows.first().waitFor();
-  await expect(rows.nth(0)).toHaveClass(/top-3/);
-  await expect(rows.nth(1)).toHaveClass(/top-3/);
-  await expect(rows.nth(2)).toHaveClass(/top-3/);
-});
+  await page.locator(".sev-bar").first().hover();
+  await expect(page.locator(".sev-tt.is-on")).toContainText("reclamações no mês");
 
-test("severidade — scatter renders all causas", async ({ page }) => {
-  await page.goto("/bi/severidade-alta");
-  const circles = page.locator(".sev-scatter circle");
-  await circles.first().waitFor();
-  await expect(circles).toHaveCount(CAUSAS_PAYLOAD.length);
-});
+  await expect(page.locator("tr.top-3")).toHaveCount(3);
 
-test("severidade crítica — hero shows correct breadcrumb tag", async ({ page }) => {
-  await page.goto("/bi/severidade-critica");
-  await expect(page.getByText(/Crítica · SP/i)).toBeVisible();
-  await expect(page.getByRole("heading", { level: 1 })).toContainText(/impacto financeiro/i);
+  await page.keyboard.press("3");
+  await expect(page).toHaveURL(/\/bi\/severidade-critica$/);
+  await expect(page.locator(".crumbs").getByText("Crítica · SP")).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Baixo volume/ })).toBeVisible();
 });

@@ -128,7 +128,11 @@ def test_causas_returns_scatter_payload_columns() -> None:
     df = _frame(
         [
             _row(ordem="a", causa_canonica="autoleitura_cliente"),
-            _row(ordem="b", causa_canonica="autoleitura_cliente", flag_resolvido_com_refaturamento=True),
+            _row(
+                ordem="b",
+                causa_canonica="autoleitura_cliente",
+                flag_resolvido_com_refaturamento=True,
+            ),
             _row(ordem="c", causa_canonica="impedimento_acesso"),
         ]
     )

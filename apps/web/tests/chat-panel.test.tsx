@@ -41,7 +41,8 @@ describe("ChatPanel", () => {
   it("renders the empty assistant prompt", () => {
     render(<ChatPanel datasetHash="dataset-123" />);
 
-    expect(screen.getByText(/Pergunte sobre KPIs/)).toBeInTheDocument();
+    expect(screen.getByText("Como funciona")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Pergunte sobre regras/)).toBeInTheDocument();
   });
 
   it("sends feedback from visible assistant buttons", async () => {

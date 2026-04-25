@@ -29,6 +29,7 @@ test("web shell renders operational navigation", async ({ page }) => {
   await page.goto("/chat");
 
   await expect(page.getByText("ENEL Analytics")).toBeVisible();
-  await expect(page.getByRole("link", { name: "MIS" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Chat conectado/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /MIS Executivo/ })).toBeVisible();
+  await expect(page.getByLabel("Assistente ENEL")).toBeVisible();
+  await expect(page.getByText("Como funciona")).toBeVisible();
 });

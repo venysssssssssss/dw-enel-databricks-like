@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, HTTPException, Response
@@ -16,12 +17,12 @@ router = APIRouter()
 _AGGREGATION_CACHE = MemoryResponseCache(ttl_seconds=300)
 
 try:  # pragma: no cover - exercised through /metrics in deployed API.
-    from prometheus_client import Counter, Histogram
+    from prometheus_client import Counter, Gauge, Histogram
 
     CACHE_EVENTS = Counter(
         "enel_cache_events_total",
-        "Cache hits/misses by layer and route.",
-        ("layer", "route", "result"),
+        "Cache hits/misses by layer, route and aggregation view.",
+        ("layer", "route", "result", "view_id"),
     )
     AGGREGATION_LATENCY = Histogram(
         "enel_aggregation_latency_seconds",
@@ -33,10 +34,16 @@ try:  # pragma: no cover - exercised through /metrics in deployed API.
         "Frontend web-vitals reported by the React SPA.",
         ("name", "rating"),
     )
+    SEVERITY_SP_TOTAL = Gauge(
+        "enel_severity_sp_total",
+        "Latest SP severity total complaints exposed by overview aggregations.",
+        ("severity",),
+    )
 except Exception:  # pragma: no cover - prometheus optional in lean installs.
     CACHE_EVENTS = None
     AGGREGATION_LATENCY = None
     WEB_VITALS = None
+    SEVERITY_SP_TOTAL = None
 
 
 @router.get("/dataset/version")
@@ -51,6 +58,7 @@ def aggregation(
     filters: str | None = None,
     if_none_match: Annotated[str | None, Header(alias="If-None-Match")] = None,
 ) -> Response:
+    started = time.perf_counter()
     store = DataStore()
     parsed_filters = _parse_filters(filters)
     version = store.version()
@@ -59,12 +67,14 @@ def aggregation(
     response.headers["ETag"] = etag
     response.headers["Cache-Control"] = "max-age=60, stale-while-revalidate=300"
     if if_none_match == etag:
-        _observe_cache("http", "aggregation", "not_modified")
+        _observe_cache("http", "aggregation", "not_modified", view_id)
+        _observe_latency(view_id, "not_modified", started)
         response.status_code = 304
         return response
     cached = _AGGREGATION_CACHE.get(cache_id)
     if cached is not None:
-        _observe_cache("memory", "aggregation", "hit")
+        _observe_cache("memory", "aggregation", "hit", view_id)
+        _observe_latency(view_id, "hit", started)
         return Response(
             content=cached,
             media_type="application/json",
@@ -74,11 +84,13 @@ def aggregation(
                 "X-Cache": "HIT",
             },
         )
-    _observe_cache("memory", "aggregation", "miss")
+    _observe_cache("memory", "aggregation", "miss", view_id)
     try:
         records = store.aggregate_records(view_id, parsed_filters)
     except KeyError as exc:
+        _observe_latency(view_id, "error", started)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    _observe_severity_total(view_id, records)
     payload = json.dumps(
         {
             "view_id": view_id,
@@ -91,6 +103,7 @@ def aggregation(
         separators=(",", ":"),
     ).encode("utf-8")
     _AGGREGATION_CACHE.set(cache_id, payload)
+    _observe_latency(view_id, "miss", started)
     return Response(
         content=payload,
         media_type="application/json",
@@ -152,9 +165,32 @@ def _pad_base64(value: str) -> bytes:
     return (value + "=" * (-len(value) % 4)).encode("ascii")
 
 
-def _observe_cache(layer: str, route: str, result: str) -> None:
+def _observe_cache(layer: str, route: str, result: str, view_id: str = "all") -> None:
     if CACHE_EVENTS is not None:
-        CACHE_EVENTS.labels(layer=layer, route=route, result=result).inc()
+        CACHE_EVENTS.labels(layer=layer, route=route, result=result, view_id=view_id).inc()
+
+
+def _observe_latency(view_id: str, cache_result: str, started: float) -> None:
+    if AGGREGATION_LATENCY is not None:
+        AGGREGATION_LATENCY.labels(view_id=view_id, cache_result=cache_result).observe(
+            time.perf_counter() - started
+        )
+
+
+def _observe_severity_total(view_id: str, records: list[dict[str, Any]]) -> None:
+    if SEVERITY_SP_TOTAL is None or not records:
+        return
+    severity = {
+        "sp_severidade_alta_overview": "alta",
+        "sp_severidade_critica_overview": "critica",
+    }.get(view_id)
+    if severity is None:
+        return
+    try:
+        total = float(records[0].get("total", 0))
+    except (TypeError, ValueError):
+        total = 0.0
+    SEVERITY_SP_TOTAL.labels(severity=severity).set(total)
 
 
 def _float_or_zero(value: Any) -> float:

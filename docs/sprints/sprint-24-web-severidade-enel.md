@@ -4,7 +4,7 @@
 **Modo esperado**: reasoning `high` para arquitetura, `medium` para implementação
 **Período sugerido**: 2 semanas (9 dias úteis com buffer)
 **Precedência**: Sprint 23 (migração Streamlit → React), Sprint 17 (RAG · taxonomy v2), Sprint 21 (MIS Executivo)
-**Status alvo**: `IN_PROGRESS`
+**Status**: `DONE`
 **Estratégia de cutover**: incremental atrás da feature flag `severidade_v1`, coexistindo com a navegação do Sprint 23 até o aceite final do PO
 
 ---
@@ -348,7 +348,7 @@ A sprint é aceita quando, **simultaneamente**:
 
 ---
 
-## 12. Release notes (preencher no fechamento)
+## 12. Release notes
 
 ```text
 - Adicionadas rotas /bi/severidade-alta e /bi/severidade-critica.
@@ -356,6 +356,10 @@ A sprint é aceita quando, **simultaneamente**:
 - Front: SeverityCharts.tsx (SVG nativo) + bi.severidade.tsx.
 - CSS: bloco Severidade screens com tokens --sev-* via [data-sev].
 - Sidebar/topbar: nav section "Severidade" + crumb tag.
+- Cutover: feature flag VITE_FEATURE_SEVERIDADE_V1 com default ligado.
+- Navegação: atalhos globais 2/3 para Alta/Crítica, ignorando campos editáveis.
+- Observabilidade: cache events por view_id, latência por cache_result e gauge enel_severity_sp_total.
+- Grafana/Prometheus: dashboard e alertas dedicados em infra/config.
 - Limitação conhecida: pct_procedentes=0 até silver SP popular flag_resolvido_com_refaturamento.
 - Cobertura: pytest (handlers) + Playwright (rotas + cross-filter).
 ```

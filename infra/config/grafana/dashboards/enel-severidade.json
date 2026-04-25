@@ -37,7 +37,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(enel_aggregation_latency_seconds_count{view_id=\"sp_severidade_alta_overview\"}[24h]))",
+          "expr": "sum(enel_severity_sp_total)",
           "refId": "A"
         }
       ]

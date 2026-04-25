@@ -162,7 +162,13 @@ Diagnóstico:
 ```bash
 curl -s http://api/metrics | grep enel_cache_events_total
 ```
-Se `result="hit"` ≈ 0 e `result="miss"` crescente, cache nunca está aquecendo.
+Se `result="hit"` ≈ 0 e `result="miss"` crescente para o mesmo `view_id="sp_severidade_*"`, cache nunca está aquecendo.
+
+Métricas úteis:
+```promql
+sum by (view_id, result) (increase(enel_cache_events_total{view_id=~"sp_severidade_.*"}[10m]))
+sum(enel_severity_sp_total)
+```
 
 ### Alerta `SeveridadeLatencyP95High`
 
@@ -185,3 +191,13 @@ Se 100% `False`, é dívida da ingestão (Sprint 5/6) — não é regressão da 
 2. `curl /v1/aggregations/sp_severidade_alta_overview` retorna 200 com `data: [{...}]`.
 3. Inspecionar console do navegador: `dataset_hash` na chave do React Query precisa estar populado.
 4. Se backend OK mas UI vazia: verificar que o build mais recente foi servido (sem cache antigo do nginx).
+
+### Desativar feature Severidade V1 temporariamente
+
+Se a navegação de severidade precisar sair do ar sem rollback do build:
+
+```bash
+VITE_FEATURE_SEVERIDADE_V1=false pnpm --dir apps/web build
+```
+
+Esse flag remove as rotas `/bi/severidade-alta` e `/bi/severidade-critica` do router e oculta os links da sidebar no build resultante.

@@ -13,6 +13,7 @@ Reference for the unified data plane that powers the React BI surfaces.
   }
   ```
 - **Caching**: `ETag` + `Cache-Control: max-age=60, stale-while-revalidate=300`. Server-side memory cache TTL = 300 s, keyed by `(view_id, dataset_hash, filters)`.
+- **Observability**: cache events include labels `layer`, `route`, `result`, `view_id`; aggregation latency includes `view_id` and `cache_result`.
 - **Filtering**: query string `?filters=<base64url(json)>`. Whitelisted keys: `regiao`, `tipo_origem`, `causa_canonica`, `topic_name`, `status`, `assunto`, `start_date`, `end_date`.
 - **Versioning**: clients must call `/v1/dataset/version` first, then forward `dataset_hash` to all downstream calls (used to short-circuit cache).
 
@@ -126,6 +127,8 @@ Rules of thumb:
 | Payload size compressed | ≤ 64 KB |
 
 Latency and cache events are exported as Prometheus histograms. Dashboards live under `infra/config/grafana/dashboards/`. Alerts under `infra/config/prometheus/alerts/`.
+
+Sprint 24 also exports `enel_severity_sp_total{severity=...}` from the overview views so Grafana can show the current Alta + Crítica volume without parsing JSON payloads.
 
 ## Adding a new view — checklist
 

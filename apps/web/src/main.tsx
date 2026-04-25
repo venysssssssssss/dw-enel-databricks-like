@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createRoute, createRootRoute, createRouter, Outlet } from "@tanstack/react-router";
 import { reportWebVitals } from "./lib/web-vitals";
 import { Shell } from "./components/shared/Shell";
+import { features } from "./lib/features";
 import "./styles.css";
 
 const ChatRoute = lazy(() => import("./app/routes/chat").then((module) => ({ default: module.ChatRoute })));
@@ -189,8 +190,7 @@ const routeTree = rootRoute.addChildren([
   ceTotaisRoute,
   governanceRoute,
   educationalRoute,
-  severidadeAltaRoute,
-  severidadeCriticaRoute
+  ...(features.severidadeV1 ? [severidadeAltaRoute, severidadeCriticaRoute] : [])
 ]);
 
 const router = createRouter({ routeTree });

@@ -1,5 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { FilterPanel } from "./FilterPanel";
+import { features } from "../../lib/features";
 
 type Section = "assistente" | "severidade" | "bi" | "governo";
 type NavItem = {
@@ -26,6 +27,9 @@ const NAV: NavItem[] = [
 
 export function Sidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const nav = features.severidadeV1
+    ? NAV
+    : NAV.filter((item) => item.to !== "/bi/severidade-alta" && item.to !== "/bi/severidade-critica");
   return (
     <aside className="sidebar" aria-label="Navegação principal">
       <div className="sb-brand">
@@ -40,23 +44,23 @@ export function Sidebar() {
 
       <SidebarSection title="Assistente" badge="RAG">
         <nav className="nav">
-          {NAV.filter((n) => n.section === "assistente").map((item) => (
+          {nav.filter((n) => n.section === "assistente").map((item) => (
             <NavLink key={item.to} item={item} active={pathname === item.to} />
           ))}
         </nav>
       </SidebarSection>
 
-      <SidebarSection title="Severidade" badge={String(NAV.filter((n) => n.section === "severidade").length)}>
+      <SidebarSection title="Severidade" badge={String(nav.filter((n) => n.section === "severidade").length)}>
         <nav className="nav">
-          {NAV.filter((n) => n.section === "severidade").map((item) => (
+          {nav.filter((n) => n.section === "severidade").map((item) => (
             <NavLink key={item.to} item={item} active={pathname === item.to} />
           ))}
         </nav>
       </SidebarSection>
 
-      <SidebarSection title="BI / MIS" badge={String(NAV.filter((n) => n.section === "bi").length)}>
+      <SidebarSection title="BI / MIS" badge={String(nav.filter((n) => n.section === "bi").length)}>
         <nav className="nav">
-          {NAV.filter((n) => n.section === "bi").map((item) => (
+          {nav.filter((n) => n.section === "bi").map((item) => (
             <NavLink key={item.to} item={item} active={pathname === item.to} />
           ))}
         </nav>
@@ -64,7 +68,7 @@ export function Sidebar() {
 
       <SidebarSection title="Governo" badge="2">
         <nav className="nav">
-          {NAV.filter((n) => n.section === "governo").map((item) => (
+          {nav.filter((n) => n.section === "governo").map((item) => (
             <NavLink key={item.to} item={item} active={pathname === item.to} />
           ))}
         </nav>

@@ -88,6 +88,14 @@ Pré-commit hooks (ruff, mypy) são instalados automaticamente pelo target `setu
 4. PR descreve: mudança, motivação, testes executados, impacto operacional.
 5. Sprints novas exigem doc em `docs/sprints/sprint-XX-*.md`.
 
+## Feature flags Web
+
+Features da camada React usam flags Vite com default conservador definido em `apps/web/src/lib/features.ts`.
+
+- `VITE_FEATURE_SEVERIDADE_V1=false` remove as rotas de Severidade Alta/Crítica do router e da sidebar.
+- Ausência da variável mantém a feature ligada em desenvolvimento, staging e demo local.
+- Não usar flags para mascarar contrato quebrado: se a API da feature existe, ela precisa ter testes e documentação.
+
 ## Convenções de arquitetura
 
 - **Medallion estrito**: Bronze (raw + metadata) → Silver (normalizado, dedup) → Gold (dbt, dimensional).
