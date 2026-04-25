@@ -16,7 +16,7 @@ import re
 import time
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 from src.common.llm_gateway import build_provider
 from src.rag.answer_cache import CachedAnswer, resolve_known_answer
@@ -934,6 +934,34 @@ class RagOrchestrator:
             history=history,
             history_summary=history_summary,
         )
+        direct_text = self._direct_answer_from_data(
+            check.sanitized,
+            passages=passages,
+            intent=intent,
+        )
+        if direct_text is not None:
+            self._record(
+                question=check.sanitized,
+                intent=intent,
+                passages=passages,
+                prompt_tokens=0,
+                completion_tokens=len(direct_text) // 4,
+                first_token_ms=timer.first_token_ms or timer.total_ms(),
+                total_ms=timer.total_ms(),
+                region_detected=region,
+                out_of_regional_scope=False,
+                golden_case_id=golden_case_id,
+            )
+            return RagResponse(
+                text=direct_text,
+                passages=passages,
+                intent=intent,
+                prompt_tokens=0,
+                completion_tokens=len(direct_text) // 4,
+                latency_ms=timer.total_ms(),
+                region_detected=region,
+                question_hash=q_hash,
+            )
         messages = build_messages(
             question=check.sanitized,
             passages=passages,
@@ -1027,6 +1055,7 @@ class RagOrchestrator:
             yield RagStreamEvent("token", {"text": text})
             yield self._done_event(q_hash, timer, cache_hit=False)
             return
+        yield RagStreamEvent("stage", {"key": "validate", "status": "done"})
 
         if is_out_of_regional_scope(check.sanitized):
             yield RagStreamEvent("token", {"text": OUT_OF_REGIONAL_SCOPE_MESSAGE})
@@ -1054,6 +1083,14 @@ class RagOrchestrator:
 
         intent = classify_intent(check.sanitized)
         region = detect_regional_scope(check.sanitized)
+        yield RagStreamEvent(
+            "stage",
+            {
+                "key": "route",
+                "status": "done",
+                "label": f"Rota: {intent} · {region or 'CE+SP'}",
+            },
+        )
         profile_detail = is_profile_detail_query(check.sanitized)
         if profile_detail and region in {"CE", "CE+SP"}:
             yield RagStreamEvent("token", {"text": SP_PROFILE_SCOPE_MESSAGE})
@@ -1071,6 +1108,10 @@ class RagOrchestrator:
             dataset_version=dataset_version,
         )
         if cached is not None:
+            yield RagStreamEvent(
+                "stage",
+                {"key": "cache", "status": "done", "label": "Resposta cacheada"},
+            )
             yield RagStreamEvent("token", {"text": cached.text})
             total_ms = timer.total_ms()
             self._record(
@@ -1097,17 +1138,51 @@ class RagOrchestrator:
                 timer,
                 cache_hit=True,
                 seed_id=cached.seed_id,
+                intent=cached.intent,
+                passages=cached.passages,
             )
             return
+
+        captured: dict[str, Any] = {"intent": intent, "passages": []}
+        yield RagStreamEvent(
+            "stage",
+            {
+                "key": "retrieve",
+                "status": "active",
+                "label": "Consultando silver, data cards e documentos",
+            },
+        )
+
+        def capture_passages(passages: list[Passage], resolved_intent: str) -> None:
+            captured["intent"] = resolved_intent
+            captured["passages"] = passages
 
         for token in self.stream_answer(
             check.sanitized,
             history=history,
             context_hint=context_hint,
             dataset_version=dataset_version,
+            on_passages=capture_passages,
         ):
+            if not captured.get("first_token"):
+                captured["first_token"] = True
+                yield RagStreamEvent(
+                    "stage",
+                    {
+                        "key": "generate",
+                        "status": "active",
+                        "label": "Gerando resposta baseada nas fontes",
+                    },
+                )
             yield RagStreamEvent("token", {"text": token})
-        yield self._done_event(q_hash, timer, cache_hit=False)
+        yield RagStreamEvent("stage", {"key": "generate", "status": "done"})
+        yield self._done_event(
+            q_hash,
+            timer,
+            cache_hit=False,
+            intent=str(captured.get("intent") or intent),
+            passages=list(captured.get("passages") or []),
+        )
 
     def stream_answer(
         self,
@@ -1116,6 +1191,7 @@ class RagOrchestrator:
         history: list[dict[str, str]] | None = None,
         context_hint: str | None = None,
         dataset_version: str | None = None,
+        on_passages: Callable[[list[Passage], str], None] | None = None,
     ) -> Iterator[str]:
         """Versão streaming: emite chunks de texto conforme chegam.
 
@@ -1174,6 +1250,29 @@ class RagOrchestrator:
             history=history,
             history_summary=history_summary,
         )
+        if on_passages is not None:
+            on_passages(passages, intent)
+        direct_text = self._direct_answer_from_data(
+            check.sanitized,
+            passages=passages,
+            intent=intent,
+        )
+        if direct_text is not None:
+            timer.mark_first_token()
+            yield direct_text
+            self._record(
+                question=check.sanitized,
+                intent=intent,
+                passages=passages,
+                prompt_tokens=0,
+                completion_tokens=len(direct_text) // 4,
+                first_token_ms=timer.first_token_ms,
+                total_ms=timer.total_ms(),
+                region_detected=region,
+                out_of_regional_scope=False,
+                golden_case_id=None,
+            )
+            return
         messages = build_messages(
             question=check.sanitized,
             passages=passages,
@@ -1290,7 +1389,10 @@ class RagOrchestrator:
         *,
         cache_hit: bool,
         seed_id: str | None = None,
+        intent: str | None = None,
+        passages: list[Passage] | None = None,
     ) -> RagStreamEvent:
+        passages = passages or []
         return RagStreamEvent(
             "done",
             {
@@ -1299,6 +1401,9 @@ class RagOrchestrator:
                 "cache_hit": cache_hit,
                 "cache_seed_id": seed_id,
                 "latency_ms": timer.total_ms(),
+                "intent": intent,
+                "sources": _source_payload(passages),
+                "sources_count": len(passages),
             },
         )
 
@@ -1319,8 +1424,6 @@ class RagOrchestrator:
             "doc_types": doc_types,
             "region": region,
         }
-        if dataset_version:
-            kwargs["dataset_version"] = dataset_version
         semantic = self.retriever.top_passages(query, **kwargs)
         # Query decomposition: quando a pergunta tem duas etapas (entidade + métrica),
         # roda recuperações auxiliares para reforçar cards de drill-down.
@@ -1338,9 +1441,20 @@ class RagOrchestrator:
         # quando a intenção da query é claramente identificável por keyword.
         forced_anchors = detect_card_boosts(query, region=region)
         if forced_anchors:
-            forced = self.retriever.get_by_anchors(
+            forced = (
+                self._live_data_passages(
+                    forced_anchors,
+                    dataset_version=dataset_version,
+                    region=region,
+                )
+                if isinstance(self.retriever, HybridRetriever)
+                else []
+            )
+            indexed_forced = self.retriever.get_by_anchors(
                 forced_anchors, dataset_version=dataset_version
             )
+            live_anchors = {p.anchor for p in forced}
+            forced.extend(p for p in indexed_forced if p.anchor not in live_anchors)
             # Filtra por região compatível quando especificada
             if region in {"CE", "SP"}:
                 forced = [
@@ -1359,6 +1473,48 @@ class RagOrchestrator:
                     seen.add(p.chunk_id)
             return merged[:top_n]
         return semantic[:top_n]
+
+    @staticmethod
+    def _live_data_passages(
+        anchors: list[str],
+        *,
+        dataset_version: str | None,
+        region: Literal["CE", "SP", "CE+SP"] | None,
+    ) -> list[Passage]:
+        if not anchors:
+            return []
+        try:
+            from src.data_plane import DataStore
+
+            store = DataStore()
+            chunks = store.cards(regional_scope=region or "CE+SP")
+        except Exception:
+            return []
+        wanted = set(anchors)
+        ordered = {anchor: index for index, anchor in enumerate(anchors)}
+        passages: list[Passage] = []
+        for chunk in chunks:
+            if chunk.anchor not in wanted:
+                continue
+            score = 1.25 - (ordered.get(chunk.anchor, 0) * 0.01)
+            passages.append(
+                Passage(
+                    chunk_id=f"live::{chunk.chunk_id}",
+                    text=chunk.text,
+                    source_path=chunk.source_path,
+                    section=chunk.section,
+                    doc_type=chunk.doc_type,
+                    sprint_id=chunk.sprint_id,
+                    anchor=chunk.anchor,
+                    score=score,
+                    dataset_version=dataset_version or chunk.dataset_version,
+                    region=chunk.region,
+                    scope=chunk.scope,
+                    data_source=chunk.data_source,
+                )
+            )
+        passages.sort(key=lambda passage: ordered.get(passage.anchor, 10**9))
+        return passages
 
     @staticmethod
     def _merge_semantic_passages(
@@ -1481,6 +1637,39 @@ class RagOrchestrator:
         if second.startswith("**") or second.startswith("-"):
             return f"{blocks[0]}\n\n{second}"
         return blocks[0]
+
+    def _direct_answer_from_data(
+        self,
+        query: str,
+        *,
+        passages: list[Passage],
+        intent: str,
+    ) -> str | None:
+        if intent not in ANALYTICAL_INTENTS:
+            return None
+        live_data = [
+            passage
+            for passage in passages
+            if passage.doc_type == "data"
+            and passage.data_source == "silver.erro_leitura_normalizado"
+            and passage.chunk_id.startswith("live::")
+        ]
+        if not live_data:
+            return None
+        source = self._best_drilldown_passage(live_data)
+        if source is None:
+            return None
+        summary = self._short_answer_from_passage(source)
+        citation = source.citation()
+        if citation.lower() not in summary.lower():
+            summary = f"{summary}\n\n{citation}"
+        if "data-quality-notes" not in source.anchor and source.region == "SP":
+            caveat = (
+                "Nota de qualidade: SP está no universo N1 de erro de leitura; "
+                "refaturamento resolvido pode estar subnotificado."
+            )
+            summary = f"{summary}\n\n{caveat}"
+        return summary.strip()
 
     def _answer_budget(
         self,
@@ -1645,3 +1834,23 @@ def format_citations(passages: list[Any]) -> str:
         anchor = f"#{p.anchor}" if p.anchor else ""
         lines.append(f"- [fonte: {p.source_path}{anchor}]")
     return "\n".join(lines)
+
+
+def _source_payload(passages: list[Passage]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for passage in passages:
+        key = f"{passage.source_path}#{passage.anchor}"
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(
+            {
+                "doc_id": passage.chunk_id,
+                "path": passage.source_path,
+                "section": passage.section,
+                "score": round(float(passage.score), 4),
+                "anchor": passage.anchor,
+            }
+        )
+    return out
