@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { streamRagAnswer } from "../lib/sse";
+import { streamRagAnswer, type RagRuntimePayload } from "../lib/sse";
 
 export type RagStage = {
   key: string;
@@ -21,6 +21,12 @@ export type RagMeta = {
   latency_ms?: number;
   first_token_ms?: number;
   sources_count?: number;
+  provider?: string;
+  model?: string;
+  n_threads?: number | null;
+  retrieval_k?: number | null;
+  rerank_top_n?: number | null;
+  regional_scope?: string | null;
 };
 
 export type RagMessage = {
@@ -40,6 +46,7 @@ export type RagMessage = {
 export function useRagStream(datasetHash: string, contextHint?: string) {
   const [messages, setMessages] = useState<RagMessage[]>([]);
   const [status, setStatus] = useState<"idle" | "streaming" | "done" | "error">("idle");
+  const [runtime, setRuntime] = useState<RagRuntimePayload | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const messagesRef = useRef<RagMessage[]>([]);
 
@@ -71,7 +78,8 @@ export function useRagStream(datasetHash: string, contextHint?: string) {
           role: "assistant",
           content: "",
           createdAt: startedAt,
-          stages: initialStages()
+          stages: initialStages(),
+          meta: runtime ? runtimeMeta(runtime) : undefined
         }
       ]);
       await streamRagAnswer(
@@ -89,6 +97,22 @@ export function useRagStream(datasetHash: string, contextHint?: string) {
               };
               return copy;
             });
+          },
+          onRuntime(payload) {
+            setRuntime(payload);
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === assistantId
+                  ? {
+                      ...message,
+                      meta: {
+                        ...message.meta,
+                        ...runtimeMeta(payload)
+                      }
+                    }
+                  : message
+              )
+            );
           },
           onStage(payload) {
             if (!payload.key) return;
@@ -122,13 +146,15 @@ export function useRagStream(datasetHash: string, contextHint?: string) {
                       cacheHit: Boolean(payload.cache_hit),
                       sources: payload.sources ?? [],
                       meta: {
+                        ...message.meta,
                         intent: payload.intent,
                         tokens: payload.tokens,
                         latency_ms: payload.latency_ms,
                         first_token_ms: message.firstTokenAt
                           ? message.firstTokenAt - startedAt
                           : undefined,
-                        sources_count: payload.sources?.length
+                        sources_count: payload.sources?.length,
+                        ...runtimeMeta(payload)
                       }
                     }
                   : message
@@ -150,7 +176,7 @@ export function useRagStream(datasetHash: string, contextHint?: string) {
         contextHint
       );
     },
-    [datasetHash, contextHint]
+    [datasetHash, contextHint, runtime]
   );
 
   const markFeedbackSent = useCallback((messageId: string) => {
@@ -161,7 +187,18 @@ export function useRagStream(datasetHash: string, contextHint?: string) {
     );
   }, []);
 
-  return { messages, status, ask, markFeedbackSent };
+  return { messages, status, ask, markFeedbackSent, runtime };
+}
+
+function runtimeMeta(payload: RagRuntimePayload): RagMeta {
+  return {
+    provider: payload.provider,
+    model: payload.model,
+    n_threads: payload.n_threads,
+    retrieval_k: payload.retrieval_k,
+    rerank_top_n: payload.rerank_top_n,
+    regional_scope: payload.regional_scope
+  };
 }
 
 function makeMessageId(prefix: string): string {

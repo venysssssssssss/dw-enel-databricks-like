@@ -160,10 +160,15 @@ function MessageView({ message, streaming, onFeedback }: MessageViewProps) {
           {message.meta?.intent ? (
             <span className="badge">intent · {message.meta.intent}</span>
           ) : null}
+          {message.meta?.model ? <span className="badge">modelo · {message.meta.model}</span> : null}
           {message.cacheHit ? <span className="badge">cache</span> : null}
           <span className="time">{time}</span>
         </div>
         <div className="msg-text">
+          {!isUser && message.meta?.model ? (
+            <RuntimePanel meta={message.meta} streaming={streaming} />
+          ) : null}
+
           {streaming && !message.content ? (
             <div className="typing" aria-live="polite">
               <div className="typing-label">
@@ -230,6 +235,12 @@ function MessageView({ message, streaming, onFeedback }: MessageViewProps) {
                   <span className="v">{message.meta.sources_count}</span>
                 </span>
               ) : null}
+              {message.meta.provider ? (
+                <span className="pill">
+                  <span className="k">runtime</span>
+                  <span className="v">{message.meta.provider}</span>
+                </span>
+              ) : null}
             </div>
           ) : null}
 
@@ -272,16 +283,113 @@ function MessageView({ message, streaming, onFeedback }: MessageViewProps) {
   );
 }
 
-function PipelineStages({ stages }: { stages?: RagStage[] }) {
-  if (!stages || stages.length === 0) return null;
+function RuntimePanel({
+  meta,
+  streaming
+}: {
+  meta: NonNullable<RagMessage["meta"]>;
+  streaming: boolean;
+}) {
+  const items = [
+    { key: "Provider", value: meta.provider ?? "local" },
+    { key: "Modelo", value: meta.model ?? "desconhecido" },
+    {
+      key: "Threads",
+      value: typeof meta.n_threads === "number" ? String(meta.n_threads) : "auto"
+    },
+    {
+      key: "Retrieval",
+      value:
+        typeof meta.retrieval_k === "number" && typeof meta.rerank_top_n === "number"
+          ? `k${meta.retrieval_k} / top${meta.rerank_top_n}`
+          : "cards"
+    },
+    { key: "Escopo", value: meta.regional_scope ?? "CE+SP" }
+  ];
+
   return (
-    <div className="agent-pipeline" aria-label="Pipeline do agente">
-      {stages.map((stage) => (
-        <div className={`agent-step ${stage.status}`} key={stage.key}>
-          <span className="agent-dot" aria-hidden="true"></span>
-          <span className="agent-label">{stage.label}</span>
-        </div>
+    <div className={`runtime-panel ${streaming ? "is-live" : ""}`} aria-label="Runtime RAG">
+      {items.map((item) => (
+        <span className="runtime-item" key={item.key}>
+          <span className="runtime-key">{item.key}</span>
+          <span className="runtime-value">{item.value}</span>
+        </span>
       ))}
+    </div>
+  );
+}
+
+const STAGE_HINT: Record<string, string> = {
+  validate: "guardrails + classificação de intent",
+  route: "decisão CE/SP + filtro de escopo",
+  retrieve: "vetor + reranker + cards",
+  generate: "geração com citações"
+};
+
+function PipelineStages({ stages }: { stages?: RagStage[] }) {
+  const [now, setNow] = useState(() => Date.now());
+  const startedRef = useRef<number>(Date.now());
+  useEffect(() => {
+    if (!stages || stages.length === 0) return;
+    const id = window.setInterval(() => setNow(Date.now()), 120);
+    return () => window.clearInterval(id);
+  }, [stages]);
+
+  if (!stages || stages.length === 0) return null;
+
+  const total = stages.length;
+  const doneCount = stages.filter((s) => s.status === "done").length;
+  const activeCount = stages.filter((s) => s.status === "active").length;
+  const progressed = Math.min(1, (doneCount + activeCount * 0.45) / total);
+  const elapsed = ((now - startedRef.current) / 1000).toFixed(1);
+
+  return (
+    <div className="agent-pipeline" aria-label="Pipeline do agente" role="list">
+      <div className="agent-pipeline-head">
+        <div className="agent-pipeline-title">
+          <span className="agent-pipeline-tag">PIPELINE</span>
+          <span className="agent-pipeline-stat">
+            {doneCount}/{total} estágios
+          </span>
+        </div>
+        <div className="agent-pipeline-clock" aria-live="polite">
+          <span className="ms-dot" aria-hidden />
+          {elapsed}s
+        </div>
+      </div>
+      <div className="agent-pipeline-progress" aria-hidden>
+        <span style={{ width: `${progressed * 100}%` }} />
+      </div>
+      <ol className="agent-pipeline-list">
+        {stages.map((stage, idx) => {
+          const hint = STAGE_HINT[stage.key];
+          const last = idx === stages.length - 1;
+          return (
+            <li className={`agent-step ${stage.status}`} key={stage.key} role="listitem">
+              <span className="agent-step-rail" aria-hidden />
+              <span className="agent-step-marker" aria-hidden>
+                {stage.status === "done" ? "✓" : String(idx + 1).padStart(2, "0")}
+              </span>
+              <span className="agent-step-body">
+                <span className="agent-label">{stage.label}</span>
+                {hint ? <span className="agent-step-hint">{hint}</span> : null}
+              </span>
+              <span className="agent-step-state">
+                {stage.status === "active" ? (
+                  <span className="agent-state-active">processando…</span>
+                ) : stage.status === "done" ? (
+                  <span className="agent-state-done">ok</span>
+                ) : stage.status === "error" ? (
+                  <span className="agent-state-err">falha</span>
+                ) : (
+                  <span className="agent-state-pending">aguardando</span>
+                )}
+              </span>
+              {last ? null : <span className="agent-step-connector" aria-hidden />}
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }

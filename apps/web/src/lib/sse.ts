@@ -5,6 +5,16 @@ export type RagEventHandlers = {
   onDone: (payload: RagDonePayload) => void;
   onError: (message: string) => void;
   onStage?: (payload: RagStagePayload) => void;
+  onRuntime?: (payload: RagRuntimePayload) => void;
+};
+
+export type RagRuntimePayload = {
+  provider?: string;
+  model?: string;
+  n_threads?: number | null;
+  retrieval_k?: number | null;
+  rerank_top_n?: number | null;
+  regional_scope?: string | null;
 };
 
 export type RagDonePayload = {
@@ -15,13 +25,19 @@ export type RagDonePayload = {
   latency_ms?: number;
   intent?: string;
   tokens?: number;
+  provider?: string;
+  model?: string;
+  n_threads?: number | null;
+  retrieval_k?: number | null;
+  rerank_top_n?: number | null;
+  regional_scope?: string | null;
   sources?: Array<{
     doc_id?: string;
     path?: string;
     score?: number;
-      section?: string;
-      anchor?: string;
-    }>;
+    section?: string;
+    anchor?: string;
+  }>;
 };
 
 export type RagStagePayload = {
@@ -63,6 +79,9 @@ export async function streamRagAnswer(
       }
       if (event.event === "stage") {
         handlers.onStage?.(payload as RagStagePayload);
+      }
+      if (event.event === "runtime") {
+        handlers.onRuntime?.(payload as RagRuntimePayload);
       }
       if (event.event === "done") {
         handlers.onDone(payload);
