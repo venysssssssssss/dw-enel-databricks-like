@@ -16,7 +16,7 @@ import re
 import time
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from src.common.llm_gateway import build_provider
 from src.rag.answer_cache import CachedAnswer, resolve_known_answer
@@ -36,7 +36,7 @@ from src.rag.safety import (
 from src.rag.telemetry import TurnTelemetry, hash_question, preview, record
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     from src.common.llm_gateway import LLMProvider
     from src.rag.config import RagConfig
@@ -1382,8 +1382,8 @@ class RagOrchestrator:
         except (FileNotFoundError, RuntimeError):
             return None
 
-    @staticmethod
     def _done_event(
+        self,
         question_hash: str,
         timer: _Timer,
         *,
@@ -1404,6 +1404,12 @@ class RagOrchestrator:
                 "intent": intent,
                 "sources": _source_payload(passages),
                 "sources_count": len(passages),
+                "provider": getattr(self.provider, "name", "unknown"),
+                "model": getattr(self.provider, "model", "unknown"),
+                "n_threads": self.config.n_threads,
+                "retrieval_k": self.config.retrieval_k,
+                "rerank_top_n": self.config.rerank_top_n,
+                "regional_scope": self.config.regional_scope,
             },
         )
 
@@ -1416,6 +1422,15 @@ class RagOrchestrator:
         region: Literal["CE", "SP", "CE+SP"] | None,
     ) -> list[Passage]:
         top_n = self.config.rerank_top_n
+        forced_anchors = detect_card_boosts(query, region=region)
+        forced = self._forced_passages(
+            forced_anchors,
+            dataset_version=dataset_version,
+            region=region,
+        )
+        if forced and self._can_answer_from_forced_data(forced):
+            return forced[:top_n]
+
         # Primeiro passo: recuperação semântica + lexical padrão, mas pedindo
         # mais passages (2x top_n) para permitir merge com boosts sem perder
         # diversidade.
@@ -1439,28 +1454,7 @@ class RagOrchestrator:
 
         # Segundo passo: boost determinístico — cards canônicos forçados no topo
         # quando a intenção da query é claramente identificável por keyword.
-        forced_anchors = detect_card_boosts(query, region=region)
-        if forced_anchors:
-            forced = (
-                self._live_data_passages(
-                    forced_anchors,
-                    dataset_version=dataset_version,
-                    region=region,
-                )
-                if isinstance(self.retriever, HybridRetriever)
-                else []
-            )
-            indexed_forced = self.retriever.get_by_anchors(
-                forced_anchors, dataset_version=dataset_version
-            )
-            live_anchors = {p.anchor for p in forced}
-            forced.extend(p for p in indexed_forced if p.anchor not in live_anchors)
-            # Filtra por região compatível quando especificada
-            if region in {"CE", "SP"}:
-                forced = [
-                    p for p in forced
-                    if p.region in {region, "CE+SP"}
-                ]
+        if forced:
             forced_ids = {p.chunk_id for p in forced}
             # Mantém ordem: boosts primeiro (ordem de prioridade) — mesmo que o
             # card já tenha vindo da semântica, promove para o topo com score
@@ -1474,6 +1468,49 @@ class RagOrchestrator:
             return merged[:top_n]
         return semantic[:top_n]
 
+    def _forced_passages(
+        self,
+        anchors: list[str],
+        *,
+        dataset_version: str | None,
+        region: Literal["CE", "SP", "CE+SP"] | None,
+    ) -> list[Passage]:
+        if not anchors:
+            return []
+        forced = (
+            self._live_data_passages(
+                anchors,
+                dataset_version=dataset_version,
+                region=region,
+            )
+            if isinstance(self.retriever, HybridRetriever)
+            else []
+        )
+        indexed_forced = self.retriever.get_by_anchors(
+            anchors,
+            dataset_version=dataset_version,
+        )
+        live_anchors = {p.anchor for p in forced}
+        forced.extend(p for p in indexed_forced if p.anchor not in live_anchors)
+        if region in {"CE", "SP"}:
+            forced = [p for p in forced if p.region in {region, "CE+SP"}]
+        ordered = {anchor: index for index, anchor in enumerate(anchors)}
+        promoted = [
+            replace(passage, score=max(float(passage.score), 1.25 - index * 0.01))
+            for passage in forced
+            for index in [ordered.get(passage.anchor, len(ordered))]
+        ]
+        promoted.sort(key=lambda passage: ordered.get(passage.anchor, 10**9))
+        return promoted
+
+    @staticmethod
+    def _can_answer_from_forced_data(passages: list[Passage]) -> bool:
+        return any(
+            passage.doc_type == "data"
+            and passage.data_source == "silver.erro_leitura_normalizado"
+            for passage in passages
+        )
+
     @staticmethod
     def _live_data_passages(
         anchors: list[str],
@@ -1485,9 +1522,16 @@ class RagOrchestrator:
             return []
         try:
             from src.data_plane import DataStore
+            from src.data_plane.cards import build_selected_data_cards
 
             store = DataStore()
-            chunks = store.cards(regional_scope=region or "CE+SP")
+            chunks = build_selected_data_cards(
+                store,
+                anchors,
+                regional_scope=region or "CE+SP",
+            )
+            if not chunks:
+                chunks = store.cards(regional_scope=region or "CE+SP")
         except Exception:
             return []
         wanted = set(anchors)
@@ -1631,6 +1675,8 @@ class RagOrchestrator:
         blocks = [block.strip() for block in passage.text.split("\n\n") if block.strip()]
         if not blocks:
             return "Encontrei dados relevantes no card canônico para esta pergunta."
+        if blocks[0].startswith("# ") and len(blocks) > 1:
+            return "\n\n".join(blocks[1:4])
         if len(blocks) == 1:
             return blocks[0]
         second = blocks[1]

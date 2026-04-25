@@ -133,5 +133,5 @@ def load_rag_config() -> RagConfig:
         api_key=os.getenv("RAG_API_KEY") or None,
         telemetry_path=_env_path("RAG_TELEMETRY_PATH", "data/rag/telemetry.jsonl"),
         feedback_path=_env_path("RAG_FEEDBACK_PATH", "data/rag/feedback.csv"),
-        llm_judge_enabled=_env_bool("RAG_LLM_JUDGE", True),
+        llm_judge_enabled=_env_bool("RAG_LLM_JUDGE", False),
     )

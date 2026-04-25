@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
 from contextlib import asynccontextmanager
 
+import anyio.to_thread
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,8 +33,20 @@ from src.rag.config import load_rag_config
 from src.rag.orchestrator import RagOrchestrator
 
 
+def _configure_thread_pool() -> None:
+    """Tune Starlette/AnyIO worker threads used by sync routes and iterators."""
+    raw = os.getenv("FASTAPI_THREADPOOL_TOKENS", "96").strip()
+    try:
+        tokens = max(40, int(raw))
+    except ValueError:
+        tokens = 96
+    limiter = anyio.to_thread.current_default_thread_limiter()
+    limiter.total_tokens = tokens
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _configure_thread_pool()
     settings = get_api_settings()
     app.state.trino = AsyncTrinoClient(
         host=settings.trino_host,
@@ -49,10 +64,10 @@ async def lifespan(app: FastAPI):
         rag_config = load_rag_config()
         app.state.rag_config = rag_config
         app.state.rag_orchestrator = RagOrchestrator(rag_config)
-        
+
         # Inicia o background worker do LLM Judge
         from src.rag.judge import run_judge_worker
-        import asyncio
+
         app.state.judge_task = asyncio.create_task(run_judge_worker(rag_config))
     except Exception:
         # Nunca quebrar boot da API por falha de inicialização do RAG.

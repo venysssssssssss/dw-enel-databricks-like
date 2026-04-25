@@ -3,10 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
-import queue
-import threading
-import time
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import TYPE_CHECKING, Any
@@ -53,49 +49,15 @@ def stream_rag_events(
     orchestrator: RagOrchestrator | None = None,
 ) -> Iterator[str]:
     orchestrator = orchestrator or get_rag_orchestrator()
-    deadline_sec = _stream_timeout_sec()
-    events: queue.Queue[tuple[str, dict[str, object]] | None] = queue.Queue()
-
-    def worker() -> None:
-        try:
-            for event in orchestrator.stream_events(
-                request.question,
-                history=request.history,
-                context_hint=request.context_hint,
-                dataset_version=request.dataset_version,
-            ):
-                events.put((event.event, event.payload))
-        except Exception as exc:
-            events.put(("error", {"message": str(exc)}))
-        finally:
-            events.put(None)
-
-    thread = threading.Thread(target=worker, daemon=True)
-    thread.start()
-    deadline = time.monotonic() + deadline_sec
+    yield _sse("runtime", _runtime_payload(orchestrator))
     try:
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                yield _sse(
-                    "error",
-                    {
-                        "message": (
-                            "A consulta demorou mais que o limite operacional. "
-                            "Reformule ou tente pergunta mais específica sobre CE/SP."
-                        ),
-                        "timeout_sec": deadline_sec,
-                    },
-                )
-                return
-            try:
-                item = events.get(timeout=min(0.25, remaining))
-            except queue.Empty:
-                continue
-            if item is None:
-                return
-            event_name, payload = item
-            yield _sse(event_name, payload)
+        for event in orchestrator.stream_events(
+            request.question,
+            history=request.history,
+            context_hint=request.context_hint,
+            dataset_version=request.dataset_version,
+        ):
+            yield _sse(event.event, event.payload)
     except Exception as exc:
         yield _sse("error", {"message": str(exc)})
 
@@ -104,9 +66,14 @@ def _sse(event: str, payload: dict[str, object]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _stream_timeout_sec() -> float:
-    raw = os.getenv("RAG_STREAM_TOTAL_TIMEOUT_SEC", "60").strip()
-    try:
-        return max(1.0, float(raw))
-    except ValueError:
-        return 60.0
+def _runtime_payload(orchestrator: RagOrchestrator) -> dict[str, object]:
+    config = orchestrator.config
+    provider = orchestrator.provider
+    return {
+        "provider": getattr(provider, "name", "unknown"),
+        "model": getattr(provider, "model", "unknown"),
+        "n_threads": getattr(config, "n_threads", None),
+        "retrieval_k": getattr(config, "retrieval_k", None),
+        "rerank_top_n": getattr(config, "rerank_top_n", None),
+        "regional_scope": getattr(config, "regional_scope", None),
+    }

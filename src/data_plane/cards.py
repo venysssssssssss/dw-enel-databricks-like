@@ -132,6 +132,65 @@ def build_data_cards(
     ]
 
 
+def build_selected_data_cards(
+    store: DataStore,
+    anchors: list[str],
+    regional_scope: Literal["CE", "SP", "CE+SP"] = "CE+SP",
+) -> list[Chunk]:
+    """Build only the requested high-traffic cards for low-latency RAG answers."""
+    wanted = set(anchors)
+    if not wanted:
+        return []
+    version = store.version()
+    source = store.silver_path.as_posix()
+    cards: list[DataCard] = []
+    scope = _normalize_scope(regional_scope)
+
+    if wanted & {"top-assuntos", "top-causas-raiz"}:
+        scope_filters = _scope_filters(scope)
+        if "top-assuntos" in wanted:
+            cards.append(
+                _top_assunto_card(
+                    store.aggregate("top_assuntos", scope_filters),
+                    region=scope,
+                )
+            )
+        if "top-causas-raiz" in wanted:
+            cards.append(
+                _top_causa_card(
+                    store.aggregate("top_causas", scope_filters),
+                    region=scope,
+                )
+            )
+
+    if wanted & {"sp-n1-assuntos", "sp-n1-causas"}:
+        if "sp-n1-assuntos" in wanted:
+            cards.append(_sp_assuntos_card(store.aggregate("top_assuntos", _SP_FILTERS)))
+        if "sp-n1-causas" in wanted:
+            cards.append(_sp_causas_card(store.aggregate("top_causas", _SP_FILTERS)))
+
+    if wanted & {"ce-reclamacoes-totais-assuntos", "ce-reclamacoes-totais-causas"}:
+        if "ce-reclamacoes-totais-assuntos" in wanted:
+            cards.append(
+                _ce_total_assuntos_card(
+                    store.aggregate("top_assuntos", _CE_TOTAL_FILTERS, include_total=True)
+                )
+            )
+        if "ce-reclamacoes-totais-causas" in wanted:
+            cards.append(
+                _ce_total_causas_card(
+                    store.aggregate("top_causas", _CE_TOTAL_FILTERS, include_total=True)
+                )
+            )
+
+    by_anchor = {card.anchor: card for card in cards}
+    ordered = [by_anchor[anchor] for anchor in anchors if anchor in by_anchor]
+    return [
+        _chunk_from_card(card, source_path=source, dataset_version=version.hash)
+        for card in ordered
+    ]
+
+
 def _chunk_from_card(card: DataCard, *, source_path: str, dataset_version: str) -> Chunk:
     text = f"# {card.title}\n\n{card.body}".strip()
     chunk_key = f"{source_path}::{dataset_version}::{card.anchor}::{text[:120]}"

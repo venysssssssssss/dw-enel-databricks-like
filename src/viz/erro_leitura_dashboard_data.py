@@ -219,6 +219,9 @@ def prepare_dashboard_frame(
         "assunto",
         "grupo",
         "instalacao",
+        "texto_completo",
+        "observacao_ordem",
+        "devolutiva",
         "flag_resolvido_com_refaturamento",
         "has_causa_raiz_label",
         "instalacao_hash",
@@ -874,6 +877,175 @@ def sp_severidade_ranking(
                 "cidade": f"{cidade.loc[hash_key]}/SP" if cidade.loc[hash_key] else "SP",
             }
         )
+    return pd.DataFrame(records, columns=cols)
+
+
+_AREA_BY_CATEGORIA = {
+    "leitura": "Field — Leituristas",
+    "medidor": "Field — Manutenção / Medição",
+    "consumo": "Comercial — Análise de Consumo",
+    "faturamento": "Faturamento / Refaturamento",
+    "cadastro": "CRM — Cadastro & Titularidade",
+    "atendimento": "Atendimento — Canais",
+    "tecnico": "Operacional — Técnica",
+}
+
+
+def _suggest_action(causa: str, categoria: str, proc: bool) -> str:
+    base = {
+        "leitura_anomala": "Reagendar leitura presencial e validar histórico de 6m da instalação.",
+        "leitura_estimada": "Forçar leitura presencial; bloquear estimativa por 2 ciclos.",
+        "medidor_danificado": "Abrir OS de troca de medidor; congelar fatura até inspeção.",
+        "medidor_avariado": "Inspeção técnica + troca preventiva; revisar consumo dos 3 ciclos anteriores.",
+        "consumo_elevado_revisao": "Disparar análise de carga + comparativo sazonal e comunicar cliente em 48h.",
+        "refaturamento_corretivo": "Refaturar conforme cálculo regulatório; notificar cliente via canal preferencial.",
+        "procedimento_administrativo": "Encerrar ordem com nota administrativa; sem necessidade de ação técnica.",
+        "ajuste_numerico_sem_causa": "Validar planilha de ajuste com Faturamento; documentar no run_id atual.",
+        "texto_incompleto": "Solicitar reabertura com descrição completa antes de classificar.",
+        "solicitacao_canal_atendimento": "Encaminhar para canal correto; sem necessidade de OS técnica.",
+    }
+    fallback = (
+        "Investigar causa-raiz específica desta categoria antes de qualquer ação corretiva."
+        if proc
+        else "Confirmar improcedência via revisão amostral e arquivar com justificativa."
+    )
+    return base.get(causa, fallback)
+
+
+def _resumo_text(text: str, max_len: int = 220) -> str:
+    if not isinstance(text, str):
+        return ""
+    cleaned = " ".join(text.split())
+    if not cleaned:
+        return ""
+    if len(cleaned) <= max_len:
+        return cleaned
+    return cleaned[: max_len - 1].rsplit(" ", 1)[0] + "…"
+
+
+def sp_severidade_descricoes(
+    frame: pd.DataFrame, *, severidade: str = "high", limit: int = 12
+) -> pd.DataFrame:
+    """Top descrições normalizadas pelo classificador para a severidade SP escolhida.
+
+    Cada linha representa uma ordem real (texto cleaned do silver) e expõe a
+    causa canônica + categoria atribuídas. Inclui ``top_instalacoes`` (até 10)
+    para drill-down: instalações com maior reincidência na mesma causa.
+    """
+    cols = [
+        "id",
+        "cat",
+        "categoria_id",
+        "causa",
+        "data",
+        "proc",
+        "valor",
+        "resumo",
+        "sugestao",
+        "area",
+        "top_instalacoes",
+    ]
+    df = _filter_sp_severidade(frame, severidade)
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    text_col = (
+        "texto_completo"
+        if "texto_completo" in df.columns
+        else ("observacao_ordem" if "observacao_ordem" in df.columns else None)
+    )
+    if text_col is None:
+        return pd.DataFrame(columns=cols)
+
+    work = df.dropna(subset=[text_col]).copy()
+    if work.empty:
+        return pd.DataFrame(columns=cols)
+
+    work["__len"] = work[text_col].astype(str).str.len()
+    work = work.loc[work["__len"].between(40, 600)]
+    if work.empty:
+        return pd.DataFrame(columns=cols)
+
+    work["proc"] = work.get(
+        "flag_resolvido_com_refaturamento", pd.Series(False, index=work.index)
+    ).fillna(False).astype(bool)
+    work["data_ingresso"] = pd.to_datetime(work.get("data_ingresso"), errors="coerce")
+
+    valor_col = (
+        "valor_fatura_reclamada_medio"
+        if "valor_fatura_reclamada_medio" in work.columns
+        else None
+    )
+    work["__valor"] = work[valor_col] if valor_col else 0.0
+
+    causa_to_top_inst: dict[str, list[dict]] = {}
+    if "instalacao_hash" in df.columns:
+        eligible = df.loc[df["instalacao_hash"].astype(str).ne("")].copy()
+        if not eligible.empty:
+            for causa, sub in eligible.groupby("causa_canonica", sort=False):
+                inst_grp = sub.groupby("instalacao_hash")
+                reinc = inst_grp["ordem"].nunique().sort_values(ascending=False)
+                top = reinc.head(10)
+                inst_label = inst_grp["instalacao"].agg(
+                    lambda s: s.dropna().astype(str).iloc[0] if s.dropna().size else ""
+                )
+                cidade = (
+                    inst_grp["municipio"].agg(
+                        lambda s: s.mode().iat[0] if len(s) else ""
+                    )
+                    if "municipio" in eligible.columns
+                    else pd.Series("", index=reinc.index)
+                )
+                valor_per_inst = (
+                    inst_grp[valor_col].mean()
+                    if valor_col
+                    else pd.Series(0.0, index=reinc.index)
+                )
+                items: list[dict] = []
+                for hash_key, count in top.items():
+                    items.append(
+                        {
+                            "inst": inst_label.get(hash_key, "")
+                            or f"INS-{str(hash_key)[:7].upper()}",
+                            "cidade": str(cidade.get(hash_key, "")) or "SP",
+                            "reinc": int(count),
+                            "valor": float(valor_per_inst.get(hash_key, 0.0) or 0.0),
+                        }
+                    )
+                causa_to_top_inst[str(causa)] = items
+
+    work = work.sort_values(["__valor", "__len"], ascending=[False, True]).head(limit * 4)
+
+    seen: set[str] = set()
+    records: list[dict] = []
+    for _, row in work.iterrows():
+        causa = str(row.get("causa_canonica") or "indefinido")
+        cat = str(row.get("categoria") or "nao_classificada")
+        bucket_key = f"{causa}::{bool(row['proc'])}"
+        if bucket_key in seen:
+            continue
+        seen.add(bucket_key)
+        ordem_id = str(row.get("ordem") or "")
+        records.append(
+            {
+                "id": f"ORD-{ordem_id}" if ordem_id else f"ENL-{len(records):04d}",
+                "cat": cat.replace("_", " ").title(),
+                "categoria_id": cat,
+                "causa": causa,
+                "data": row["data_ingresso"].strftime("%Y-%m-%d")
+                if pd.notna(row["data_ingresso"])
+                else "",
+                "proc": bool(row["proc"]),
+                "valor": float(row["__valor"]) if pd.notna(row["__valor"]) else 0.0,
+                "resumo": _resumo_text(str(row.get(text_col, ""))),
+                "sugestao": _suggest_action(causa, cat, bool(row["proc"])),
+                "area": _AREA_BY_CATEGORIA.get(cat, "Operacional — Triagem"),
+                "top_instalacoes": causa_to_top_inst.get(causa, [])[:10],
+            }
+        )
+        if len(records) >= limit:
+            break
+
     return pd.DataFrame(records, columns=cols)
 
 

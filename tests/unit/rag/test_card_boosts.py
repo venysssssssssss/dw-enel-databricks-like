@@ -61,8 +61,10 @@ class _FakeRetriever:
     def __init__(self, semantic: list[Passage], by_anchor: dict[str, Passage]):
         self._semantic = semantic
         self._by_anchor = by_anchor
+        self.semantic_calls = 0
 
     def top_passages(self, query: str, *, top_n: int, **_: object) -> list[Passage]:
+        self.semantic_calls += 1
         return self._semantic[:top_n]
 
     def get_by_anchors(self, anchors: list[str], **_: object) -> list[Passage]:
@@ -181,6 +183,36 @@ def test_top_passages_forces_boost_cards_to_top(tmp_path: Path):
     assert "top-assuntos" in anchors
     # Score sintético do boost deve sobrescrever o semântico
     assert passages[0].score >= 0.9
+    assert retriever.semantic_calls == 0
+
+
+def test_top_passages_fast_path_returns_sp_subject_cards_without_semantic(tmp_path: Path):
+    by_anchor = {
+        "sp-n1-assuntos": replace(_passage("sp-n1-assuntos", score=0.2), region="SP"),
+        "sp-n1-causas": replace(_passage("sp-n1-causas", score=0.2), region="SP"),
+        "top-assuntos": _passage("top-assuntos", score=0.2),
+        "top-causas-raiz": _passage("top-causas-raiz", score=0.2),
+    }
+    retriever = _FakeRetriever(
+        semantic=[_passage("visao-geral", score=0.9)],
+        by_anchor=by_anchor,
+    )
+    cfg = _make_config(tmp_path)
+    orch = RagOrchestrator(cfg, retriever=retriever, provider=StubProvider())  # type: ignore[arg-type]
+
+    passages = orch._top_passages(  # type: ignore[attr-defined]
+        "Quais os top 5 assuntos de reclamação em SP",
+        doc_types=None,
+        dataset_version=None,
+        region="SP",
+    )
+
+    assert [p.anchor for p in passages] == [
+        "sp-n1-assuntos",
+        "sp-n1-causas",
+        "top-assuntos",
+    ]
+    assert retriever.semantic_calls == 0
 
 
 def test_top_passages_dedupes_when_forced_anchor_already_in_semantic(tmp_path: Path):
@@ -379,6 +411,25 @@ def test_answer_budget_caps_tokens_for_latency_sla(tmp_path: Path):
     orch = RagOrchestrator(cfg, retriever=retriever, provider=StubProvider())  # type: ignore[arg-type]
     # SLA de 35s em CPU ≈ 400 tokens máx
     assert orch._answer_budget() <= 400  # type: ignore[attr-defined]
+
+
+def test_short_answer_from_data_card_keeps_header_and_ranked_rows():
+    passage = replace(
+        _passage("sp-n1-assuntos", score=1.0),
+        text=(
+            "# SP — principais assuntos (N1)\n\n"
+            "O principal assunto de reclamação em SP é **FATURA** com **10** tickets.\n\n"
+            "**Top assuntos em SP (N1)**:\n\n"
+            "- **FATURA**: 10 (50%)\n"
+            "- **MEDIDOR**: 5 (25%)"
+        ),
+    )
+
+    summary = RagOrchestrator._short_answer_from_passage(passage)  # type: ignore[attr-defined]
+
+    assert "O principal assunto" in summary
+    assert "**Top assuntos em SP" in summary
+    assert "- **FATURA**" in summary
 
 
 def test_answer_budget_respects_context_window(tmp_path: Path):
