@@ -11,6 +11,7 @@ import {
   type Categoria,
   type Causa
 } from "../../components/bi/SeverityCharts";
+import { DescricoesTable, type DescricaoRow } from "../../components/bi/DescricoesTable";
 
 type Severity = "alta" | "critica";
 
@@ -82,6 +83,7 @@ function SeveridadeScreen({ severity }: { severity: Severity }) {
   const cats = useAggregation<Categoria>(`sp_severidade_${viewSuffix}_categorias`);
   const causas = useAggregation<Causa>(`sp_severidade_${viewSuffix}_causas`);
   const ranking = useAggregation<RankingRow>(`sp_severidade_${viewSuffix}_ranking`);
+  const descricoes = useAggregation<DescricaoRow>(`sp_severidade_${viewSuffix}_descricoes`);
 
   const [activeCat, setActiveCat] = useState<string | null>(null);
   const [activeCausa, setActiveCausa] = useState<string | null>(null);
@@ -277,6 +279,24 @@ function SeveridadeScreen({ severity }: { severity: Severity }) {
             onToggle={(id) => setActiveCausa((c) => (c === id ? null : id))}
           />
         )}
+      </article>
+
+      <article className="sev-card" style={{ marginTop: 18 }}>
+        <header className="sev-c-head">
+          <div>
+            <h2 className="sev-c-title">Descrições identificadas pelo assistente</h2>
+            <p className="sev-c-sub">
+              Texto cleaned do silver classificado em causa canônica · expanda para ver ação sugerida e top-10
+              instalações reincidentes na mesma causa
+            </p>
+          </div>
+        </header>
+        <DescricoesTable
+          rows={descricoes.data?.data ?? []}
+          loading={descricoes.isLoading}
+          activeCat={activeCat}
+          activeCausa={activeCausa}
+        />
       </article>
 
       <article className="sev-card" style={{ marginTop: 18 }}>
