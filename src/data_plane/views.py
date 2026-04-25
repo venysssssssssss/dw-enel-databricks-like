@@ -9,6 +9,8 @@ import pandas as pd
 
 from src.viz.erro_leitura_dashboard_data import (
     category_breakdown,
+    classifier_coverage,
+    classifier_indefinido_tokens,
     compute_kpis,
     mis_executive_summary,
     mis_monthly_mis,
@@ -29,8 +31,14 @@ from src.viz.erro_leitura_dashboard_data import (
 )
 from src.viz.reclamacoes_ce_dashboard_data import (
     cruzamento_com_erro_leitura as _ce_cruzamento_com_erro_leitura,
+)
+from src.viz.reclamacoes_ce_dashboard_data import (
     macro_tema_distribution as _ce_macro_tema_distribution,
+)
+from src.viz.reclamacoes_ce_dashboard_data import (
     monthly_trend_by_tema as _ce_monthly_trend_by_tema,
+)
+from src.viz.reclamacoes_ce_dashboard_data import (
     prepare_reclamacoes_ce_frame,
 )
 
@@ -58,6 +66,7 @@ FILTER_FIELDS = (
     "regiao",
     "tipo_origem",
     "causa_canonica",
+    "causa_canonica_confidence",
     "topic_name",
     "status",
     "assunto",
@@ -1089,6 +1098,20 @@ VIEW_REGISTRY: dict[str, ViewSpec] = {
         FILTER_FIELDS,
         mis_monthly_mis,
     ),
+    "classifier_coverage": ViewSpec(
+        "classifier_coverage",
+        ("regiao", "causa_canonica_confidence"),
+        ("qtd_ordens", "percentual"),
+        FILTER_FIELDS,
+        classifier_coverage,
+    ),
+    "classifier_indefinido_tokens": ViewSpec(
+        "classifier_indefinido_tokens",
+        ("token",),
+        ("qtd_ocorrencias",),
+        FILTER_FIELDS,
+        classifier_indefinido_tokens,
+    ),
     "sp_severidade_alta_overview": ViewSpec(
         "sp_severidade_alta_overview",
         (),
@@ -1419,13 +1442,13 @@ def governance_health_view(frame: pd.DataFrame) -> pd.DataFrame:
             "label": "Cobertura taxonomia",
             "value": f"{cobertura_causa * 100:.1f}%",
             "sub": "causa_canonica não-vazia",
-            "status": "ok" if cobertura_causa >= 0.85 else ("warn" if cobertura_causa >= 0.6 else "crit"),
+            "status": _coverage_status(cobertura_causa, ok=0.85, warn=0.6),
         },
         {
             "label": "Cobertura tópicos ML",
             "value": f"{cobertura_topico * 100:.1f}%",
             "sub": "topic_name não-vazio",
-            "status": "ok" if cobertura_topico >= 0.8 else ("warn" if cobertura_topico >= 0.5 else "crit"),
+            "status": _coverage_status(cobertura_topico, ok=0.8, warn=0.5),
         },
         {
             "label": "Frescor do dataset",
@@ -1435,6 +1458,14 @@ def governance_health_view(frame: pd.DataFrame) -> pd.DataFrame:
         },
     ]
     return pd.DataFrame(rows)
+
+
+def _coverage_status(value: float, *, ok: float, warn: float) -> str:
+    if value >= ok:
+        return "ok"
+    if value >= warn:
+        return "warn"
+    return "crit"
 
 
 def get_view(view_id: str) -> ViewSpec:

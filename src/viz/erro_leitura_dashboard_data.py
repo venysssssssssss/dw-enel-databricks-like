@@ -21,10 +21,11 @@ from src.ml.models.erro_leitura_classifier import (
 DEFAULT_SILVER_PATH = Path("data/silver/erro_leitura_normalizado.csv")
 DEFAULT_TOPIC_ASSIGNMENTS_PATH = Path("data/model_registry/erro_leitura/topic_assignments.csv")
 DEFAULT_TOPIC_TAXONOMY_PATH = Path("data/model_registry/erro_leitura/topic_taxonomy.json")
+DEFAULT_TOPIC_TO_CANONICAL_PATH = Path("data/model_registry/erro_leitura/topic_to_canonical.csv")
 DEFAULT_MEDIDOR_SP_PATH = Path("DESCRICOES_ENEL/medidor_20260417_20260416T090000.csv")
 DEFAULT_FATURA_SP_PATH = Path("DESCRICOES_ENEL/DADOS_FATURA_SP_ORDENS001.XLSX")
 TRAINING_DATA_TYPES = {"erro_leitura", "base_n1_sp"}
-KEYWORD_LABEL_CACHE_VERSION = "keyword-v1"
+KEYWORD_LABEL_CACHE_VERSION = "keyword-v3"
 MAX_TAXONOMY_EXAMPLE_CHARS = 420
 DASHBOARD_SILVER_COLUMNS = {
     "ordem",
@@ -41,6 +42,8 @@ DASHBOARD_SILVER_COLUMNS = {
     "grupo",
     "observacao_ordem",
     "devolutiva",
+    "causa_canonica_v3",
+    "causa_canonica_confidence",
 }
 
 
@@ -93,10 +96,12 @@ def _build_dashboard_frame(
     )
     assignments = _read_optional_csv(topic_assignments_path)
     taxonomy = _read_optional_json(topic_taxonomy_path)
+    topic_to_canonical = _read_optional_csv(DEFAULT_TOPIC_TO_CANONICAL_PATH)
     return prepare_dashboard_frame(
         silver,
         topic_assignments=assignments,
         topic_taxonomy=taxonomy,
+        topic_to_canonical=topic_to_canonical,
         include_total=include_total,
     )
 
@@ -126,6 +131,7 @@ def _build_include_total_dashboard_frame(
         total_silver,
         topic_assignments=None,
         topic_taxonomy=None,
+        topic_to_canonical=_read_optional_csv(DEFAULT_TOPIC_TO_CANONICAL_PATH),
         include_total=True,
     )
     return pd.concat([training_frame, total_frame], ignore_index=True)
@@ -136,6 +142,7 @@ def prepare_dashboard_frame(
     *,
     topic_assignments: pd.DataFrame | None = None,
     topic_taxonomy: pd.DataFrame | None = None,
+    topic_to_canonical: pd.DataFrame | None = None,
     medidor_profile: pd.DataFrame | None = None,
     fatura_profile: pd.DataFrame | None = None,
     include_total: bool = False,
@@ -153,7 +160,9 @@ def prepare_dashboard_frame(
     frame["mes_ingresso"] = frame["data_ingresso"].dt.to_period("M").dt.to_timestamp()
     frame["regiao"] = frame["_source_region"].fillna("NAO_INFORMADA").astype(str)
     frame["tipo_origem"] = frame["_data_type"].fillna("NAO_INFORMADO").astype(str)
-    frame["causa_canonica"] = _canonical_causes(frame)
+    canonical = _canonical_cause_frame(frame)
+    frame["causa_canonica"] = canonical["causa_canonica"]
+    frame["causa_canonica_confidence"] = canonical["causa_canonica_confidence"]
     frame["flag_resolvido_com_refaturamento"] = _to_bool(
         frame.get("flag_resolvido_com_refaturamento", pd.Series(False, index=frame.index))
     )
@@ -188,6 +197,8 @@ def prepare_dashboard_frame(
         frame["topic_name"] = "sem_topico"
         frame["topic_keywords"] = ""
 
+    frame = _apply_topic_to_canonical(frame, topic_to_canonical)
+
     frame = apply_enrichment(
         frame,
         medidor_profile=medidor_profile,
@@ -203,6 +214,7 @@ def prepare_dashboard_frame(
         "regiao",
         "tipo_origem",
         "causa_canonica",
+        "causa_canonica_confidence",
         "status",
         "assunto",
         "grupo",
@@ -481,6 +493,7 @@ _SEVERIDADE_ALIAS = {
     "baixa": "low",
     "low": "low",
 }
+_CONFIDENCE_ORDER = {"indefinido": 0, "low": 1, "high": 2}
 
 
 def _attach_severidade(frame: pd.DataFrame) -> pd.DataFrame:
@@ -494,7 +507,12 @@ def _attach_severidade(frame: pd.DataFrame) -> pd.DataFrame:
     return merged
 
 
-def _filter_sp_severidade(frame: pd.DataFrame, severidade: str) -> pd.DataFrame:
+def _filter_sp_severidade(
+    frame: pd.DataFrame,
+    severidade: str,
+    *,
+    min_confidence: str = "high",
+) -> pd.DataFrame:
     sev_key = _SEVERIDADE_ALIAS.get((severidade or "").lower(), severidade)
     df = _attach_severidade(frame)
     if df.empty:
@@ -502,7 +520,121 @@ def _filter_sp_severidade(frame: pd.DataFrame, severidade: str) -> pd.DataFrame:
     if "regiao" in df.columns:
         df = df.loc[df["regiao"].astype(str).str.upper().eq("SP")]
     df = df.loc[df["severidade"].eq(sev_key)]
+    df = _filter_min_confidence(df, min_confidence=min_confidence)
     return df
+
+
+def _filter_min_confidence(frame: pd.DataFrame, *, min_confidence: str = "high") -> pd.DataFrame:
+    if frame.empty or "causa_canonica_confidence" not in frame.columns:
+        return frame
+    key = str(min_confidence or "").casefold()
+    if key in {"", "all", "todos", "any"}:
+        return frame
+    min_rank = _CONFIDENCE_ORDER.get(key, _CONFIDENCE_ORDER["high"])
+    ranks = (
+        frame["causa_canonica_confidence"]
+        .fillna("indefinido")
+        .astype(str)
+        .str.casefold()
+        .map(_CONFIDENCE_ORDER)
+        .fillna(0)
+    )
+    return frame.loc[ranks.ge(min_rank)].copy()
+
+
+def classifier_coverage(frame: pd.DataFrame) -> pd.DataFrame:
+    """Cobertura do classificador v3 por regiao e bucket de confianca."""
+    cols = [
+        "regiao",
+        "causa_canonica_confidence",
+        "qtd_ordens",
+        "percentual",
+        "indefinidos",
+        "indefinido_pct",
+    ]
+    if frame.empty or "ordem" not in frame.columns:
+        return pd.DataFrame(columns=cols)
+    work = frame.copy()
+    if "regiao" not in work.columns:
+        work["regiao"] = "NAO_INFORMADA"
+    if "causa_canonica" not in work.columns:
+        work["causa_canonica"] = "indefinido"
+    if "causa_canonica_confidence" not in work.columns:
+        work["causa_canonica_confidence"] = "high"
+    work["causa_canonica_confidence"] = (
+        work["causa_canonica_confidence"]
+        .fillna("indefinido")
+        .astype(str)
+        .where(lambda s: s.isin(["high", "low", "indefinido"]), "indefinido")
+    )
+    grouped = (
+        work.groupby(["regiao", "causa_canonica_confidence"], as_index=False)
+        .agg(qtd_ordens=("ordem", "nunique"))
+        .sort_values(["regiao", "causa_canonica_confidence"])
+    )
+    totals = work.groupby("regiao")["ordem"].nunique().rename("_total")
+    indef = (
+        work.loc[work["causa_canonica"].astype(str).eq("indefinido")]
+        .groupby("regiao")["ordem"]
+        .nunique()
+        .rename("indefinidos")
+    )
+    grouped = grouped.merge(totals, on="regiao", how="left").merge(indef, on="regiao", how="left")
+    grouped["indefinidos"] = grouped["indefinidos"].fillna(0).astype(int)
+    grouped["percentual"] = grouped["qtd_ordens"] / grouped["_total"].replace(0, 1)
+    grouped["indefinido_pct"] = grouped["indefinidos"] / grouped["_total"].replace(0, 1)
+    return grouped[cols]
+
+
+def classifier_indefinido_tokens(frame: pd.DataFrame, *, limit: int = 20) -> pd.DataFrame:
+    """Tokens de apoio para auditoria dos registros ainda indefinidos, sem expor texto cru."""
+    cols = ["token", "qtd_ocorrencias"]
+    if frame.empty:
+        return pd.DataFrame(columns=cols)
+    if "causa_canonica" not in frame.columns:
+        return pd.DataFrame(columns=cols)
+    sub = frame.loc[frame["causa_canonica"].fillna("").astype(str).eq("indefinido")].copy()
+    if sub.empty:
+        return pd.DataFrame(columns=cols)
+    parts: list[pd.Series] = []
+    for column in ("topic_keywords", "assunto"):
+        if column in sub.columns:
+            parts.append(sub[column].fillna("").astype(str))
+    if not parts:
+        return pd.DataFrame(columns=cols)
+    text = pd.concat(parts, ignore_index=True).map(normalize_text)
+    stopwords = {
+        "a",
+        "as",
+        "com",
+        "da",
+        "de",
+        "do",
+        "e",
+        "em",
+        "na",
+        "no",
+        "o",
+        "os",
+        "para",
+        "por",
+    }
+    tokens: list[str] = []
+    for value in text:
+        tokens.extend(
+            token
+            for token in re.findall(r"\b[a-z0-9_]{3,}\b", value)
+            if token not in stopwords
+        )
+    if not tokens:
+        return pd.DataFrame(columns=cols)
+    return (
+        pd.Series(tokens)
+        .value_counts()
+        .head(limit)
+        .rename_axis("token")
+        .reset_index(name="qtd_ocorrencias")
+    )
 
 
 def sp_severidade_overview(frame: pd.DataFrame, *, severidade: str = "high") -> pd.DataFrame:
@@ -697,11 +829,17 @@ def sp_severidade_ranking(
     if len(top_idx) == 0:
         return pd.DataFrame(columns=cols)
 
-    inst_labels = grouped["instalacao"].agg(lambda s: s.dropna().astype(str).iloc[0] if s.dropna().size else "")
+    inst_labels = grouped["instalacao"].agg(
+        lambda s: s.dropna().astype(str).iloc[0] if s.dropna().size else ""
+    )
     top_cat = grouped["categoria"].agg(lambda s: s.mode().iat[0] if len(s) else "")
     top_causa = grouped["causa_canonica"].agg(lambda s: s.mode().iat[0] if len(s) else "")
 
-    valor_col = "valor_fatura_reclamada_medio" if "valor_fatura_reclamada_medio" in df.columns else None
+    valor_col = (
+        "valor_fatura_reclamada_medio"
+        if "valor_fatura_reclamada_medio" in df.columns
+        else None
+    )
     valor = grouped[valor_col].mean() if valor_col else pd.Series(0.0, index=reinc.index)
 
     cidade_col = "municipio" if "municipio" in df.columns else None
@@ -763,9 +901,35 @@ def safe_topic_taxonomy_for_display(topic_taxonomy: pd.DataFrame) -> pd.DataFram
 
 
 def _canonical_causes(frame: pd.DataFrame) -> pd.Series:
+    return _canonical_cause_frame(frame)["causa_canonica"]
+
+
+def _canonical_cause_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    cols = ["causa_canonica", "causa_canonica_confidence"]
+    if frame.empty:
+        return pd.DataFrame(columns=cols, index=frame.index)
+
+    if "causa_canonica_v3" in frame.columns:
+        labels = frame["causa_canonica_v3"].map(canonical_label).fillna(
+            frame["causa_canonica_v3"].fillna("").astype(str)
+        )
+        labels = labels.replace({"": "indefinido", "nan": "indefinido"}).fillna("indefinido")
+        confidence = (
+            frame.get("causa_canonica_confidence", pd.Series("high", index=frame.index))
+            .fillna("high")
+            .astype(str)
+            .where(lambda s: s.isin(["high", "low", "indefinido"]), "high")
+        )
+        return pd.DataFrame(
+            {"causa_canonica": labels.astype(str), "causa_canonica_confidence": confidence},
+            index=frame.index,
+        )
+
     labels = frame.get("causa_raiz", pd.Series(index=frame.index, dtype=object))
     canonical = labels.map(canonical_label)
+    confidence = pd.Series("high", index=frame.index, dtype=object)
     missing = canonical.isna()
+    confidence.loc[missing] = "indefinido"
     eligible_for_fallback = frame.get(
         "_data_type",
         pd.Series("", index=frame.index),
@@ -773,12 +937,54 @@ def _canonical_causes(frame: pd.DataFrame) -> pd.Series:
     fallback_mask = missing & eligible_for_fallback
     if fallback_mask.any():
         texts = frame.get("texto_completo", pd.Series("", index=frame.index)).fillna("").astype(str)
-        fallback = _keyword_fallback_labels(texts.loc[fallback_mask])
-        canonical.loc[fallback_mask] = fallback
+        fallback = _keyword_fallback_results(texts.loc[fallback_mask])
+        canonical.loc[fallback_mask] = fallback["causa_canonica"]
+        confidence.loc[fallback_mask] = fallback["causa_canonica_confidence"]
     total_mask = missing & ~eligible_for_fallback
     if total_mask.any():
         canonical.loc[total_mask] = "reclamacao_total_sem_causa"
-    return canonical.fillna("indefinido").astype(str)
+        confidence.loc[total_mask] = "indefinido"
+    return pd.DataFrame(
+        {
+            "causa_canonica": canonical.fillna("indefinido").astype(str),
+            "causa_canonica_confidence": confidence.fillna("indefinido").astype(str),
+        },
+        index=frame.index,
+    )
+
+
+def _apply_topic_to_canonical(
+    frame: pd.DataFrame,
+    topic_to_canonical: pd.DataFrame | None,
+) -> pd.DataFrame:
+    if (
+        frame.empty
+        or topic_to_canonical is None
+        or topic_to_canonical.empty
+        or "topic_id" not in frame.columns
+    ):
+        return frame
+    required = {"topic_id", "canonical_target", "confidence"}
+    if not required.issubset(topic_to_canonical.columns):
+        return frame
+    mapping = topic_to_canonical[list(required)].copy()
+    mapping["topic_id"] = mapping["topic_id"].astype(str)
+    mapping = mapping.rename(
+        columns={
+            "canonical_target": "_topic_canonical_target",
+            "confidence": "_topic_confidence",
+        }
+    )
+    out = frame.merge(mapping, on="topic_id", how="left")
+    apply_mask = (
+        out["causa_canonica"].astype(str).eq("indefinido")
+        & out["_topic_canonical_target"].notna()
+    )
+    out.loc[apply_mask, "causa_canonica"] = out.loc[apply_mask, "_topic_canonical_target"]
+    out.loc[apply_mask, "causa_canonica_confidence"] = out.loc[
+        apply_mask, "_topic_confidence"
+    ].fillna("low")
+    return out.drop(columns=["_topic_canonical_target", "_topic_confidence"])
 
 
 def _keyword_label_or_indefinido(classifier: KeywordErroLeituraClassifier, text: str) -> str:
@@ -789,36 +995,59 @@ def _keyword_label_or_indefinido(classifier: KeywordErroLeituraClassifier, text:
     return str(result["classe"])
 
 
+def _keyword_result(classifier: KeywordErroLeituraClassifier, text: str) -> dict[str, str]:
+    result = classifier.classify(text)
+    return {
+        "causa_canonica": str(result["classe"]),
+        "causa_canonica_confidence": str(result.get("confidence", "indefinido")),
+    }
+
+
 def _keyword_fallback_labels(
     texts: pd.Series,
     *,
     cache_dir: Path = Path(".streamlit/cache"),
 ) -> pd.Series:
+    results = _keyword_fallback_results(texts, cache_dir=cache_dir)
+    return results["causa_canonica"]
+
+
+def _keyword_fallback_results(
+    texts: pd.Series,
+    *,
+    cache_dir: Path = Path(".streamlit/cache"),
+) -> pd.DataFrame:
     if texts.empty:
-        return pd.Series(dtype=str, index=texts.index)
+        return pd.DataFrame(
+            columns=["causa_canonica", "causa_canonica_confidence"],
+            index=texts.index,
+        )
 
     cache_path = cache_dir / f"erro_leitura_keyword_labels_{KEYWORD_LABEL_CACHE_VERSION}.pkl"
-    cache: dict[str, str] = _read_keyword_label_cache(cache_path)
+    cache: dict[str, dict[str, str]] = _read_keyword_label_cache(cache_path)
     normalized = texts.fillna("").astype(str).map(normalize_text)
     digests = normalized.map(lambda text: sha256(text.encode()).hexdigest())
     missing_digests = set(digests.unique()).difference(cache)
 
     if missing_digests:
         classifier = KeywordErroLeituraClassifier()
-        new_labels: dict[str, str] = {}
+        new_labels: dict[str, dict[str, str]] = {}
         unique_pairs = pd.DataFrame(
             {"digest": digests, "text": normalized}
         ).drop_duplicates("digest")
         for row in unique_pairs.itertuples(index=False):
             if row.digest in missing_digests:
-                new_labels[row.digest] = _keyword_label_or_indefinido(classifier, row.text)
+                new_labels[row.digest] = _keyword_result(classifier, row.text)
         cache.update(new_labels)
         _write_keyword_label_cache(cache_path, cache)
 
-    return digests.map(cache).fillna("indefinido").astype(str)
+    rows = digests.map(cache).tolist()
+    return pd.DataFrame(rows, index=texts.index).fillna(
+        {"causa_canonica": "indefinido", "causa_canonica_confidence": "indefinido"}
+    )
 
 
-def _read_keyword_label_cache(path: Path) -> dict[str, str]:
+def _read_keyword_label_cache(path: Path) -> dict[str, dict[str, str]]:
     if not path.exists():
         return {}
     try:
@@ -828,10 +1057,22 @@ def _read_keyword_label_cache(path: Path) -> dict[str, str]:
         return {}
     if not isinstance(value, dict):
         return {}
-    return {str(key): str(label) for key, label in value.items()}
+    normalized: dict[str, dict[str, str]] = {}
+    for key, payload in value.items():
+        if isinstance(payload, dict):
+            label = str(payload.get("causa_canonica", "indefinido"))
+            confidence = str(payload.get("causa_canonica_confidence", "indefinido"))
+        else:
+            label = str(payload)
+            confidence = "indefinido" if label == "indefinido" else "high"
+        normalized[str(key)] = {
+            "causa_canonica": label,
+            "causa_canonica_confidence": confidence,
+        }
+    return normalized
 
 
-def _write_keyword_label_cache(path: Path, cache: dict[str, str]) -> None:
+def _write_keyword_label_cache(path: Path, cache: dict[str, dict[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     with tmp.open("wb") as handle:

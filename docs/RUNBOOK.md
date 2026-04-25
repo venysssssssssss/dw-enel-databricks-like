@@ -201,3 +201,38 @@ VITE_FEATURE_SEVERIDADE_V1=false pnpm --dir apps/web build
 ```
 
 Esse flag remove as rotas `/bi/severidade-alta` e `/bi/severidade-critica` do router e oculta os links da sidebar no build resultante.
+
+## Classifier coverage (Sprint 25+)
+
+### Alerta `ClassifierIndefinidoSpike`
+
+`enel_classifier_indefinido_ratio{regiao=...}` ficou acima de 40% por 24 h.
+
+Diagnóstico rápido:
+```bash
+curl -s http://api:8000/v1/aggregations/classifier_coverage
+curl -s http://api:8000/v1/aggregations/classifier_indefinido_tokens
+```
+
+Ações:
+1. Confirmar se houve reingestão ou mudança de distribuição no silver.
+2. Rodar `poetry run python scripts/relabel_erro_leitura.py --report --benchmark --sample-size 10000` para medir cobertura v3 localmente.
+3. Auditar `classifier_indefinido_tokens`; se tokens recorrentes tiverem semântica operacional estável, abrir mudança de taxonomia v4.
+4. Se o aumento vier de topics novos, atualizar `data/model_registry/erro_leitura/topic_to_canonical.csv` depois de validar `topic_taxonomy.json`.
+
+### Alerta `ClassifierMetricStale`
+
+A métrica de cobertura só é atualizada quando a view `classifier_coverage` é consultada. Se o alerta disparar:
+
+1. Abrir o dashboard Grafana `ENEL · Classifier Coverage`.
+2. Verificar se o job de warmup chama `/v1/aggregations/classifier_coverage`.
+3. Confirmar que a API expõe `/metrics` e que Prometheus está lendo `alerts/*.yml`.
+
+### Backfill v3
+
+Para gerar colunas paralelas sem sobrescrever o silver:
+```bash
+poetry run python scripts/relabel_erro_leitura.py --report --benchmark
+```
+
+Para cutover controlado, use `--in-place` somente depois de validação humana documentada em `docs/business-rules/taxonomia-v3-validation.md`.

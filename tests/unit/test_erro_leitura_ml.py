@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import pandas as pd
 
+from scripts.train_erro_leitura import _filter_training_frame
 from src.ml.features.text_embeddings import TextEmbeddingBuilder
 from src.ml.models.erro_leitura_anomaly import ErroLeituraAnomalyDetector
-from src.ml.models.erro_leitura_classifier import ErroLeituraClassifierTrainer, KeywordErroLeituraClassifier, canonical_label
+from src.ml.models.erro_leitura_classifier import (
+    ErroLeituraClassifierTrainer,
+    KeywordErroLeituraClassifier,
+    canonical_label,
+)
 from src.ml.models.erro_leitura_topic_model import (
     ErroLeituraTopicModelTrainer,
     _taxonomy_example,
     _topic_training_text,
     mask_sensitive_text,
 )
-from scripts.train_erro_leitura import _filter_training_frame
 
 
 def _training_frame() -> pd.DataFrame:
@@ -97,7 +101,9 @@ def test_taxonomy_examples_are_bounded() -> None:
 
 
 def test_topic_training_text_removes_internal_user_tokens() -> None:
-    text = _topic_training_text("gmtuk elaine cristina feitosa reclama erro br123456 pessoa@example.com")
+    text = _topic_training_text(
+        "gmtuk elaine cristina feitosa reclama erro br123456 pessoa@example.com"
+    )
     assert "elaine" not in text
     assert "cristina" not in text
     assert "feitosa" not in text
@@ -121,7 +127,9 @@ def test_canonical_label_consolidates_source_variants() -> None:
 
 
 def test_classifier_training_returns_macro_f1() -> None:
-    result = ErroLeituraClassifierTrainer(TextEmbeddingBuilder(dimensions=4)).train(_training_frame())
+    result = ErroLeituraClassifierTrainer(TextEmbeddingBuilder(dimensions=4)).train(
+        _training_frame()
+    )
     assert result.backend == "logistic-regression-calibrated"
     assert result.macro_f1 >= 0.0
     assert "impedimento_acesso" in result.classes
@@ -130,11 +138,11 @@ def test_classifier_training_returns_macro_f1() -> None:
 def test_anomaly_detector_outputs_hotspots() -> None:
     frame = pd.DataFrame(
         [
-            {"dt_ingresso": "2026-01-01", "_source_region": "CE", "classe_erro": "leitura_estimada"},
-            {"dt_ingresso": "2026-01-02", "_source_region": "CE", "classe_erro": "leitura_estimada"},
-            {"dt_ingresso": "2026-01-03", "_source_region": "CE", "classe_erro": "leitura_estimada"},
-            {"dt_ingresso": "2026-01-03", "_source_region": "CE", "classe_erro": "leitura_estimada"},
-            {"dt_ingresso": "2026-01-03", "_source_region": "CE", "classe_erro": "leitura_estimada"},
+            _anomaly_row("2026-01-01"),
+            _anomaly_row("2026-01-02"),
+            _anomaly_row("2026-01-03"),
+            _anomaly_row("2026-01-03"),
+            _anomaly_row("2026-01-03"),
         ]
     )
     result = ErroLeituraAnomalyDetector().detect(frame)
@@ -152,3 +160,11 @@ def test_training_filter_excludes_total_by_default() -> None:
     filtered = _filter_training_frame(frame, include_total=False)
     assert filtered["ordem"].tolist() == ["2", "3"]
     assert len(_filter_training_frame(frame, include_total=True)) == 3
+
+
+def _anomaly_row(date_value: str) -> dict[str, str]:
+    return {
+        "dt_ingresso": date_value,
+        "_source_region": "CE",
+        "classe_erro": "leitura_estimada",
+    }

@@ -14,7 +14,7 @@ Reference for the unified data plane that powers the React BI surfaces.
   ```
 - **Caching**: `ETag` + `Cache-Control: max-age=60, stale-while-revalidate=300`. Server-side memory cache TTL = 300 s, keyed by `(view_id, dataset_hash, filters)`.
 - **Observability**: cache events include labels `layer`, `route`, `result`, `view_id`; aggregation latency includes `view_id` and `cache_result`.
-- **Filtering**: query string `?filters=<base64url(json)>`. Whitelisted keys: `regiao`, `tipo_origem`, `causa_canonica`, `topic_name`, `status`, `assunto`, `start_date`, `end_date`.
+- **Filtering**: query string `?filters=<base64url(json)>`. Whitelisted keys: `regiao`, `tipo_origem`, `causa_canonica`, `causa_canonica_confidence`, `topic_name`, `status`, `assunto`, `start_date`, `end_date`.
 - **Versioning**: clients must call `/v1/dataset/version` first, then forward `dataset_hash` to all downstream calls (used to short-circuit cache).
 
 ## Authoring a new view
@@ -52,6 +52,8 @@ Rules of thumb:
 | `category_breakdown` | `("categoria", "regiao")` | `qtd_erros` | taxonomy categoria |
 | `reincidence_matrix` | `("regiao", "faixa")` | `qtd_instalacoes` | 1, 2, 3-4, 5-9, 10+ ord. |
 | `taxonomy_reference` | `("Categoria",)` | `Peso` | static taxonomy v2 |
+| `classifier_coverage` | `("regiao", "causa_canonica_confidence")` | `qtd_ordens, percentual, indefinido_pct` | taxonomy v3 coverage by confidence |
+| `classifier_indefinido_tokens` | `("token",)` | `qtd_ocorrencias` | safe audit tokens for residual `indefinido` |
 
 ### Severidade SP — Sprint 24
 
@@ -73,10 +75,12 @@ Rules of thumb:
 #### Notes specific to the SP severidade family
 
 - All views are filtered to `regiao == "SP"` by the `_filter_sp_severidade` helper before aggregation. CE rows are dropped silently.
+- Sprint 25 changed the default to `min_confidence="high"` for this family. Rows with `causa_canonica_confidence="low"` remain available to other aggregations, but they do not inflate Alta/Crítica dashboards unless the handler is called explicitly with a lower threshold.
 - `pct_procedentes` is derived from `flag_resolvido_com_refaturamento`. Until the SP ingestion populates this flag (open debt), the field returns `0`.
 - `cidade` in the ranking falls back to `SP/SP` when `municipio` is not present in the silver layer.
 - Sparkline values are integers (count of orders per month) for the last 9 monthly buckets, left-padded with zeros if the installation has shorter history.
 - Severity classification is read from `taxonomy_metadata()` in `src/ml/models/erro_leitura_classifier.py`. Two severities are supported in this family: `high` (alias `alta`) and `critical` (alias `critica`).
+- `causa_canonica_confidence` is propagated by `prepare_dashboard_frame` and can be `high`, `low` or `indefinido`. Unknown values are treated as non-high for conservative severity views.
 
 ### CE Totais / Reclamações
 

@@ -24,6 +24,7 @@ from src.viz.erro_leitura_dashboard_data import (
     DEFAULT_SILVER_PATH,
     DEFAULT_TOPIC_ASSIGNMENTS_PATH,
     DEFAULT_TOPIC_TAXONOMY_PATH,
+    DEFAULT_TOPIC_TO_CANONICAL_PATH,
     TRAINING_DATA_TYPES,
     prepare_dashboard_frame,
 )
@@ -34,6 +35,7 @@ class DataStore:
     silver_path: Path = DEFAULT_SILVER_PATH
     topic_assignments_path: Path = DEFAULT_TOPIC_ASSIGNMENTS_PATH
     topic_taxonomy_path: Path = DEFAULT_TOPIC_TAXONOMY_PATH
+    topic_to_canonical_path: Path = DEFAULT_TOPIC_TO_CANONICAL_PATH
     medidor_sp_path: Path = DEFAULT_MEDIDOR_SP_PATH
     fatura_sp_path: Path = DEFAULT_FATURA_SP_PATH
     cache_dir: Path = Path(".streamlit/cache")
@@ -45,6 +47,7 @@ class DataStore:
                 self.silver_path,
                 self.topic_assignments_path,
                 self.topic_taxonomy_path,
+                self.topic_to_canonical_path,
                 self.medidor_sp_path,
                 self.fatura_sp_path,
             )
@@ -52,7 +55,7 @@ class DataStore:
 
     def load_silver(self, *, include_total: bool = False) -> pd.DataFrame:
         signature = sha256(
-            "|".join([self.version().hash, str(include_total), "data-plane-v1"]).encode("utf-8")
+            "|".join([self.version().hash, str(include_total), "data-plane-v3"]).encode("utf-8")
         ).hexdigest()
         return load_or_build_disk_cache(
             self.cache_dir,
@@ -112,6 +115,7 @@ class DataStore:
                 total_silver,
                 topic_assignments=None,
                 topic_taxonomy=None,
+                topic_to_canonical=_read_optional_csv(self.topic_to_canonical_path),
                 medidor_profile=medidor_profile,
                 fatura_profile=fatura_profile,
                 include_total=True,
@@ -136,6 +140,7 @@ class DataStore:
             silver,
             topic_assignments=_read_optional_csv(self.topic_assignments_path),
             topic_taxonomy=_read_optional_json(self.topic_taxonomy_path),
+            topic_to_canonical=_read_optional_csv(self.topic_to_canonical_path),
             medidor_profile=medidor_profile,
             fatura_profile=fatura_profile,
             include_total=include_total,
@@ -154,6 +159,7 @@ class DataStore:
             "regiao",
             "tipo_origem",
             "causa_canonica",
+            "causa_canonica_confidence",
             "topic_name",
             "status",
             "assunto",

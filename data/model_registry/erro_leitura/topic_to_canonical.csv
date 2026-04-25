@@ -1,0 +1,9 @@
+topic_id,topic_name,canonical_target,confidence
+0,consumo_variacao_dias,consumo_elevado_revisao,low
+1,consumo_dias_variacao,consumo_elevado_revisao,low
+2,anexo_mail_mail_anexo,solicitacao_canal_atendimento,low
+3,ajuste_leit_ajustada,procedimento_administrativo,low
+4,corrigido_ajuste_corrigido_ajustado,procedimento_administrativo,low
+5,ajuste_corrigida_ficou,procedimento_administrativo,low
+6,medidor_relogio_loja,medidor_danificado,low
+7,tecnico_telefone,solicitacao_canal_atendimento,low

@@ -25,6 +25,19 @@ if TYPE_CHECKING:
     from src.ml.features.text_embeddings import TextEmbeddingBuilder
 
 KeywordWeight = str | tuple[str, float]
+Confidence = str
+
+RESOLUCAO_RE = re.compile(
+    r"(procedente.*conforme|ajuste\s+(realizado|conclu)|"
+    r"fatura\s+(atualizada|corrigida)\s+para\s+(pgto|pagamento)|refat\s+ok)",
+    re.IGNORECASE,
+)
+CAUSA_HINT_RE = re.compile(
+    r"(medidor|leiturista|estim|digit|impedim|titularid|gd\s+|tarif|"
+    r"consumo\s+(elev|atip))",
+    re.IGNORECASE,
+)
+INCOMPLETE_TOKENS = {"refat", "digita", "conf", "inst", "fvpou", "aten"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,6 +350,81 @@ TAXONOMY: dict[str, TaxonomyEntry] = {
             r"\bleitura\s+confer[ií]d",
         ),
     ),
+    "procedimento_administrativo": TaxonomyEntry(
+        description="Resolucao administrativa sem causa tecnica explicita",
+        category="resolucao_administrativa",
+        severity="low",
+        keywords=(
+            ("procedente conforme solicitado", 3.0),
+            ("ajuste realizado em ordem", 3.0),
+            ("ajuste concluido", 2.5),
+            ("fatura atualizada para pagamento", 3.0),
+            ("faturas atualizadas para pgto", 3.0),
+            ("refaturamento ok", 2.5),
+            ("conforme solicitado", 1.5),
+            "ajustado em ordem",
+            "corrigido conforme",
+            "fatura atualizada",
+        ),
+        patterns=(
+            r"\bprocedente\b.*\bconforme\s+solicitad",
+            r"\bajuste\s+(realizad|conclu[ií]d)\b",
+            r"\bfatura(s)?\s+(atualizad|corrigid)\s+para\s+(pgto|pagamento)",
+        ),
+    ),
+    "ajuste_numerico_sem_causa": TaxonomyEntry(
+        description="Correcao numerica de consumo sem evidencia da causa raiz operacional",
+        category="resolucao_administrativa",
+        severity="low",
+        keywords=(
+            ("corrigir consumo", 2.0),
+            ("corrigido consumo", 2.0),
+            ("corrigida referencia", 2.0),
+            ("kwh", 1.0),
+            "ref 202",
+            "referencia 20",
+            "consumo da ref",
+        ),
+        patterns=(
+            r"\bcorrig\w+\s+consumo\s+(da\s+)?ref(erencia)?\s+\d{6}",
+            r"\bajustad\w+\s+\w+\s+consumo\s+.*\d+\s*kwh",
+            r"\b\d+\s*kwh\s+para\s+cada\s+mes",
+        ),
+    ),
+    "texto_incompleto": TaxonomyEntry(
+        description="Texto truncado ou abreviado demais para inferir causa operacional",
+        category="qualidade_texto",
+        severity="low",
+        keywords=(
+            ("fvpou", 2.0),
+            ("aten", 1.5),
+            ("conf", 1.0),
+            ("inst", 1.0),
+            "refat",
+            "digita",
+        ),
+    ),
+    "solicitacao_canal_atendimento": TaxonomyEntry(
+        description="Contato ou solicitacao por canal de atendimento sem causa tecnica",
+        category="canal_atendimento",
+        severity="low",
+        keywords=(
+            ("telefone", 2.0),
+            ("email", 2.0),
+            ("e-mail", 2.0),
+            ("whatsapp", 2.0),
+            ("central", 1.5),
+            ("sms", 1.5),
+            ("agente", 1.2),
+            "contato via",
+            "anexo",
+            "mail",
+        ),
+        patterns=(
+            r"\b(contato|retorno)\s+(via|por)\s+(telefone|e-?mail|whatsapp|sms)",
+            r"\banexo\s+(por|via)\s+(mail|e-?mail)",
+        ),
+    ),
 }
 
 
@@ -399,6 +487,19 @@ CANONICAL_LABEL_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("confirmada", "conferida", "improcedente", "sem_variacao", "sem_variação"),
     ),
     ("consumo_elevado_revisao", ("consumo_elevado", "variacao", "variação", "revisao", "revisão")),
+    (
+        "procedimento_administrativo",
+        ("procedimento_administrativo", "procedente_conforme", "ajuste_realizado"),
+    ),
+    (
+        "ajuste_numerico_sem_causa",
+        ("ajuste_numerico", "corrigir_consumo", "corrigido_consumo"),
+    ),
+    ("texto_incompleto", ("texto_incompleto", "truncado")),
+    (
+        "solicitacao_canal_atendimento",
+        ("canal_atendimento", "telefone", "email", "whatsapp", "central"),
+    ),
 )
 
 # Retrocompatibilidade para callers antigos que importavam KEYWORD_TAXONOMY.
@@ -451,12 +552,18 @@ class KeywordErroLeituraClassifier:
         self,
         *,
         taxonomy: dict[str, TaxonomyEntry] | None = None,
-        min_score: float = 1.0,
-        margin_ratio: float = 1.05,
+        min_score: float = 0.6,
+        margin_ratio: float = 1.02,
+        confidence_threshold: float = 0.6,
+        high_confidence_min_score: float = 1.0,
+        high_confidence_margin_ratio: float = 1.05,
     ) -> None:
         self.taxonomy = taxonomy or TAXONOMY
         self.min_score = min_score
         self.margin_ratio = margin_ratio
+        self.confidence_threshold = confidence_threshold
+        self.high_confidence_min_score = high_confidence_min_score
+        self.high_confidence_margin_ratio = high_confidence_margin_ratio
         self._prepared = {
             label: self._prepare_entry(entry) for label, entry in self.taxonomy.items()
         }
@@ -508,6 +615,18 @@ class KeywordErroLeituraClassifier:
         return results
 
     def classify(self, text: str) -> dict[str, Any]:
+        preclassified = self._preclassify(text)
+        if preclassified is not None:
+            label, confidence = preclassified
+            return {
+                "classe": label,
+                "confidence": confidence,
+                "probabilidade": 1.0,
+                "score_bruto": 99.0,
+                "top3": [{"classe": label, "probabilidade": 1.0, "score_bruto": 99.0}],
+                "ambiguous": False,
+                "weak_signal": False,
+            }
         raw_scores = self.score_text(text)
         total = sum(raw_scores.values())
         probabilities = (
@@ -519,9 +638,10 @@ class KeywordErroLeituraClassifier:
         top_label, top_score = ordered[0]
         second_score = ordered[1][1] if len(ordered) > 1 else 0.0
 
-        is_weak = top_score < self.min_score
+        is_weak = top_score < self.confidence_threshold or top_score < self.min_score
         is_ambiguous = second_score > 0 and top_score < second_score * self.margin_ratio
         predicted = "indefinido" if is_weak or is_ambiguous else top_label
+        confidence = self._confidence_bucket(top_score, second_score, predicted)
 
         top3 = [
             {
@@ -533,12 +653,39 @@ class KeywordErroLeituraClassifier:
         ]
         return {
             "classe": predicted,
+            "confidence": confidence,
             "probabilidade": round(probabilities[top_label], 4),
             "score_bruto": round(top_score, 2),
             "top3": top3,
             "ambiguous": is_ambiguous,
             "weak_signal": is_weak,
         }
+
+    def _preclassify(self, text: str) -> tuple[str, Confidence] | None:
+        normalized = normalize_text(text)
+        if not normalized:
+            return None
+        if _is_resolucao_pura(normalized):
+            return ("procedimento_administrativo", "high")
+        if _is_texto_incompleto(normalized):
+            return ("texto_incompleto", "high")
+        return None
+
+    def _confidence_bucket(
+        self,
+        top_score: float,
+        second_score: float,
+        predicted: str,
+    ) -> Confidence:
+        if predicted == "indefinido":
+            return "indefinido"
+        ratio = float("inf") if second_score <= 0 else top_score / second_score
+        if (
+            top_score >= self.high_confidence_min_score
+            and ratio >= self.high_confidence_margin_ratio
+        ):
+            return "high"
+        return "low"
 
 
 class ErroLeituraClassifierTrainer:
@@ -672,6 +819,24 @@ def canonical_label(value: object) -> str | None:
     if text in TAXONOMY:
         return text
     return None
+
+
+def _is_resolucao_pura(text: str) -> bool:
+    normalized = normalize_text(text)
+    return RESOLUCAO_RE.search(normalized) is not None and CAUSA_HINT_RE.search(normalized) is None
+
+
+def _is_texto_incompleto(text: str) -> bool:
+    normalized = normalize_text(text)
+    if not normalized:
+        return False
+    tokens = normalized.split()
+    if len(normalized) <= 25 and any(token in INCOMPLETE_TOKENS for token in tokens):
+        return True
+    if not tokens:
+        return False
+    incomplete_hits = sum(1 for token in tokens if token in INCOMPLETE_TOKENS)
+    return len(tokens) <= 6 and (incomplete_hits / len(tokens)) >= 0.6
 
 
 def taxonomy_metadata() -> pd.DataFrame:

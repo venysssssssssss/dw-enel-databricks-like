@@ -1,0 +1,30 @@
+groups:
+  - name: classifier-coverage
+    interval: 5m
+    rules:
+      - alert: ClassifierIndefinidoSpike
+        expr: enel_classifier_indefinido_ratio > 0.4
+        for: 24h
+        labels:
+          severity: warning
+          domain: ml
+          area: erro-leitura-classifier
+        annotations:
+          summary: "Classificador com indefinido alto em {{ $labels.regiao }}"
+          description: |
+            `enel_classifier_indefinido_ratio` está acima de 40% por 24h.
+            Recalcule `classifier_coverage`, audite `classifier_indefinido_tokens` e revise o mapeamento v3.
+            Runbook: docs/RUNBOOK.md#classifier-coverage
+
+      - alert: ClassifierMetricStale
+        expr: absent(enel_classifier_indefinido_ratio)
+        for: 24h
+        labels:
+          severity: info
+          domain: ml
+          area: erro-leitura-classifier
+        annotations:
+          summary: "Métrica de cobertura do classificador ausente"
+          description: |
+            A métrica só é atualizada quando `/v1/aggregations/classifier_coverage` é consultado.
+            Verifique o dashboard Grafana ou o job de warmup de cache.

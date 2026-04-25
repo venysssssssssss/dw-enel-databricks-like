@@ -39,11 +39,17 @@ try:  # pragma: no cover - exercised through /metrics in deployed API.
         "Latest SP severity total complaints exposed by overview aggregations.",
         ("severity",),
     )
+    CLASSIFIER_INDEFINIDO_RATIO = Gauge(
+        "enel_classifier_indefinido_ratio",
+        "Latest classifier indefinido ratio by region.",
+        ("regiao",),
+    )
 except Exception:  # pragma: no cover - prometheus optional in lean installs.
     CACHE_EVENTS = None
     AGGREGATION_LATENCY = None
     WEB_VITALS = None
     SEVERITY_SP_TOTAL = None
+    CLASSIFIER_INDEFINIDO_RATIO = None
 
 
 @router.get("/dataset/version")
@@ -91,6 +97,7 @@ def aggregation(
         _observe_latency(view_id, "error", started)
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     _observe_severity_total(view_id, records)
+    _observe_classifier_coverage(view_id, records)
     payload = json.dumps(
         {
             "view_id": view_id,
@@ -191,6 +198,18 @@ def _observe_severity_total(view_id: str, records: list[dict[str, Any]]) -> None
     except (TypeError, ValueError):
         total = 0.0
     SEVERITY_SP_TOTAL.labels(severity=severity).set(total)
+
+
+def _observe_classifier_coverage(view_id: str, records: list[dict[str, Any]]) -> None:
+    if CLASSIFIER_INDEFINIDO_RATIO is None or view_id != "classifier_coverage":
+        return
+    for row in records:
+        regiao = str(row.get("regiao", "NAO_INFORMADA"))
+        try:
+            ratio = float(row.get("indefinido_pct", 0))
+        except (TypeError, ValueError):
+            ratio = 0.0
+        CLASSIFIER_INDEFINIDO_RATIO.labels(regiao=regiao).set(ratio)
 
 
 def _float_or_zero(value: Any) -> float:
