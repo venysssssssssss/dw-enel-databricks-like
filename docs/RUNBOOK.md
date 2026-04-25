@@ -145,3 +145,43 @@ ALTER TABLE iceberg.bronze.<tabela> EXECUTE remove_orphan_files;
 ### Superset dashboard não atualiza
 
 Invalidar cache: UI → Settings → Clear cache. Ou via API: `POST /api/v1/dataset/<id>/refresh`.
+
+## Severidade SP (Sprint 24+)
+
+### Alerta `SeveridadeCacheDegraded`
+
+Cache miss > 80% sustentado por 10 min em alguma view `sp_severidade_*`.
+
+Causas prováveis:
+1. **Reingestão recente**: `dataset_hash` mudou e o cache em memória foi descartado. Esperar 5–10 min para re-aquecer; alerta deve resolver sozinho.
+2. **TTL muito curto**: tráfego de baixa frequência mata o cache antes do hit. Avaliar aumentar `MemoryResponseCache(ttl_seconds=…)` em `src/api/routers/dashboard.py` se padrão recorrente.
+3. **Filtros de alta cardinalidade**: front passando `?filters=` com combinações distintas a cada chamada (bug). Inspecionar Sentry / network panel — chave do cache inclui filtros.
+4. **API restart**: cache em memória zera. Nada a fazer.
+
+Diagnóstico:
+```bash
+curl -s http://api/metrics | grep enel_cache_events_total
+```
+Se `result="hit"` ≈ 0 e `result="miss"` crescente, cache nunca está aquecendo.
+
+### Alerta `SeveridadeLatencyP95High`
+
+p95 > 250 ms por 10 min. Investigar:
+1. `python -m scripts.smoke_sp_severidade --view <view_id>` localmente para isolar handler.
+2. Inspeccionar `enel_aggregation_latency_seconds_bucket{view_id=...}` por buckets para ver se cauda começa a partir de N segundos.
+3. Verificar tamanho do silver: `wc -l data/silver/erro_leitura_normalizado.csv`. Se cresceu muito desde o último deploy, considerar mover handlers para Polars ou pre-agregação Iceberg.
+
+### Página /bi/severidade-* mostra `0` em todos os KPIs
+
+Esperado se silver SP ainda não popula `flag_resolvido_com_refaturamento`. Confirmar via:
+```bash
+.venv/bin/python -c "import pandas as pd; print(pd.read_csv('data/silver/erro_leitura_normalizado.csv', usecols=['_source_region','flag_resolvido_com_refaturamento']).query('_source_region == \"SP\"')['flag_resolvido_com_refaturamento'].value_counts())"
+```
+Se 100% `False`, é dívida da ingestão (Sprint 5/6) — não é regressão da Sprint 24.
+
+### Rota /bi/severidade-* renderiza vazio
+
+1. Conferir `/v1/dataset/version` retorna `hash` válido (não `pending`).
+2. `curl /v1/aggregations/sp_severidade_alta_overview` retorna 200 com `data: [{...}]`.
+3. Inspecionar console do navegador: `dataset_hash` na chave do React Query precisa estar populado.
+4. Se backend OK mas UI vazia: verificar que o build mais recente foi servido (sem cache antigo do nginx).

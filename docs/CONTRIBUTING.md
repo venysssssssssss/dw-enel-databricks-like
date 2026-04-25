@@ -95,3 +95,32 @@ Pré-commit hooks (ruff, mypy) são instalados automaticamente pelo target `setu
 - **Reuso obrigatório**: `BaseIngestor`, `BaseSilverTransformer`, `BaseModelTrainer` — não recriar o template method.
 - **Metadados técnicos** em todo Bronze: `_run_id`, `_ingested_at`, `_source_hash`, `_partition_date`.
 - **Open-source only**: zero dependência de serviços pagos ou vendor-locked.
+
+## Adicionando uma nova view de aggregation
+
+Toda tela analítica do front consome `/v1/aggregations/{view_id}`. Visões são registradas em `src/data_plane/views.py::VIEW_REGISTRY` via `ViewSpec(id, group_keys, metrics, filters_schema, handler, kwargs={})`.
+
+Padrão canônico de view parametrizada — exemplo da família **`sp_severidade_*`** (Sprint 24):
+
+```python
+"sp_severidade_alta_overview": ViewSpec(
+    "sp_severidade_alta_overview",
+    (),
+    ("total", "procedentes", "improcedentes", "valor_medio_fatura"),
+    FILTER_FIELDS,
+    sp_severidade_overview,
+    {"severidade": "high"},
+),
+```
+
+Checklist obrigatório ao criar uma view:
+
+1. Implementar handler em `src/viz/<dominio>_dashboard_data.py`. Sempre retornar `pd.DataFrame` com colunas estáveis (mesmo no caso vazio).
+2. Registrar no `VIEW_REGISTRY` com `group_keys`, `metrics`, e `kwargs` quando houver variantes.
+3. Cobrir com pytest: caso vazio, kwargs alternativos, filtro regional, valores de borda. Ver `tests/unit/test_sp_severidade_views.py` como referência.
+4. Documentar em `docs/api/aggregations.md` na tabela apropriada.
+5. (Opcional) Painel Grafana em `infra/config/grafana/dashboards/` se justificar observabilidade dedicada.
+
+**Source of truth**: derivações de severidade, categoria e peso vêm sempre de `taxonomy_metadata()` em `src/ml/models/erro_leitura_classifier.py`. Maps hard-coded em handlers ou no front são proibidos.
+
+Referência completa do contrato e endpoints disponíveis: `docs/api/aggregations.md`.
