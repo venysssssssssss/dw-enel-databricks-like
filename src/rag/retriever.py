@@ -102,6 +102,66 @@ def lexical_scores(query: str, passages: list[str]) -> list[float]:
     return out
 
 
+def _align_embedder_to_collection(collection, embed_fn):  # noqa: ANN001, ANN202
+    """Keep query embeddings compatible with the persisted Chroma collection.
+
+    Existing local corpora may have been indexed with the 256-dim hashing
+    embedder while the current default config points to a 384-dim MiniLM model.
+    Chroma rejects that at query time. If we detect a 256-dim collection, use
+    the same hashing embedder automatically so the chat remains available.
+    """
+    collection_dim = _collection_embedding_dimension(collection)
+    if collection_dim is None:
+        return embed_fn
+    query_dim = _embedder_dimension(embed_fn)
+    if query_dim is None or query_dim == collection_dim:
+        return embed_fn
+
+    from src.rag.ingestion import _load_embedder
+
+    hashing_embedder = _load_embedder("hashing")
+    hashing_dim = _embedder_dimension(hashing_embedder)
+    if hashing_dim == collection_dim:
+        return hashing_embedder
+    raise RuntimeError(
+        "Dimensão de embedding incompatível com o índice RAG: "
+        f"collection={collection_dim}, consulta={query_dim}. "
+        "Rode `python scripts/build_rag_corpus.py --rebuild` ou ajuste "
+        "`RAG_EMBEDDING_MODEL` para o mesmo modelo usado na indexação."
+    )
+
+
+def _embedder_dimension(embed_fn) -> int | None:  # noqa: ANN001
+    try:
+        vectors = embed_fn(["dimension probe"])
+    except Exception:
+        return None
+    return _first_vector_dimension(vectors)
+
+
+def _collection_embedding_dimension(collection) -> int | None:  # noqa: ANN001
+    try:
+        result = collection.get(limit=1, include=["embeddings"])
+    except Exception:
+        return None
+    return _first_vector_dimension(result.get("embeddings"))
+
+
+def _first_vector_dimension(value: object) -> int | None:
+    if value is None:
+        return None
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if not isinstance(value, list) or not value:
+        return None
+    vector = value[0]
+    if hasattr(vector, "tolist"):
+        vector = vector.tolist()
+    if not isinstance(vector, list):
+        return None
+    return len(vector)
+
+
 class HybridRetriever:
     """Retrieval cosine-first, re-scoring híbrido (cosine + lexical)."""
 
@@ -131,6 +191,7 @@ class HybridRetriever:
         client = chromadb.PersistentClient(path=str(path))
         self._collection = client.get_collection(self.config.collection_name)
         self._embed_fn = _load_embedder(self.config.embedding_model)
+        self._embed_fn = _align_embedder_to_collection(self._collection, self._embed_fn)
 
     def retrieve(
         self,
