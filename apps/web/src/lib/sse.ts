@@ -4,6 +4,7 @@ export type RagEventHandlers = {
   onToken: (token: string) => void;
   onDone: (payload: RagDonePayload) => void;
   onError: (message: string) => void;
+  onStage?: (payload: RagStagePayload) => void;
 };
 
 export type RagDonePayload = {
@@ -18,8 +19,15 @@ export type RagDonePayload = {
     doc_id?: string;
     path?: string;
     score?: number;
-    section?: string;
-  }>;
+      section?: string;
+      anchor?: string;
+    }>;
+};
+
+export type RagStagePayload = {
+  key?: string;
+  label?: string;
+  status?: "pending" | "active" | "done" | "error";
 };
 
 export type RagHistoryTurn = {
@@ -52,6 +60,9 @@ export async function streamRagAnswer(
       };
       if (event.event === "token" && payload.text) {
         handlers.onToken(payload.text);
+      }
+      if (event.event === "stage") {
+        handlers.onStage?.(payload as RagStagePayload);
       }
       if (event.event === "done") {
         handlers.onDone(payload);

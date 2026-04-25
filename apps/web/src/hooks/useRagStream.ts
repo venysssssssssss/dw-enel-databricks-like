@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { streamRagAnswer } from "../lib/sse";
 
+export type RagStage = {
+  key: string;
+  label: string;
+  status: "pending" | "active" | "done" | "error";
+};
+
 export type RagSource = {
   doc_id?: string;
   path?: string;
   score?: number;
   section?: string;
+  anchor?: string;
 };
 
 export type RagMeta = {
@@ -25,6 +32,7 @@ export type RagMessage = {
   cacheHit?: boolean;
   feedbackSent?: boolean;
   sources?: RagSource[];
+  stages?: RagStage[];
   meta?: RagMeta;
   firstTokenAt?: number;
 };
@@ -58,7 +66,13 @@ export function useRagStream(datasetHash: string, contextHint?: string) {
       setMessages((current) => [
         ...current,
         { id: userId, role: "user", content: question, createdAt: startedAt },
-        { id: assistantId, role: "assistant", content: "", createdAt: startedAt }
+        {
+          id: assistantId,
+          role: "assistant",
+          content: "",
+          createdAt: startedAt,
+          stages: initialStages()
+        }
       ]);
       await streamRagAnswer(
         question,
@@ -76,6 +90,23 @@ export function useRagStream(datasetHash: string, contextHint?: string) {
               return copy;
             });
           },
+          onStage(payload) {
+            if (!payload.key) return;
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === assistantId
+                  ? {
+                      ...message,
+                      stages: mergeStage(message.stages, {
+                        key: payload.key ?? "stage",
+                        label: payload.label ?? defaultStageLabel(payload.key ?? "stage"),
+                        status: payload.status ?? "active"
+                      })
+                    }
+                  : message
+              )
+            );
+          },
           onDone(payload) {
             setStatus("done");
             setMessages((current) =>
@@ -83,6 +114,10 @@ export function useRagStream(datasetHash: string, contextHint?: string) {
                 message.id === assistantId
                   ? {
                       ...message,
+                      stages: (message.stages ?? initialStages()).map((stage) => ({
+                        ...stage,
+                        status: "done"
+                      })),
                       questionHash: payload.question_hash,
                       cacheHit: Boolean(payload.cache_hit),
                       sources: payload.sources ?? [],
@@ -134,4 +169,29 @@ function makeMessageId(prefix: string): string {
     return `${prefix}-${crypto.randomUUID()}`;
   }
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function initialStages(): RagStage[] {
+  return [
+    { key: "validate", label: "Validar pergunta", status: "active" },
+    { key: "route", label: "Roteamento CE/SP", status: "pending" },
+    { key: "retrieve", label: "Consultar silver e fontes", status: "pending" },
+    { key: "generate", label: "Gerar resposta", status: "pending" }
+  ];
+}
+
+function mergeStage(current: RagStage[] | undefined, next: RagStage): RagStage[] {
+  const stages = current && current.length > 0 ? current : initialStages();
+  let seen = false;
+  const merged = stages.map((stage) => {
+    if (stage.key !== next.key) return stage;
+    seen = true;
+    return { ...stage, ...next };
+  });
+  return seen ? merged : [...merged, next];
+}
+
+function defaultStageLabel(key: string): string {
+  const stage = initialStages().find((item) => item.key === key);
+  return stage?.label ?? key;
 }
