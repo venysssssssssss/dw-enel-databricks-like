@@ -1,0 +1,120 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "title": "ENEL · Severidade SP",
+  "tags": ["enel", "severidade", "sp", "bi"],
+  "schemaVersion": 39,
+  "style": "dark",
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "view_id",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(enel_aggregation_latency_seconds_count{view_id=~\"sp_severidade_.*\"}, view_id)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Ordens severas SP · total atual",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(enel_aggregation_latency_seconds_count{view_id=\"sp_severidade_alta_overview\"}[24h]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Latência p50/p95/p99 · sp_severidade_*",
+      "gridPos": { "h": 8, "w": 18, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, view_id) (rate(enel_aggregation_latency_seconds_bucket{view_id=~\"sp_severidade_.*\"}[5m])))",
+          "legendFormat": "p50 · {{view_id}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, view_id) (rate(enel_aggregation_latency_seconds_bucket{view_id=~\"sp_severidade_.*\"}[5m])))",
+          "legendFormat": "p95 · {{view_id}}",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, view_id) (rate(enel_aggregation_latency_seconds_bucket{view_id=~\"sp_severidade_.*\"}[5m])))",
+          "legendFormat": "p99 · {{view_id}}",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Cache hit ratio · sp_severidade_* (10m)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "min": 0, "max": 1 }
+      },
+      "targets": [
+        {
+          "expr": "sum by (view_id) (rate(enel_cache_events_total{layer=\"memory\",route=\"aggregation\",result=\"hit\"}[10m])) / clamp_min(sum by (view_id) (rate(enel_cache_events_total{layer=\"memory\",route=\"aggregation\"}[10m])), 1)",
+          "legendFormat": "{{view_id}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Eventos cache HIT vs MISS por view (1h)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (view_id, result) (increase(enel_cache_events_total{layer=\"memory\",route=\"aggregation\"}[1h]))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Throughput · req/s por view",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "targets": [
+        {
+          "expr": "sum by (view_id) (rate(enel_aggregation_latency_seconds_count{view_id=~\"sp_severidade_.*\"}[5m]))",
+          "legendFormat": "{{view_id}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

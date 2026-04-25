@@ -1,0 +1,59 @@
+groups:
+  - name: severidade-sp
+    interval: 30s
+    rules:
+      - alert: SeveridadeCacheDegraded
+        expr: |
+          (
+            sum by (view_id) (rate(enel_cache_events_total{layer="memory",route="aggregation",result="miss"}[10m]))
+            /
+            clamp_min(
+              sum by (view_id) (rate(enel_cache_events_total{layer="memory",route="aggregation"}[10m])),
+              1
+            )
+          ) > 0.8
+          and on (view_id) (sum by (view_id) (rate(enel_cache_events_total{layer="memory",route="aggregation"}[10m])) > 0)
+          and on (view_id) (label_replace(vector(1), "view_id", "$1", "view_id", "(sp_severidade_.*)"))
+        for: 10m
+        labels:
+          severity: warning
+          domain: bi
+          area: severidade-sp
+        annotations:
+          summary: "Cache miss > 80% em {{ $labels.view_id }} (≥10m)"
+          description: |
+            Mais de 80% das requisições à view `{{ $labels.view_id }}` estão sem cache nos últimos 10 minutos.
+            Verifique reciclagem do TTL, mudanças recentes no `dataset_hash` ou pressão de invalidação.
+            Runbook: docs/RUNBOOK.md#severidade
+
+      - alert: SeveridadeLatencyP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, view_id) (rate(enel_aggregation_latency_seconds_bucket{view_id=~"sp_severidade_.*"}[5m]))
+          ) > 0.25
+        for: 10m
+        labels:
+          severity: warning
+          domain: bi
+          area: severidade-sp
+        annotations:
+          summary: "p95 > 250ms em {{ $labels.view_id }} (≥10m)"
+          description: |
+            View `{{ $labels.view_id }}` com p95 acima do SLO (250ms) por 10 minutos.
+            Investigar pressão no DataStore, frame size ou novo padrão de filtros.
+
+      - alert: SeveridadeNoTraffic
+        expr: |
+          sum by (view_id) (rate(enel_aggregation_latency_seconds_count{view_id=~"sp_severidade_.*"}[30m])) == 0
+          and on() (hour() >= 8 < 22)
+        for: 30m
+        labels:
+          severity: info
+          domain: bi
+          area: severidade-sp
+        annotations:
+          summary: "Sem tráfego em {{ $labels.view_id }} no horário comercial"
+          description: |
+            View `{{ $labels.view_id }}` não recebeu chamadas há 30 minutos durante horário comercial.
+            Pode indicar problema de roteamento no front, flag desativada ou regressão da página.
