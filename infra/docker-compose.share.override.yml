@@ -1,0 +1,7 @@
+services:
+  caddy:
+    depends_on: !reset
+      - web
+      - api
+  streamlit:
+    profiles: ["legacy"]

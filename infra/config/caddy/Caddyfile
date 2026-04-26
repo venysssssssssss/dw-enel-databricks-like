@@ -42,20 +42,6 @@
 		reverse_proxy api:8000
 	}
 
-	# Fallback Streamlit (transição): /legacy → Streamlit.
-	handle_path /legacy/* {
-		reverse_proxy streamlit:8501 {
-			transport http {
-				keepalive 30s
-				read_timeout 300s
-			}
-		}
-	}
-	# Streamlit websocket — mantido na raiz p/ reload do legacy.
-	handle /_stcore/* {
-		reverse_proxy streamlit:8501
-	}
-
 	# Default: React SPA (nginx serve index.html + assets + try_files).
 	handle {
 		reverse_proxy web:8080
