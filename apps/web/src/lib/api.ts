@@ -32,6 +32,24 @@ export async function fetchAggregation<T>(
   return requestJson<AggregationResponse<T>>(url, { cacheKey: `${url}:${datasetHash}` });
 }
 
+export type DescricoesResponse<T = Record<string, unknown>> = {
+  view_id: string;
+  dataset_hash: string;
+  severidade: "alta" | "critica";
+  limit: number;
+  count: number;
+  data: T[];
+};
+
+export async function fetchDescricoes<T>(
+  level: "alta" | "critica",
+  datasetHash: string,
+  limit = 10
+): Promise<DescricoesResponse<T>> {
+  const url = `/v1/severidade/${level}/descricoes?limit=${limit}`;
+  return requestJson<DescricoesResponse<T>>(url, { cacheKey: `${url}:${datasetHash}` });
+}
+
 export async function sendRagFeedback(
   questionHash: string,
   rating: "up" | "down",

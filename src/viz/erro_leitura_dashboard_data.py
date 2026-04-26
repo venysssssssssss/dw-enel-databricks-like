@@ -949,22 +949,36 @@ def sp_severidade_descricoes(
     if df.empty:
         return pd.DataFrame(columns=cols)
 
-    text_col = (
-        "texto_completo"
-        if "texto_completo" in df.columns
-        else ("observacao_ordem" if "observacao_ordem" in df.columns else None)
-    )
-    if text_col is None:
-        return pd.DataFrame(columns=cols)
+    text_candidates = [
+        c for c in ("texto_completo", "observacao_ordem", "assunto") if c in df.columns
+    ]
+    text_col = text_candidates[0] if text_candidates else None
 
-    work = df.dropna(subset=[text_col]).copy()
+    work = df.copy()
+    if text_col is not None:
+        work = work.dropna(subset=[text_col])
     if work.empty:
         return pd.DataFrame(columns=cols)
 
-    work["__len"] = work[text_col].astype(str).str.len()
-    work = work.loc[work["__len"].between(40, 600)]
+    def _row_text(row: pd.Series) -> str:
+        parts: list[str] = []
+        if text_col and pd.notna(row.get(text_col)):
+            parts.append(str(row[text_col]))
+        topic_name = row.get("topic_name")
+        if isinstance(topic_name, str) and topic_name and topic_name not in parts[0:1]:
+            parts.append(topic_name)
+        kws = row.get("topic_keywords")
+        if isinstance(kws, str) and kws:
+            parts.append(kws.replace(",", ", "))
+        elif isinstance(kws, (list, tuple)):
+            parts.append(", ".join(str(k) for k in kws if k))
+        return " — ".join(p for p in parts if p).strip()
+
+    work["__text"] = work.apply(_row_text, axis=1)
+    work = work.loc[work["__text"].astype(str).str.len() > 0]
     if work.empty:
         return pd.DataFrame(columns=cols)
+    work["__len"] = work["__text"].str.len()
 
     work["proc"] = work.get(
         "flag_resolvido_com_refaturamento", pd.Series(False, index=work.index)
@@ -1021,11 +1035,11 @@ def sp_severidade_descricoes(
     for _, row in work.iterrows():
         causa = str(row.get("causa_canonica") or "indefinido")
         cat = str(row.get("categoria") or "nao_classificada")
-        bucket_key = f"{causa}::{bool(row['proc'])}"
+        ordem_id = str(row.get("ordem") or "")
+        bucket_key = ordem_id or f"{causa}::{bool(row['proc'])}::{len(records)}"
         if bucket_key in seen:
             continue
         seen.add(bucket_key)
-        ordem_id = str(row.get("ordem") or "")
         records.append(
             {
                 "id": f"ORD-{ordem_id}" if ordem_id else f"ENL-{len(records):04d}",
@@ -1037,7 +1051,7 @@ def sp_severidade_descricoes(
                 else "",
                 "proc": bool(row["proc"]),
                 "valor": float(row["__valor"]) if pd.notna(row["__valor"]) else 0.0,
-                "resumo": _resumo_text(str(row.get(text_col, ""))),
+                "resumo": _resumo_text(str(row.get("__text", ""))),
                 "sugestao": _suggest_action(causa, cat, bool(row["proc"])),
                 "area": _AREA_BY_CATEGORIA.get(cat, "Operacional — Triagem"),
                 "top_instalacoes": causa_to_top_inst.get(causa, [])[:10],

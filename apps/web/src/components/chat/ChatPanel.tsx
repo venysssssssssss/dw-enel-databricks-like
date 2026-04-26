@@ -177,9 +177,6 @@ function MessageView({ message, streaming, onFeedback }: MessageViewProps) {
                 <span className="caret"></span>
               </div>
               <PipelineStages stages={message.stages} />
-              <div className="shimmer"></div>
-              <div className="shimmer s2"></div>
-              <div className="shimmer s3"></div>
             </div>
           ) : (
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content || "…"}</ReactMarkdown>
@@ -344,52 +341,39 @@ function PipelineStages({ stages }: { stages?: RagStage[] }) {
   const elapsed = ((now - startedRef.current) / 1000).toFixed(1);
 
   return (
-    <div className="agent-pipeline" aria-label="Pipeline do agente" role="list">
-      <div className="agent-pipeline-head">
-        <div className="agent-pipeline-title">
-          <span className="agent-pipeline-tag">PIPELINE</span>
-          <span className="agent-pipeline-stat">
-            {doneCount}/{total} estágios
-          </span>
-        </div>
-        <div className="agent-pipeline-clock" aria-live="polite">
-          <span className="ms-dot" aria-hidden />
+    <section className="agent-pipeline" aria-label="Pipeline do agente">
+      <header className="agent-pipeline-head">
+        <span className="agent-pipeline-tag">PIPELINE</span>
+        <span className="agent-pipeline-progress" aria-hidden>
+          <span style={{ width: `${progressed * 100}%` }} />
+        </span>
+        <span className="agent-pipeline-stat" aria-live="polite">
+          {String(doneCount).padStart(2, "0")}<span className="dim">/{String(total).padStart(2, "0")}</span>
+          <span className="sep" aria-hidden>·</span>
           {elapsed}s
-        </div>
-      </div>
-      <div className="agent-pipeline-progress" aria-hidden>
-        <span style={{ width: `${progressed * 100}%` }} />
-      </div>
-      <ol className="agent-pipeline-list">
+        </span>
+      </header>
+      <ol className="agent-pipeline-list" role="list">
         {stages.map((stage, idx) => {
           const hint = STAGE_HINT[stage.key];
-          const last = idx === stages.length - 1;
+          const glyph =
+            stage.status === "done" ? "✓"
+            : stage.status === "active" ? "●"
+            : stage.status === "error" ? "×"
+            : "○";
           return (
-            <li className={`agent-step ${stage.status}`} key={stage.key} role="listitem">
-              <span className="agent-step-rail" aria-hidden />
-              <span className="agent-step-marker" aria-hidden>
-                {stage.status === "done" ? "✓" : String(idx + 1).padStart(2, "0")}
-              </span>
+            <li className={`agent-step is-${stage.status}`} key={stage.key} role="listitem">
+              <span className="agent-step-glyph" aria-hidden>{glyph}</span>
+              <span className="agent-step-num" aria-hidden>{String(idx + 1).padStart(2, "0")}</span>
               <span className="agent-step-body">
                 <span className="agent-label">{stage.label}</span>
                 {hint ? <span className="agent-step-hint">{hint}</span> : null}
               </span>
-              <span className="agent-step-state">
-                {stage.status === "active" ? (
-                  <span className="agent-state-active">processando…</span>
-                ) : stage.status === "done" ? (
-                  <span className="agent-state-done">ok</span>
-                ) : stage.status === "error" ? (
-                  <span className="agent-state-err">falha</span>
-                ) : (
-                  <span className="agent-state-pending">aguardando</span>
-                )}
-              </span>
-              {last ? null : <span className="agent-step-connector" aria-hidden />}
+              <span className="agent-step-state" aria-hidden />
             </li>
           );
         })}
       </ol>
-    </div>
+    </section>
   );
 }

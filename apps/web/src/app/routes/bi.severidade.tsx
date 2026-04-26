@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useAggregation } from "../../hooks/useAggregation";
+import { useDescricoes } from "../../hooks/useDescricoes";
 import {
   CategoriasHBars,
   CausasScatter,
@@ -83,7 +84,7 @@ function SeveridadeScreen({ severity }: { severity: Severity }) {
   const cats = useAggregation<Categoria>(`sp_severidade_${viewSuffix}_categorias`);
   const causas = useAggregation<Causa>(`sp_severidade_${viewSuffix}_causas`);
   const ranking = useAggregation<RankingRow>(`sp_severidade_${viewSuffix}_ranking`);
-  const descricoes = useAggregation<DescricaoRow>(`sp_severidade_${viewSuffix}_descricoes`);
+  const descricoes = useDescricoes<DescricaoRow>(severity === "alta" ? "alta" : "critica", 10);
 
   const [activeCat, setActiveCat] = useState<string | null>(null);
   const [activeCausa, setActiveCausa] = useState<string | null>(null);
@@ -292,7 +293,7 @@ function SeveridadeScreen({ severity }: { severity: Severity }) {
           </div>
         </header>
         <DescricoesTable
-          rows={(descricoes.data?.data ?? []).slice(0, 10)}
+          rows={descricoes.data?.data ?? []}
           loading={descricoes.isLoading}
           activeCat={activeCat}
           activeCausa={activeCausa}

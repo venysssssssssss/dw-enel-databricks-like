@@ -1199,7 +1199,7 @@ VIEW_REGISTRY: dict[str, ViewSpec] = {
         ("valor",),
         FILTER_FIELDS,
         sp_severidade_descricoes,
-        {"severidade": "high"},
+        {"severidade": "high", "limit": 10},
     ),
     "sp_severidade_critica_descricoes": ViewSpec(
         "sp_severidade_critica_descricoes",
@@ -1207,7 +1207,7 @@ VIEW_REGISTRY: dict[str, ViewSpec] = {
         ("valor",),
         FILTER_FIELDS,
         sp_severidade_descricoes,
-        {"severidade": "critical"},
+        {"severidade": "critical", "limit": 10},
     ),
     "reincidence_matrix": ViewSpec(
         "reincidence_matrix",

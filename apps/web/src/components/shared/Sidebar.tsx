@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FilterPanel } from "./FilterPanel";
 import { features } from "../../lib/features";
 import { EnelLogo } from "./EnelLogo";
@@ -43,18 +43,36 @@ export function Sidebar() {
     { id: "governo", title: "Governo", badge: String(nav.filter((n) => n.section === "governo").length) }
   ];
 
-  useEffect(() => {
-    const active = itemRefs.current.get(pathname);
-    const container = navRef.current;
-    if (!active || !container) {
-      setActiveFrame((current) => ({ ...current, visible: false }));
-      return;
+  useLayoutEffect(() => {
+    function measure() {
+      const active = itemRefs.current.get(pathname);
+      const container = navRef.current;
+      if (!active || !container) {
+        setActiveFrame((current) => ({ ...current, visible: false }));
+        return;
+      }
+      const cRect = container.getBoundingClientRect();
+      const aRect = active.getBoundingClientRect();
+      setActiveFrame({
+        top: aRect.top - cRect.top + container.scrollTop,
+        height: aRect.height,
+        visible: true
+      });
     }
-    setActiveFrame({
-      top: active.offsetTop,
-      height: active.offsetHeight,
-      visible: true
-    });
+    measure();
+    const raf = requestAnimationFrame(measure);
+    const container = navRef.current;
+    const ro = new ResizeObserver(measure);
+    if (container) ro.observe(container);
+    itemRefs.current.forEach((node) => ro.observe(node));
+    window.addEventListener("resize", measure);
+    container?.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+      container?.removeEventListener("scroll", measure);
+    };
   }, [pathname, nav.length]);
 
   function registerItem(path: string, node: HTMLDivElement | null) {
