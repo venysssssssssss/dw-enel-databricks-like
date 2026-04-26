@@ -94,6 +94,14 @@ rag-rebuild:
 	poetry run python scripts/rebuild_rag_corpus_regional.py \
 		--regional-scope $${REGIONAL_SCOPE:-CE+SP}
 
+rag-train-round:
+	.venv/bin/python -m scripts.rag_train.generate_questions --rounds 1 --seed 26
+	.venv/bin/python -m scripts.rag_train.run_round --round 1 --teacher $${GEMINI_MODEL_TEACHER:-gemini-1.5-flash}
+	.venv/bin/python -m scripts.rag_train.apply_boosts --round 1
+
+rag-train-eval:
+	.venv/bin/python -m scripts.rag_train.nightly_eval --dry-run
+
 test-rag-evals:
 	poetry run python scripts/rag_eval_regional.py \
 		--golden tests/evals/rag_sp_ce_golden.jsonl \

@@ -14,6 +14,8 @@ from __future__ import annotations
 import os
 import re
 import time
+import json
+from pathlib import Path
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
@@ -25,6 +27,7 @@ from src.rag.prompts import (
     build_messages,
     build_summarize_history_prompt,
 )
+from src.rag.cache.positive_cache import PositiveCache
 from src.rag.retriever import HybridRetriever, Passage, route_doc_types
 from src.rag.safety import (
     OUT_OF_SCOPE_MESSAGE,
@@ -665,6 +668,18 @@ class RagOrchestrator:
         self.config = config
         self.retriever = retriever or HybridRetriever(config)
         self.provider = provider or build_provider(config)
+        self.positive_cache = PositiveCache()
+        self.active_boosts = self._load_active_boosts()
+
+    def _load_active_boosts(self) -> dict[str, float]:
+        path = Path("data/rag_train/active_boosts.json")
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
 
     def _history_summary_enabled(self) -> bool:
         raw = os.getenv("RAG_HISTORY_SUMMARY_ENABLED", "1").strip().lower()
@@ -823,6 +838,32 @@ class RagOrchestrator:
             region = "SP"
         elif region is None and intent in ANALYTICAL_INTENTS:
             region = "CE+SP"
+
+        # 1. Positive Cache Lookup (Sprint 26)
+        cached_positive = self.positive_cache.lookup(check.sanitized)
+        if cached_positive:
+            total_ms = timer.total_ms()
+            return RagResponse(
+                text=cached_positive["answer"],
+                passages=[
+                    Passage(
+                        chunk_id="cache",
+                        text=cached_positive["answer"],
+                        source_path="cache",
+                        section="cache",
+                        doc_type="cache",
+                        sprint_id="26",
+                        anchor="cache",
+                        score=1.0,
+                    )
+                ],
+                intent="positive_cache",
+                prompt_tokens=0,
+                completion_tokens=len(cached_positive["answer"]) // 4,
+                latency_ms=total_ms,
+                cache_hit=True,
+                question_hash=q_hash,
+            )
 
         cached = self._resolve_cached_answer(
             check.sanitized,
@@ -1100,6 +1141,35 @@ class RagOrchestrator:
             region = "SP"
         elif region is None and intent in ANALYTICAL_INTENTS:
             region = "CE+SP"
+
+        # 1. Positive Cache Lookup (Sprint 26)
+        cached_positive = self.positive_cache.lookup(check.sanitized)
+        if cached_positive:
+            yield RagStreamEvent(
+                "stage",
+                {"key": "cache", "status": "done", "label": "Resposta cacheada (Positiva)"},
+            )
+            yield RagStreamEvent("token", {"text": cached_positive["answer"]})
+            total_ms = timer.total_ms()
+            yield self._done_event(
+                q_hash,
+                timer,
+                cache_hit=True,
+                intent="positive_cache",
+                passages=[
+                    Passage(
+                        chunk_id="cache",
+                        text=cached_positive["answer"],
+                        source_path="cache",
+                        section="cache",
+                        doc_type="cache",
+                        sprint_id="26",
+                        anchor="cache",
+                        score=1.0,
+                    )
+                ],
+            )
+            return
 
         cached = self._resolve_cached_answer(
             check.sanitized,
@@ -1495,11 +1565,17 @@ class RagOrchestrator:
         if region in {"CE", "SP"}:
             forced = [p for p in forced if p.region in {region, "CE+SP"}]
         ordered = {anchor: index for index, anchor in enumerate(anchors)}
-        promoted = [
-            replace(passage, score=max(float(passage.score), 1.25 - index * 0.01))
-            for passage in forced
-            for index in [ordered.get(passage.anchor, len(ordered))]
-        ]
+        promoted = []
+        for passage in forced:
+            index = ordered.get(passage.anchor, len(ordered))
+            base_score = max(float(passage.score), 1.25 - index * 0.01)
+            
+            # Aplica boost dinâmico da Sprint 26
+            boost_factor = self.active_boosts.get(passage.anchor, 1.0)
+            final_score = base_score * boost_factor
+            
+            promoted.append(replace(passage, score=final_score))
+            
         promoted.sort(key=lambda passage: ordered.get(passage.anchor, 10**9))
         return promoted
 
