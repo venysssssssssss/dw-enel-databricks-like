@@ -284,15 +284,15 @@ function SeveridadeScreen({ severity }: { severity: Severity }) {
       <article className="sev-card" style={{ marginTop: 18 }}>
         <header className="sev-c-head">
           <div>
-            <h2 className="sev-c-title">Descrições identificadas pelo assistente</h2>
+            <h2 className="sev-c-title">10 descrições identificadas pelo assistente</h2>
             <p className="sev-c-sub">
-              Texto cleaned do silver classificado em causa canônica · expanda para ver ação sugerida e top-10
-              instalações reincidentes na mesma causa
+              Top 10 ordens reais (texto cleaned do silver) classificadas em causa canônica · expanda para ver
+              ação sugerida e top-10 instalações reincidentes na mesma causa
             </p>
           </div>
         </header>
         <DescricoesTable
-          rows={descricoes.data?.data ?? []}
+          rows={(descricoes.data?.data ?? []).slice(0, 10)}
           loading={descricoes.isLoading}
           activeCat={activeCat}
           activeCausa={activeCausa}

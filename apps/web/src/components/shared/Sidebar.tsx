@@ -19,7 +19,6 @@ const NAV: NavItem[] = [
   { to: "/bi/mis", label: "MIS Executivo", hint: "Visão consolidada", kbd: "1", section: "severidade", sev: "executivo" },
   { to: "/bi/severidade-alta", label: "Severidade Alta", hint: "Pressão operacional", kbd: "2", section: "severidade", sev: "alta" },
   { to: "/bi/severidade-critica", label: "Severidade Crítica", hint: "Alto impacto financeiro", kbd: "3", section: "severidade", sev: "critica" },
-  { to: "/bi/ce-totais", label: "CE · Totais", hint: "Ceará agregado", kbd: "4", section: "bi" },
   { to: "/bi/executive", label: "Ritmo", hint: "Tendência mensal", kbd: "5", section: "bi" },
   { to: "/bi/patterns", label: "Padrões", hint: "BERTopic + clusters", kbd: "6", section: "bi" },
   { to: "/bi/impact", label: "Impacto", hint: "Valor reclamado", kbd: "7", section: "bi" },

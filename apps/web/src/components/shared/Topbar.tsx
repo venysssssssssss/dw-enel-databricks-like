@@ -5,7 +5,6 @@ import { useUiStore } from "../../state/ui-store";
 const CRUMB_MAP: Record<string, [string, string]> = {
   "/chat": ["Assistente", "RAG · streaming"],
   "/bi/mis": ["BI", "MIS Executivo"],
-  "/bi/ce-totais": ["BI", "CE Totais"],
   "/bi/executive": ["BI", "Ritmo Operacional"],
   "/bi/patterns": ["BI", "Padrões"],
   "/bi/impact": ["BI", "Impacto"],
