@@ -3,7 +3,7 @@ FROM python:3.12-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential curl pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/* \
-    && curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain 1.86.0
+    && curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain 1.88.0
 
 ENV PATH="/root/.cargo/bin:${PATH}"
 
