@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FilterPanel } from "./FilterPanel";
 import { features } from "../../lib/features";
 import { EnelLogo } from "./EnelLogo";
+import { RegionScopeFilter } from "./RegionScope";
 
 type Section = "assistente" | "severidade" | "bi" | "governo";
 type NavItem = {
@@ -11,7 +12,7 @@ type NavItem = {
   hint?: string;
   kbd?: string;
   section: Section;
-  sev?: "alta" | "critica" | "executivo";
+  sev?: "alta" | "critica" | "demais" | "executivo";
 };
 
 const NAV: NavItem[] = [
@@ -19,6 +20,7 @@ const NAV: NavItem[] = [
   { to: "/bi/mis", label: "MIS Executivo", hint: "Visão consolidada", kbd: "1", section: "severidade", sev: "executivo" },
   { to: "/bi/severidade-alta", label: "Severidade Alta", hint: "Pressão operacional", kbd: "2", section: "severidade", sev: "alta" },
   { to: "/bi/severidade-critica", label: "Severidade Crítica", hint: "Alto impacto financeiro", kbd: "3", section: "severidade", sev: "critica" },
+  { to: "/bi/severidade-demais", label: "Demais Severidades", hint: "Média + Baixa · cauda longa", kbd: "4", section: "severidade", sev: "demais" },
   { to: "/bi/executive", label: "Ritmo", hint: "Tendência mensal", kbd: "5", section: "bi" },
   { to: "/bi/patterns", label: "Padrões", hint: "BERTopic + clusters", kbd: "6", section: "bi" },
   { to: "/bi/impact", label: "Impacto", hint: "Valor reclamado", kbd: "7", section: "bi" },
@@ -34,7 +36,12 @@ export function Sidebar() {
   const [activeFrame, setActiveFrame] = useState({ top: 0, height: 0, visible: false });
   const nav = features.severidadeV1
     ? NAV
-    : NAV.filter((item) => item.to !== "/bi/severidade-alta" && item.to !== "/bi/severidade-critica");
+    : NAV.filter(
+        (item) =>
+          item.to !== "/bi/severidade-alta" &&
+          item.to !== "/bi/severidade-critica" &&
+          item.to !== "/bi/severidade-demais"
+      );
 
   const groups: { id: Section; title: string; badge: string }[] = [
     { id: "assistente", title: "Assistente", badge: "RAG" },
@@ -101,6 +108,8 @@ export function Sidebar() {
           <span className="sb-status-region">SP</span>
         </div>
       </div>
+
+      <RegionScopeFilter />
 
       <nav className="sb-nav-scroll" aria-label="Seções" ref={navRef}>
         <span

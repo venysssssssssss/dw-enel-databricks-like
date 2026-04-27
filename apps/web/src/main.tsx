@@ -36,6 +36,9 @@ const SeveridadeAltaRoute = lazy(() =>
 const SeveridadeCriticaRoute = lazy(() =>
   import("./app/routes/bi.severidade").then((module) => ({ default: module.SeveridadeCriticaRoute }))
 );
+const SeveridadeDemaisRoute = lazy(() =>
+  import("./app/routes/bi.severidade-demais").then((module) => ({ default: module.SeveridadeDemaisRoute }))
+);
 
 function RouteBoundary({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<div className="route-loading">Carregando...</div>}>{children}</Suspense>;
@@ -179,6 +182,16 @@ const severidadeCriticaRoute = createRoute({
   )
 });
 
+const severidadeDemaisRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/bi/severidade-demais",
+  component: () => (
+    <RouteBoundary>
+      <SeveridadeDemaisRoute />
+    </RouteBoundary>
+  )
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   chatRoute,
@@ -190,7 +203,9 @@ const routeTree = rootRoute.addChildren([
   ceTotaisRoute,
   governanceRoute,
   educationalRoute,
-  ...(features.severidadeV1 ? [severidadeAltaRoute, severidadeCriticaRoute] : [])
+  ...(features.severidadeV1
+    ? [severidadeAltaRoute, severidadeCriticaRoute, severidadeDemaisRoute]
+    : [])
 ]);
 
 const router = createRouter({ routeTree });

@@ -15,7 +15,8 @@ const ACONCHEGANTE_ROUTES = new Set<string>([
   "/bi/governance",
   "/bi/educational",
   "/bi/severidade-alta",
-  "/bi/severidade-critica"
+  "/bi/severidade-critica",
+  "/bi/severidade-demais"
 ]);
 
 export function Shell({ children }: { children: ReactNode }) {
@@ -43,6 +44,10 @@ export function Shell({ children }: { children: ReactNode }) {
       if (event.key === "3") {
         event.preventDefault();
         void navigate({ to: "/bi/severidade-critica" });
+      }
+      if (event.key === "4") {
+        event.preventDefault();
+        void navigate({ to: "/bi/severidade-demais" });
       }
     }
     window.addEventListener("keydown", onKeyDown);
