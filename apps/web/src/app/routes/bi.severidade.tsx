@@ -13,6 +13,11 @@ import {
   type Causa
 } from "../../components/bi/SeverityCharts";
 import { DescricoesTable, type DescricaoRow } from "../../components/bi/DescricoesTable";
+import { weightedFaturaMedia, type FaturaMedidorRow } from "../../lib/analytics";
+
+// Severidade Alta/Crítica são SP-locked. Mantemos a override mesmo que a view
+// já filtre internamente, para evitar interação com filtro global de região.
+const SP_OVERRIDE = { regiao: ["SP"] };
 
 type Severity = "alta" | "critica";
 
@@ -79,17 +84,19 @@ function SeveridadeScreen({ severity }: { severity: Severity }) {
   const label = severity === "alta" ? "Alta" : "Crítica";
   const viewSuffix = severity === "alta" ? "alta" : "critica";
 
-  const overview = useAggregation<OverviewRow>(`sp_severidade_${viewSuffix}_overview`);
-  const monthly = useAggregation<MonthlyRow>(`sp_severidade_${viewSuffix}_mensal`);
-  const cats = useAggregation<Categoria>(`sp_severidade_${viewSuffix}_categorias`);
-  const causas = useAggregation<Causa>(`sp_severidade_${viewSuffix}_causas`);
-  const ranking = useAggregation<RankingRow>(`sp_severidade_${viewSuffix}_ranking`);
+  const overview = useAggregation<OverviewRow>(`sp_severidade_${viewSuffix}_overview`, SP_OVERRIDE);
+  const monthly = useAggregation<MonthlyRow>(`sp_severidade_${viewSuffix}_mensal`, SP_OVERRIDE);
+  const cats = useAggregation<Categoria>(`sp_severidade_${viewSuffix}_categorias`, SP_OVERRIDE);
+  const causas = useAggregation<Causa>(`sp_severidade_${viewSuffix}_causas`, SP_OVERRIDE);
+  const ranking = useAggregation<RankingRow>(`sp_severidade_${viewSuffix}_ranking`, SP_OVERRIDE);
+  const fatura = useAggregation<FaturaMedidorRow>("sp_fatura_medidor", SP_OVERRIDE);
   const descricoes = useDescricoes<DescricaoRow>(severity === "alta" ? "alta" : "critica", 10);
 
   const [activeCat, setActiveCat] = useState<string | null>(null);
   const [activeCausa, setActiveCausa] = useState<string | null>(null);
 
   const ov = overview.data?.data?.[0];
+  const fatStats = useMemo(() => weightedFaturaMedia(fatura.data?.data ?? []), [fatura.data]);
   const months = useMemo(() => (monthly.data?.data ?? []).map((r) => labelMonth(r.mes_ingresso)), [monthly.data]);
   const values = useMemo(() => (monthly.data?.data ?? []).map((r) => Number(r.qtd_erros || 0)), [monthly.data]);
   const catsRows = cats.data?.data ?? [];
@@ -101,7 +108,19 @@ function SeveridadeScreen({ severity }: { severity: Severity }) {
   const improc = ov?.improcedentes ?? 0;
   const pctProc = Number(ov?.pct_procedentes ?? 0) * 100;
   const reinc = ov?.reincidentes_clientes ?? 0;
-  const valorMed = ov?.valor_medio_fatura ?? 0;
+  const overviewValor = Number(ov?.valor_medio_fatura ?? 0);
+  // Backend sp_severidade_overview retorna 0 quando o silver não tem
+  // valor_fatura_reclamada_medio para a severidade. Caímos para média ponderada
+  // SP via sp_fatura_medidor, com label explicitando "proxy SP".
+  const valorIsProxy = !(overviewValor > 0) && fatStats.valor > 0;
+  const valorMed = overviewValor > 0 ? overviewValor : fatStats.valor;
+  const valorTag = overviewValor > 0 ? "procedentes" : "proxy SP";
+  const valorSub =
+    overviewValor > 0
+      ? `total reclamado ${fmtMoney(valorMed * Math.max(proc || total, 1))}`
+      : valorIsProxy
+      ? `proxy ponderado · sp_fatura_medidor (${fmtN(fatStats.qtdOrdens)} ordens SP)`
+      : "indisponível no recorte";
   const categoriasCount = ov?.categorias_count ?? 0;
   const top3 = Number(ov?.top3_share ?? 0) * 100;
   const deltaTri = Number(ov?.delta_trimestre ?? 0) * 100;
@@ -183,9 +202,9 @@ function SeveridadeScreen({ severity }: { severity: Severity }) {
         />
         <Kpi
           label="Valor médio fatura"
-          tag="procedentes"
-          value={fmtMoney(valorMed)}
-          sub={`total reclamado ${fmtMoney(valorMed * Math.max(proc || total, 1))}`}
+          tag={valorTag}
+          value={valorMed > 0 ? fmtMoney(valorMed) : "—"}
+          sub={valorSub}
         />
       </section>
 

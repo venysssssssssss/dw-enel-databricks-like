@@ -13,6 +13,7 @@ import { AssistantCta } from "../../components/shared/AssistantCta";
 import { FilterChips } from "../../components/shared/FilterChips";
 import { StoryBlock } from "../../components/bi/StoryBlock";
 import { useAggregation } from "../../hooks/useAggregation";
+import { useRegionScope } from "../../components/shared/RegionScope";
 import {
   buildCauseScatter,
   buildMonthlyEvaluatedSeries,
@@ -36,6 +37,12 @@ import {
 } from "../../lib/analytics";
 
 export function MisRoute() {
+  const scope = useRegionScope();
+  // Subject coverage: SP é o foco do BI/MIS; CE é apresentação rasa.
+  // Quando o usuário escolhe CE no filtro do topo, o card de cobertura
+  // espelha CE; em "Todas" ou "SP", mantém SP como narrativa primária.
+  const subjectScopeRegion = scope === "CE" ? "CE" : "SP";
+
   const mis = useAggregation<MisRegionRow>("mis");
   const severity = useAggregation<SeverityHeatmapRow>("severity_heatmap");
   const causes = useAggregation<RootCauseRow>("root_cause_distribution");
@@ -76,14 +83,18 @@ export function MisRoute() {
         categoryBreakdown: categories.data?.data ?? [],
         severityHeatmap: severityRows,
         misRegions: rows,
-        scopeRegiao: "SP"
+        scopeRegiao: subjectScopeRegion
       }),
-    [topAssuntos.data, coverage.data, categories.data, severityRows, rows]
+    [topAssuntos.data, coverage.data, categories.data, severityRows, rows, subjectScopeRegion]
   );
 
   const monthlySeries = useMemo(
-    () => buildMonthlyEvaluatedSeries(monthly.data?.data ?? [], { regiao: "SP", maxMonths: 12 }),
-    [monthly.data]
+    () =>
+      buildMonthlyEvaluatedSeries(monthly.data?.data ?? [], {
+        regiao: subjectScopeRegion,
+        maxMonths: 12
+      }),
+    [monthly.data, subjectScopeRegion]
   );
 
   const valorLider = useMemo(
@@ -91,16 +102,20 @@ export function MisRoute() {
     [assuntoLider.data]
   );
 
+  // Valor médio fatura é SP-only no contrato Web. Mantemos visível no MIS Executivo
+  // como proxy do impacto financeiro (SP é o foco do MIS/BI).
   const valorKpi = valorLider.hasValue
     ? {
         value: formatMoney(valorLider.valor),
-        sub: `Assunto líder SP · ${valorLider.assunto || "—"}`
+        sub: `Assunto líder SP · ${valorLider.assunto || "—"}`,
+        tag: "R$ · SP"
       }
     : {
         value: "—",
         // TODO: contrato Web atual não expõe valor médio global. sp_perfil_assunto_lider só
         // retorna valor do assunto líder de SP; média global precisaria de view dedicada.
-        sub: "Indisponível no contrato Web atual"
+        sub: "Indisponível no contrato Web atual",
+        tag: "R$"
       };
 
   return (
@@ -129,7 +144,7 @@ export function MisRoute() {
             tag: "média"
           },
           { label: "Cobertura rótulo", value: formatPercent(avgCobertura * 100), tag: "ml" },
-          { label: "Valor médio fatura", value: valorKpi.value, sub: valorKpi.sub, tag: "R$" }
+          { label: "Valor médio fatura", value: valorKpi.value, sub: valorKpi.sub, tag: valorKpi.tag }
         ]}
       />
       <StoryBlock lead="Onde está o volume e onde ele pesa?">
@@ -187,6 +202,8 @@ export function MisRoute() {
       <SubjectCoverageCard
         summary={subjectSummary}
         monthlySeries={monthlySeries}
+        scopeRegion={subjectScopeRegion}
+        scope={scope}
         loading={
           topAssuntos.isLoading ||
           coverage.isLoading ||
@@ -233,10 +250,14 @@ export function MisRoute() {
 function SubjectCoverageCard({
   summary,
   monthlySeries,
+  scopeRegion,
+  scope,
   loading
 }: {
   summary: SubjectModelSummary;
   monthlySeries: { label: string; total: number; iso: string }[];
+  scopeRegion: "SP" | "CE";
+  scope: "ALL" | "SP" | "CE";
   loading: boolean;
 }) {
   const subjectScopeNote = summary.subjectFromFilter
@@ -264,12 +285,15 @@ function SubjectCoverageCard({
     <section className="card exec-subject-card">
       <header className="card-head">
         <div>
-          <h2 className="card-title">Cobertura do assunto e do modelo · SP</h2>
+          <h2 className="card-title">Cobertura do assunto e do modelo · {scopeRegion}</h2>
           <p className="card-sub">
             {subjectScopeNote}. Avaliados pelo modelo = <code>{evaluatedNote}</code>.{" "}
             {summary.hasSubjectScopedEvaluation
               ? null
-              : "Cobertura por assunto exige view agregada dedicada — exibido proxy global SP."}
+              : `Cobertura por assunto exige view agregada dedicada — exibido proxy global ${scopeRegion}.`}{" "}
+            {scope === "ALL"
+              ? "Filtro regional do topo está em Todas — narrativa primária permanece em SP."
+              : null}
           </p>
         </div>
       </header>
@@ -278,7 +302,12 @@ function SubjectCoverageCard({
       ) : (
         <div className="exec-subject-grid">
           <div className="exec-subject-kpis">
-            <SubjectKpi label="Total reclamações SP" value={formatNumber(summary.totalSp)} tag="12m" dominant />
+            <SubjectKpi
+              label={`Total reclamações ${scopeRegion}`}
+              value={formatNumber(summary.totalSp)}
+              tag="12m"
+              dominant
+            />
             <SubjectKpi
               label={`Total · ${summary.subjectName || "—"}`}
               value={formatNumber(summary.subjectTotal)}
@@ -290,12 +319,12 @@ function SubjectCoverageCard({
               tag="share"
             />
             <SubjectKpi
-              label="Avaliados pelo modelo · SP"
+              label={`Avaliados pelo modelo · ${scopeRegion}`}
               value={formatNumber(summary.evaluatedSp)}
               tag="confiança ≠ indefinido"
             />
             <SubjectKpi
-              label="% modelo sobre SP"
+              label={`% modelo sobre ${scopeRegion}`}
               value={formatPercent(summary.evaluatedShareSp)}
               tag="cobertura"
             />
@@ -307,23 +336,26 @@ function SubjectCoverageCard({
           </div>
           <div className="exec-subject-spark">
             <div className="spark-head">
-              <h3>Avaliados · tendência mensal SP</h3>
+              <h3>Avaliados · tendência mensal {scopeRegion}</h3>
               <span>
-                {monthlySeries.length} meses · proxy do total SP no contrato Web atual
+                {monthlySeries.length} meses · proxy do total {scopeRegion} no contrato Web
               </span>
             </div>
             <MonthlySparkline series={monthlySeries} height={120} />
           </div>
           <div className="exec-subject-bars">
             <div className="bars-head">
-              <h3>Distribuição por categoria · SP</h3>
+              <h3>Distribuição por categoria · {scopeRegion}</h3>
               <span>Top 6 categorias</span>
             </div>
-            <MiniBarList rows={categoryRows} emptyHint="Sem categorias rotuladas para SP." />
+            <MiniBarList
+              rows={categoryRows}
+              emptyHint={`Sem categorias rotuladas para ${scopeRegion}.`}
+            />
           </div>
           <div className="exec-subject-bars">
             <div className="bars-head">
-              <h3>Distribuição por severidade · SP</h3>
+              <h3>Distribuição por severidade · {scopeRegion}</h3>
               <span>Funil completo</span>
             </div>
             <MiniBarList rows={severityRows} emptyHint="Sem severidade no recorte." />
