@@ -26,6 +26,7 @@ from src.viz.erro_leitura_dashboard_data import (
     sp_severidade_causas,
     sp_severidade_descricoes,
     sp_severidade_mensal,
+    sp_severidade_distribution,
     sp_severidade_overview,
     sp_severidade_ranking,
     taxonomy_reference,
@@ -1113,6 +1114,13 @@ VIEW_REGISTRY: dict[str, ViewSpec] = {
         ("qtd_ocorrencias",),
         FILTER_FIELDS,
         classifier_indefinido_tokens,
+    ),
+    "sp_severidade_distribution": ViewSpec(
+        "sp_severidade_distribution",
+        ("severidade",),
+        ("qtd_erros", "procedentes", "improcedentes", "pct"),
+        FILTER_FIELDS,
+        sp_severidade_distribution,
     ),
     "sp_severidade_alta_overview": ViewSpec(
         "sp_severidade_alta_overview",

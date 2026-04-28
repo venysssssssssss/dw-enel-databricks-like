@@ -56,7 +56,7 @@ class DataStore:
 
     def load_silver(self, *, include_total: bool = False) -> pd.DataFrame:
         signature = sha256(
-            "|".join([self.version().hash, str(include_total), "data-plane-v3"]).encode("utf-8")
+            "|".join([self.version().hash, str(include_total), "data-plane-v4-procedencia"]).encode("utf-8")
         ).hexdigest()
         return load_or_build_disk_cache(
             self.cache_dir,

@@ -5,6 +5,8 @@ import { RouterProvider, createRoute, createRootRoute, createRouter, Outlet } fr
 import { reportWebVitals } from "./lib/web-vitals";
 import { Shell } from "./components/shared/Shell";
 import { features } from "./lib/features";
+import { fetchAggregation, fetchDatasetVersion } from "./lib/api";
+import { queryKeys } from "./lib/query-keys";
 import "./styles.css";
 
 const ChatRoute = lazy(() => import("./app/routes/chat").then((module) => ({ default: module.ChatRoute })));
@@ -208,7 +210,11 @@ const routeTree = rootRoute.addChildren([
     : [])
 ]);
 
-const router = createRouter({ routeTree });
+const router = createRouter({
+  routeTree,
+  defaultPreload: "intent",
+  defaultPreloadStaleTime: 60_000
+});
 
 declare module "@tanstack/react-router" {
   interface Register {
@@ -223,5 +229,66 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     </QueryClientProvider>
   </React.StrictMode>
 );
+
+// Warm route bundles + critical aggregation queries shortly after first paint
+// so navigating between BI guias is instant.
+const warmRoutes = () => {
+  void Promise.allSettled([
+    import("./app/routes/bi.mis"),
+    import("./app/routes/bi.severidade"),
+    import("./app/routes/bi.severidade-demais"),
+    import("./app/routes/bi.executive"),
+    import("./app/routes/bi.patterns"),
+    import("./app/routes/bi.impact"),
+    import("./app/routes/bi.taxonomy"),
+    import("./app/routes/bi.ce-totais"),
+    import("./app/routes/bi.governance"),
+    import("./app/routes/bi.educational"),
+    import("./app/routes/chat")
+  ]);
+};
+
+const warmAggregations = async () => {
+  let datasetHash = "pending";
+  try {
+    const version = await fetchDatasetVersion();
+    datasetHash = version?.hash ?? "pending";
+  } catch {
+    return;
+  }
+  const views = [
+    "mis",
+    "severity_heatmap",
+    "sp_severidade_distribution",
+    "sp_severidade_alta_overview",
+    "sp_severidade_critica_overview",
+    "sp_severidade_demais_overview",
+    "category_breakdown",
+    "classifier_coverage",
+    "top_assuntos",
+    "mis_monthly_mis"
+  ];
+  await Promise.allSettled(
+    views.map((view) =>
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.aggregation(view, {}, datasetHash),
+        queryFn: () => fetchAggregation(view, {}, datasetHash),
+        staleTime: 60_000
+      })
+    )
+  );
+};
+
+const idle = (cb: () => void) => {
+  const ric = (window as unknown as { requestIdleCallback?: (fn: () => void) => number })
+    .requestIdleCallback;
+  if (typeof ric === "function") ric(cb);
+  else setTimeout(cb, 250);
+};
+
+idle(() => {
+  warmRoutes();
+  void warmAggregations();
+});
 
 reportWebVitals();

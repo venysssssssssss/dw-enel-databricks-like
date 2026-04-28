@@ -20,7 +20,9 @@ const ACONCHEGANTE_ROUTES = new Set<string>([
 ]);
 
 export function Shell({ children }: { children: ReactNode }) {
-  const { sidebarOpen, theme } = useUiStore();
+  const sidebarOpen = useUiStore((s) => s.sidebarOpen);
+  const theme = useUiStore((s) => s.theme);
+  const setSidebar = useUiStore((s) => s.setSidebar);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
   const surface = ACONCHEGANTE_ROUTES.has(pathname) ? "aconchegante" : "graphite";
@@ -30,6 +32,14 @@ export function Shell({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  // Close sidebar on route change in mobile viewports (≤960px).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(max-width: 960px)").matches) {
+      setSidebar(false);
+    }
+  }, [pathname, setSidebar]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {

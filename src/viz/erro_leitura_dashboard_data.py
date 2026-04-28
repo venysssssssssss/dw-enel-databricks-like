@@ -225,6 +225,9 @@ def prepare_dashboard_frame(
         "observacao_ordem",
         "devolutiva",
         "flag_resolvido_com_refaturamento",
+        "procedente_real",
+        "procedencia_real",
+        "procedencia_known",
         "has_causa_raiz_label",
         "instalacao_hash",
         "tipo_medidor_dominante",
@@ -501,6 +504,78 @@ _SEVERIDADE_ALIAS = {
 _CONFIDENCE_ORDER = {"indefinido": 0, "low": 1, "high": 2}
 
 
+_PROCEDENCIA_CACHE: dict[str, pd.DataFrame] = {}
+
+
+def _load_procedencia_lookup(
+    path: Path = DEFAULT_DESCRICOES_CLUSTER_PATH,
+) -> pd.DataFrame:
+    """Load NOTA RL → procedência ground truth from clusterized CSV.
+
+    Cached in-process. Returns DataFrame with columns
+    [ordem, procedencia_real, procedente_real_flag].
+    """
+    key = str(path)
+    cached = _PROCEDENCIA_CACHE.get(key)
+    if cached is not None:
+        return cached
+    cols = ["ordem", "procedencia_real", "procedente_real_flag"]
+    if not Path(path).exists():
+        _PROCEDENCIA_CACHE[key] = pd.DataFrame(columns=cols)
+        return _PROCEDENCIA_CACHE[key]
+    csv = pd.read_csv(path, sep=";", encoding="utf-8-sig", low_memory=False)
+    csv.columns = [str(c).strip() for c in csv.columns]
+    if "NOTA RL" not in csv.columns or "Procedencia" not in csv.columns:
+        _PROCEDENCIA_CACHE[key] = pd.DataFrame(columns=cols)
+        return _PROCEDENCIA_CACHE[key]
+    proc_norm = csv["Procedencia"].fillna("").astype(str).str.strip().str.upper()
+    label = proc_norm.where(
+        proc_norm.isin(["PROCEDENTE", "IMPROCEDENTE"]),
+        other="NAO_INFORMADA",
+    )
+    out = pd.DataFrame(
+        {
+            "ordem": csv["NOTA RL"].astype(str).str.strip(),
+            "procedencia_real": label.values,
+            "procedente_real_flag": label.eq("PROCEDENTE").values,
+        }
+    )
+    out = out.drop_duplicates(subset=["ordem"], keep="last").reset_index(drop=True)
+    _PROCEDENCIA_CACHE[key] = out
+    return out
+
+
+def _attach_procedencia_real(frame: pd.DataFrame) -> pd.DataFrame:
+    """Merge ground-truth procedência (PROCEDENTE/IMPROCEDENTE) onto rows.
+
+    Adds:
+      - `procedencia_real`: PROCEDENTE | IMPROCEDENTE | NAO_INFORMADA.
+      - `procedente_real`: bool — True only when CSV says PROCEDENTE.
+      - `procedencia_known`: True when CSV had explicit label.
+    Falls back to `flag_resolvido_com_refaturamento` only for the boolean
+    when no CSV label exists; the textual label stays NAO_INFORMADA in
+    that case so callers can distinguish "missing" from "improcedente".
+    """
+    lookup = _load_procedencia_lookup()
+    if "ordem" not in frame.columns or lookup.empty:
+        frame["procedencia_real"] = "NAO_INFORMADA"
+        frame["procedente_real"] = frame["flag_resolvido_com_refaturamento"].astype(bool)
+        frame["procedencia_known"] = False
+        return frame
+    work = frame.copy()
+    work["ordem"] = work["ordem"].astype(str).str.strip()
+    merged = work.merge(lookup, on="ordem", how="left")
+    label = merged["procedencia_real"].fillna("NAO_INFORMADA").astype(str)
+    flag = merged["procedente_real_flag"].astype("boolean")
+    known = label.isin(["PROCEDENTE", "IMPROCEDENTE"])
+    fallback = merged["flag_resolvido_com_refaturamento"].astype(bool)
+    merged["procedencia_real"] = label.values
+    merged["procedente_real"] = flag.fillna(False).astype(bool) | (~known & fallback)
+    merged["procedencia_known"] = known.values
+    merged.drop(columns=["procedente_real_flag"], inplace=True, errors="ignore")
+    return merged
+
+
 def _attach_severidade(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return frame
@@ -652,6 +727,50 @@ def classifier_indefinido_tokens(frame: pd.DataFrame, *, limit: int = 20) -> pd.
     )
 
 
+def sp_severidade_distribution(frame: pd.DataFrame) -> pd.DataFrame:
+    """Severity distribution for SP using the same filters as per-route overviews.
+
+    Returns one row per severity bucket (critical/high/medium/low) with
+    `qtd_erros`, `procedentes`, `improcedentes`, `pct` so the MIS Executivo
+    donut matches the totals reported by sp_severidade_*_overview.
+    """
+    cols = ["severidade", "qtd_erros", "procedentes", "improcedentes", "pct"]
+    out_rows: list[dict[str, object]] = []
+    grand_total = 0
+    by_sev: dict[str, dict[str, int]] = {}
+    for sev in ("critical", "high", "medium", "low"):
+        df = _filter_sp_severidade(frame, sev)
+        if df.empty:
+            by_sev[sev] = {"qtd_erros": 0, "procedentes": 0, "improcedentes": 0}
+            continue
+        proc_col = "procedente_real" if "procedente_real" in df.columns else "flag_resolvido_com_refaturamento"
+        proc_by_order = (
+            df.assign(_proc=df[proc_col].fillna(False).astype(bool))
+            .groupby("ordem")["_proc"]
+            .any()
+        )
+        total = int(proc_by_order.shape[0])
+        proc = int(proc_by_order.sum())
+        by_sev[sev] = {
+            "qtd_erros": total,
+            "procedentes": proc,
+            "improcedentes": max(0, total - proc),
+        }
+        grand_total += total
+    for sev in ("critical", "high", "medium", "low"):
+        d = by_sev[sev]
+        out_rows.append(
+            {
+                "severidade": sev,
+                "qtd_erros": d["qtd_erros"],
+                "procedentes": d["procedentes"],
+                "improcedentes": d["improcedentes"],
+                "pct": round(d["qtd_erros"] / grand_total, 4) if grand_total else 0.0,
+            }
+        )
+    return pd.DataFrame(out_rows, columns=cols)
+
+
 def sp_severidade_overview(frame: pd.DataFrame, *, severidade: str = "high") -> pd.DataFrame:
     """KPIs para a página de Severidade (SP): totais, procedência, reincidência e valor."""
     columns = [
@@ -670,8 +789,12 @@ def sp_severidade_overview(frame: pd.DataFrame, *, severidade: str = "high") -> 
         return pd.DataFrame([{col: 0 for col in columns}])
 
     total = int(df["ordem"].nunique())
-    procedentes = int(df["flag_resolvido_com_refaturamento"].fillna(False).astype(bool).sum())
-    improcedentes = total - procedentes
+    proc_col = "procedente_real" if "procedente_real" in df.columns else "flag_resolvido_com_refaturamento"
+    proc_series = df[proc_col].fillna(False).astype(bool)
+    # Conta por ordem distinta (caso uma ordem tenha múltiplas linhas).
+    proc_by_order = df.assign(_proc=proc_series).groupby("ordem")["_proc"].any()
+    procedentes = int(proc_by_order.sum())
+    improcedentes = max(0, total - procedentes)
     pct_proc = (procedentes / total) if total else 0.0
 
     reinc_series = (
@@ -732,10 +855,11 @@ def sp_severidade_mensal(frame: pd.DataFrame, *, severidade: str = "high") -> pd
     df = _filter_sp_severidade(frame, severidade)
     if df.empty or "mes_ingresso" not in df.columns:
         return pd.DataFrame(columns=cols)
+    proc_col = "procedente_real" if "procedente_real" in df.columns else "flag_resolvido_com_refaturamento"
     monthly = (
         df.dropna(subset=["mes_ingresso"])
         .assign(
-            procedente=lambda x: x["flag_resolvido_com_refaturamento"].fillna(False).astype(bool),
+            procedente=lambda x: x[proc_col].fillna(False).astype(bool),
         )
         .groupby("mes_ingresso", as_index=False)
         .agg(
@@ -799,9 +923,10 @@ def sp_severidade_causas(
     if df.empty:
         return pd.DataFrame(columns=cols)
 
+    proc_col = "procedente_real" if "procedente_real" in df.columns else "flag_resolvido_com_refaturamento"
     vol = df.groupby("causa_canonica")["ordem"].nunique()
     proc = (
-        df.groupby("causa_canonica")["flag_resolvido_com_refaturamento"]
+        df.groupby("causa_canonica")[proc_col]
         .apply(lambda s: float(s.fillna(False).astype(bool).mean()) * 100)
     )
     cat = df.groupby("causa_canonica")["categoria"].agg(lambda s: s.mode().iat[0] if len(s) else "")
@@ -1114,7 +1239,8 @@ def sp_categoria_subcausa_tree(
     work = df.copy()
     work["categoria"] = work.get("categoria", pd.Series("nao_classificada", index=work.index)).fillna("nao_classificada").astype(str)
     work["causa_canonica"] = work.get("causa_canonica", pd.Series("indefinido", index=work.index)).fillna("indefinido").astype(str)
-    work["proc"] = work.get("flag_resolvido_com_refaturamento", pd.Series(False, index=work.index)).fillna(False).astype(bool)
+    proc_col = "procedente_real" if "procedente_real" in work.columns else "flag_resolvido_com_refaturamento"
+    work["proc"] = work.get(proc_col, pd.Series(False, index=work.index)).fillna(False).astype(bool)
 
     text_candidates = [c for c in ("texto_completo", "observacao_ordem", "assunto") if c in work.columns]
     text_col = text_candidates[0] if text_candidates else None
@@ -1406,13 +1532,12 @@ def _to_bool(series: pd.Series) -> pd.Series:
     return series.fillna(False).astype(str).str.casefold().isin({"true", "1", "sim", "yes"})
 
 
-def _attach_procedencia_real(frame: pd.DataFrame) -> pd.DataFrame:
-    """Reconcile procedência from status text and legacy refaturamento flag.
+def _attach_procedencia_real_legacy_status(frame: pd.DataFrame) -> pd.DataFrame:
+    """Legacy fallback: derive procedência from `status` text + refat flag.
 
-    Older SP/CE analytical views use `flag_resolvido_com_refaturamento` as the
-    closest available proxy for procedência. When explicit `status` text is
-    present, prefer it and keep a normalized `procedencia_real` column so
-    downstream views can count procedentes/improcedentes consistently.
+    Kept for environments where the clusterized CSV is missing. Not used by
+    the active pipeline, which now joins NOTA RL → ordem against
+    `_load_procedencia_lookup()` for ground-truth labels.
     """
     if frame.empty:
         out = frame.copy()

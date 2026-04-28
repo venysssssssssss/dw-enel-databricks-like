@@ -145,6 +145,38 @@ function isSeverity(value: string): value is Severity {
   return value === "critical" || value === "high" || value === "medium" || value === "low";
 }
 
+export type SeverityDistributionRow = {
+  severidade: Severity | string;
+  qtd_erros: number;
+  procedentes: number;
+  improcedentes: number;
+  pct: number;
+};
+
+/**
+ * Build SeverityBucket[] from `sp_severidade_distribution` rows. The view
+ * uses the same `_filter_sp_severidade` constraints as the per-route
+ * overviews (SP only, min_confidence=high), so totals match exactly.
+ */
+export function buildSeverityDistributionFromView(
+  rows: readonly SeverityDistributionRow[]
+): SeverityBucket[] {
+  const accum: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
+  for (const row of rows) {
+    const key = String(row.severidade ?? "").toLowerCase();
+    if (isSeverity(key)) {
+      accum[key] += Number(row.qtd_erros ?? 0);
+    }
+  }
+  const total = SEVERITY_ORDER.reduce((sum, key) => sum + accum[key], 0);
+  return SEVERITY_ORDER.map((key) => ({
+    key,
+    label: SEVERITY_LABEL_PT[key],
+    value: accum[key],
+    pct: total > 0 ? (accum[key] / total) * 100 : 0
+  }));
+}
+
 export function buildSeverityDistribution(
   rows: readonly SeverityHeatmapRow[],
   options: { regiao?: string } = {}

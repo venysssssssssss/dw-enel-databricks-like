@@ -19,6 +19,7 @@ import {
   buildCauseRanking,
   buildMonthlyEvaluatedSeries,
   buildSeverityDistribution,
+  buildSeverityDistributionFromView,
   buildSubjectModelSummary,
   formatCategoria,
   formatCausa,
@@ -35,6 +36,7 @@ import {
   type MisRegionRow,
   type MisMonthlyRow,
   type Severity,
+  type SeverityDistributionRow,
   type SeverityHeatmapRow,
   type SubjectModelSummary,
   type TopAssuntoRow
@@ -46,6 +48,7 @@ export function MisRoute() {
 
   const mis = useAggregation<MisRegionRow>("mis");
   const severity = useAggregation<SeverityHeatmapRow>("severity_heatmap");
+  const severityDistribution = useAggregation<SeverityDistributionRow>("sp_severidade_distribution");
   const causes = useAggregation<CauseRankingSourceRow>("sp_severidade_alta_causas", { regiao: ["SP"] });
   const causesCrit = useAggregation<CauseRankingSourceRow>("sp_severidade_critica_causas", { regiao: ["SP"] });
   const causesDemais = useAggregation<CauseRankingSourceRow>("sp_severidade_demais_causas", { regiao: ["SP"] });
@@ -65,9 +68,17 @@ export function MisRoute() {
       : 0;
 
   const severityRows = severity.data?.data ?? [];
+  const severityDistRows = severityDistribution.data?.data ?? [];
   const severityBuckets = useMemo(
-    () => buildSeverityDistribution(severityRows),
-    [severityRows]
+    () =>
+      severityDistRows.length > 0
+        ? buildSeverityDistributionFromView(severityDistRows)
+        : buildSeverityDistribution(severityRows, { regiao: "SP" }),
+    [severityDistRows, severityRows]
+  );
+  const severityBucketsTotal = useMemo(
+    () => severityBuckets.reduce((s, b) => s + b.value, 0),
+    [severityBuckets]
   );
 
   const ranking = useMemo(() => {
@@ -204,10 +215,16 @@ export function MisRoute() {
         <article className="card exec-card">
           <header className="card-head">
             <div>
-              <h2 className="card-title">Distribuição por severidade</h2>
+              <h2 className="card-title">Distribuição por severidade · SP</h2>
               <p className="card-sub">
-                Funil derivado da taxonomia oficial. Soma <b>qtd_erros</b> por severidade no
-                recorte atual.
+                {severityBucketsTotal > 0 ? (
+                  <>
+                    <b>{formatNumber(severityBucketsTotal)}</b> ordens SP — soma bate com Alta +
+                    Crítica + Demais (mesmas regras de filtro: regional SP + confiança alta).
+                  </>
+                ) : (
+                  <>Funil derivado da taxonomia oficial · view <code>sp_severidade_distribution</code>.</>
+                )}
               </p>
             </div>
           </header>

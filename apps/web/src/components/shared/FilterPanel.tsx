@@ -1,88 +1,66 @@
-import { useFiltersStore, PERIOD_PRESETS, type FilterPreset } from "../../state/filters-store";
+import { useFiltersStore, PERIOD_PRESETS } from "../../state/filters-store";
 
-const QUICK_PRESETS: { id: FilterPreset; label: string; cmd: string }[] = [
-  { id: "manual", label: "Manual", cmd: "M" },
-  { id: "ce_group", label: "CE · Grupo operacional", cmd: "C" },
-  { id: "refat", label: "Ordens com refaturamento", cmd: "R" }
-];
+export function PeriodFilterTop() {
+  const { preset, start, end, setPreset, setPartial } = useFiltersStore();
+  return (
+    <div className="sb-period-top" role="group" aria-label="Período">
+      <div className="sb-section">
+        <span className="sb-section-title">Período</span>
+        <span className="sb-section-badge">{PERIOD_PRESETS.length}</span>
+      </div>
+      <div className="period-pills" role="group" aria-label="Atalhos de período">
+        {PERIOD_PRESETS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className={"period-pill" + (preset === p.id ? " is-active" : "")}
+            onClick={() => setPreset(p.id)}
+            aria-pressed={preset === p.id}
+            title={p.label}
+          >
+            <span className="lbl">{p.label}</span>
+            <span className="cmd">{p.cmd}</span>
+          </button>
+        ))}
+      </div>
+      <div className="filter-group">
+        <label className="filter-label">
+          Início
+          <input
+            type="date"
+            value={start ?? ""}
+            onChange={(e) => setPartial({ start: e.target.value || null })}
+            style={inputStyle}
+          />
+        </label>
+        <label className="filter-label">
+          Fim
+          <input
+            type="date"
+            value={end ?? ""}
+            onChange={(e) => setPartial({ end: e.target.value || null })}
+            style={inputStyle}
+          />
+        </label>
+        {start || end ? (
+          <button
+            type="button"
+            className="ghost-button period-clear"
+            onClick={() => setPartial({ start: null, end: null })}
+          >
+            Limpar período
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 export function FilterPanel() {
-  const { preset, refat, start, end, setPreset, setPartial, reset } = useFiltersStore();
+  const { refat, setPartial, reset } = useFiltersStore();
 
   return (
     <>
-      <div>
-        <div className="sb-section">
-          <span className="sb-section-title">Período</span>
-          <span className="sb-section-badge">{PERIOD_PRESETS.length}</span>
-        </div>
-        <div className="period-pills" role="group" aria-label="Atalhos de período">
-          {PERIOD_PRESETS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={"period-pill" + (preset === p.id ? " is-active" : "")}
-              onClick={() => setPreset(p.id)}
-              aria-pressed={preset === p.id}
-              title={p.label}
-            >
-              <span className="lbl">{p.label}</span>
-              <span className="cmd">{p.cmd}</span>
-            </button>
-          ))}
-        </div>
-        <div className="filter-group">
-          <label className="filter-label">
-            Início
-            <input
-              type="date"
-              value={start ?? ""}
-              onChange={(e) => setPartial({ start: e.target.value || null })}
-              style={inputStyle}
-            />
-          </label>
-          <label className="filter-label">
-            Fim
-            <input
-              type="date"
-              value={end ?? ""}
-              onChange={(e) => setPartial({ end: e.target.value || null })}
-              style={inputStyle}
-            />
-          </label>
-          {start || end ? (
-            <button
-              type="button"
-              className="ghost-button period-clear"
-              onClick={() => setPartial({ start: null, end: null })}
-            >
-              Limpar período
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      <div>
-        <div className="sb-section">
-          <span className="sb-section-title">Presets</span>
-          <span className="sb-section-badge">{QUICK_PRESETS.length}</span>
-        </div>
-        <div className="preset-stack">
-          {QUICK_PRESETS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={p.id === preset ? "preset-item is-active" : "preset-item"}
-              onClick={() => setPreset(p.id)}
-            >
-              <span className="dot" aria-hidden />
-              <span>{p.label}</span>
-              <span className="cmd">{p.cmd}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div>
         <div className="sb-section">
           <span className="sb-section-title">Preferências</span>

@@ -1,9 +1,10 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { FilterPanel } from "./FilterPanel";
+import { FilterPanel, PeriodFilterTop } from "./FilterPanel";
 import { features } from "../../lib/features";
 import { EnelLogo } from "./EnelLogo";
 import { RegionScopeFilter } from "./RegionScope";
+import { useUiStore } from "../../state/ui-store";
 
 type Section = "assistente" | "severidade" | "bi" | "governo";
 type NavItem = {
@@ -31,6 +32,8 @@ const NAV: NavItem[] = [
 
 export function Sidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const sidebarOpen = useUiStore((s) => s.sidebarOpen);
+  const closeSidebar = useUiStore((s) => s.toggleSidebar);
   const navRef = useRef<HTMLElement | null>(null);
   const itemRefs = useRef(new Map<string, HTMLDivElement>());
   const [activeFrame, setActiveFrame] = useState({ top: 0, height: 0, visible: false });
@@ -91,70 +94,85 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="sidebar enel-sidebar" aria-label="Navegação principal">
-      <div className="sb-brand-block">
-        <div className="sb-brand">
-          <EnelLogo size={36} variant="mark" />
-          <div className="sb-brand-text">
-            <span className="sb-brand-name">ENEL Brasil</span>
-            <span className="sb-brand-sub">Analytics · MIS</span>
+    <>
+      <button
+        type="button"
+        className={"sb-mobile-overlay" + (sidebarOpen ? " is-visible" : "")}
+        aria-hidden={!sidebarOpen}
+        tabIndex={-1}
+        onClick={() => closeSidebar()}
+      />
+      <aside
+        className="sidebar enel-sidebar"
+        aria-label="Navegação principal"
+        data-sidebar-open={sidebarOpen}
+      >
+        <div className="sb-brand-block">
+          <div className="sb-brand">
+            <EnelLogo size={36} variant="mark" />
+            <div className="sb-brand-text">
+              <span className="sb-brand-name">ENEL Brasil</span>
+              <span className="sb-brand-sub">Analytics · MIS</span>
+            </div>
+            <span className="sb-brand-version" title="Versão da plataforma">v3.1</span>
+            <button
+              type="button"
+              className="sb-mobile-close"
+              onClick={() => closeSidebar()}
+              aria-label="Fechar menu"
+            >
+              ✕
+            </button>
           </div>
-          <span className="sb-brand-version" title="Versão da plataforma">v3.1</span>
+          <PeriodFilterTop />
+          <RegionScopeFilter />
         </div>
-        <div className="sb-status" role="status">
-          <span className="sb-status-dot" aria-hidden />
-          <span className="sb-status-label">Operacional</span>
-          <span className="sb-status-sep" aria-hidden>·</span>
-          <span className="sb-status-region">SP</span>
+
+        <nav className="sb-nav-scroll" aria-label="Seções" ref={navRef}>
+          <span
+            className={`sb-active-rail ${activeFrame.visible ? "is-visible" : ""}`}
+            style={{
+              height: activeFrame.height,
+              transform: `translateY(${activeFrame.top}px)`
+            }}
+            aria-hidden
+          />
+          {groups.map((g) => {
+            const items = nav.filter((n) => n.section === g.id);
+            if (!items.length) return null;
+            return (
+              <SidebarSection key={g.id} title={g.title} badge={g.badge}>
+                <div className="nav">
+                  {items.map((item) => (
+                    <div
+                      className="nav-item-frame"
+                      key={item.to}
+                      ref={(node) => registerItem(item.to, node)}
+                    >
+                      <NavLink item={item} active={pathname === item.to} />
+                    </div>
+                  ))}
+                </div>
+              </SidebarSection>
+            );
+          })}
+
+          <div className="sb-divider" aria-hidden />
+          <FilterPanel />
+        </nav>
+
+        <div className="sb-footer">
+          <div className="sb-footer-meta">
+            <span className="sb-footer-label">Lakehouse</span>
+            <span className="sb-footer-value">MinIO · Iceberg · Trino</span>
+          </div>
+          <div className="sb-footer-meta">
+            <span className="sb-footer-label">Ambiente</span>
+            <span className="sb-footer-value">prod-mirror · CPU-only</span>
+          </div>
         </div>
-      </div>
-
-      <RegionScopeFilter />
-
-      <nav className="sb-nav-scroll" aria-label="Seções" ref={navRef}>
-        <span
-          className={`sb-active-rail ${activeFrame.visible ? "is-visible" : ""}`}
-          style={{
-            height: activeFrame.height,
-            transform: `translateY(${activeFrame.top}px)`
-          }}
-          aria-hidden
-        />
-        {groups.map((g) => {
-          const items = nav.filter((n) => n.section === g.id);
-          if (!items.length) return null;
-          return (
-            <SidebarSection key={g.id} title={g.title} badge={g.badge}>
-              <div className="nav">
-                {items.map((item) => (
-                  <div
-                    className="nav-item-frame"
-                    key={item.to}
-                    ref={(node) => registerItem(item.to, node)}
-                  >
-                    <NavLink item={item} active={pathname === item.to} />
-                  </div>
-                ))}
-              </div>
-            </SidebarSection>
-          );
-        })}
-
-        <div className="sb-divider" aria-hidden />
-        <FilterPanel />
-      </nav>
-
-      <div className="sb-footer">
-        <div className="sb-footer-meta">
-          <span className="sb-footer-label">Lakehouse</span>
-          <span className="sb-footer-value">MinIO · Iceberg · Trino</span>
-        </div>
-        <div className="sb-footer-meta">
-          <span className="sb-footer-label">Ambiente</span>
-          <span className="sb-footer-value">prod-mirror · CPU-only</span>
-        </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }
 
