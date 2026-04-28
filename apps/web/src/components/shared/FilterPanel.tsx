@@ -1,5 +1,12 @@
 import { useFiltersStore, PERIOD_PRESETS } from "../../state/filters-store";
 
+const SHORT_LABEL: Record<string, string> = {
+  last_1m: "1M",
+  last_3m: "3M",
+  last_6m: "6M",
+  last_12m: "12M"
+};
+
 export function PeriodFilterTop() {
   const { preset, start, end, setPreset, setPartial } = useFiltersStore();
   return (
@@ -18,8 +25,7 @@ export function PeriodFilterTop() {
             aria-pressed={preset === p.id}
             title={p.label}
           >
-            <span className="lbl">{p.label}</span>
-            <span className="cmd">{p.cmd}</span>
+            <span className="lbl">{SHORT_LABEL[p.id] ?? p.label}</span>
           </button>
         ))}
       </div>
