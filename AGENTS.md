@@ -12,6 +12,7 @@ Optimize for correctness, maintainability, safety, and low-risk delivery.
 - Surface risks, constraints, and assumptions early.
 - Prefer autonomous execution for low-risk, reversible work.
 - Never delete important code, data, or files without explicit permission.
+- Use `rtk` as the default shell-command entrypoint in this repository; prefer `rtk <command>` for reads, search, tests, git, and other CLI work unless `rtk` cannot support the command.
 
 ## Repository Discipline
 
