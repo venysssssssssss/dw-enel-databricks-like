@@ -491,6 +491,90 @@ _SP_BOOSTS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
 )
 
 
+# Cluster-level boosts: rotulagem do CSV `erro_leitura_clusterizado` (SP).
+# Entram quando a query menciona fatura/medidor/leitura — promovem cards
+# `descricoes-cluster-*` (sumário) e exemplos reais para grounding detalhado.
+_DESCRICOES_BOOST_RULES: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
+    (
+        re.compile(
+            r"\b(medidor(?:es)?|f[ií]sico|troca\s+do?\s+medidor|defeito\s+(?:no|do)\s+medidor)\b",
+            re.IGNORECASE,
+        ),
+        (
+            "descricoes-cluster-problemas-no-medidor-f-sico",
+            "descricoes-cluster-diverg-ncia-cliente-vs-sistema-problemas-no-medidor-f-sico",
+        ),
+    ),
+    (
+        re.compile(
+            r"\b(divergencia|diverg[êe]ncia|leitura\s+(?:errad|incorret)\w*|sistema\s+vs)\b",
+            re.IGNORECASE,
+        ),
+        (
+            "descricoes-cluster-diverg-ncia-cliente-vs-sistema",
+            "descricoes-cluster-diverg-ncia-cliente-vs-sistema-varia-o-contesta-o-de-valor",
+        ),
+    ),
+    (
+        re.compile(
+            r"\b(varia[çc][ãa]o|contesta[çc][ãa]o|valor\s+alto|valor\s+da\s+fatura|fatura\s+alta)\b",
+            re.IGNORECASE,
+        ),
+        (
+            "descricoes-cluster-varia-o-contesta-o-de-valor",
+            "descricoes-cluster-diverg-ncia-cliente-vs-sistema-varia-o-contesta-o-de-valor",
+        ),
+    ),
+    (
+        re.compile(
+            r"\b(invers[ãa]o|invertid\w+|erro\s+de\s+digita[çc][ãa]o|digita[çc][ãa]o)\b",
+            re.IGNORECASE,
+        ),
+        (
+            "descricoes-cluster-invers-o-ou-erro-de-digita-o",
+            "descricoes-cluster-diverg-ncia-cliente-vs-sistema-invers-o-ou-erro-de-digita-o-varia-o-contesta-o-de-valor",
+        ),
+    ),
+    (
+        re.compile(
+            r"\b(m[ée]dia|estimativa|leitura\s+por\s+m[ée]dia)\b",
+            re.IGNORECASE,
+        ),
+        ("descricoes-cluster-m-dia-ou-estimativa",),
+    ),
+    (
+        re.compile(
+            r"\b(impedimento\s+de\s+acesso|sem\s+acesso\s+ao\s+medidor|port[ãa]o\s+fechado)\b",
+            re.IGNORECASE,
+        ),
+        ("descricoes-cluster-impedimento-de-acesso",),
+    ),
+    (
+        re.compile(
+            r"\b(fatura\w*|leitura\w*|consumo\w*)\b",
+            re.IGNORECASE,
+        ),
+        (
+            "descricoes-cluster-diverg-ncia-cliente-vs-sistema-varia-o-contesta-o-de-valor",
+            "descricoes-cluster-diverg-ncia-cliente-vs-sistema",
+            "descricoes-cluster-varia-o-contesta-o-de-valor",
+        ),
+    ),
+)
+
+
+def _is_fatura_medidor_query(question: str) -> bool:
+    """Heurística rápida: query menciona fatura, medidor, leitura, valor, consumo."""
+    return bool(
+        re.search(
+            r"\b(fatura\w*|medidor(?:es)?|leitura\w*|consumo\w*|valor\s+da\s+fatura|"
+            r"divergencia|diverg[êe]ncia|digita[çc][ãa]o|m[ée]dia|estimativa)\b",
+            question,
+            re.IGNORECASE,
+        )
+    )
+
+
 def detect_card_boosts(
     question: str,
     *,
@@ -516,6 +600,12 @@ def detect_card_boosts(
         if pattern.search(question):
             for anchor in anchors:
                 seen.setdefault(anchor, None)
+    # Cluster boosts (SP): só fazem sentido quando região permite SP.
+    if region in {"SP", "CE+SP", None}:
+        for pattern, anchors in _DESCRICOES_BOOST_RULES:
+            if pattern.search(question):
+                for anchor in anchors:
+                    seen.setdefault(anchor, None)
     return list(seen.keys())
 
 
@@ -1805,7 +1895,12 @@ class RagOrchestrator:
         Aproximação: ~12-14 tok/s em i7-1185G7 → 35s ≈ 400 tokens úteis.
         Respostas curtas e diretas também reforçam as regras de exatidão.
         """
-        sla_cap = min(400, self.config.max_turn_tokens // 2)
+        # Fatura/medidor exigem resposta detalhada (volume + procedência + tipo medidor):
+        # libera teto maior antes do clamp por contexto disponível.
+        if _is_fatura_medidor_query(question):
+            sla_cap = min(700, self.config.max_turn_tokens // 2)
+        else:
+            sla_cap = min(400, self.config.max_turn_tokens // 2)
         context_limit = min(self.config.n_ctx, self.config.max_context_tokens)
         fixed = self._fixed_prompt_tokens(
             question=question,
