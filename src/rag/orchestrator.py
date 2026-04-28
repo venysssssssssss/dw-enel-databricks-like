@@ -97,6 +97,19 @@ _REFAT_EXPLANATION_RE = re.compile(
     r"\b(o que|por que|porque|recorrent)\b.*\brefaturamento\s+produtos\b",
     re.IGNORECASE,
 )
+_INSTALLATION_ID_RE = re.compile(
+    r"\b(?:instala(?:ção|cao)?|uc)\s*(?:n[uú]mero|id)?\s*[:#-]?\s*(\d{4,})\b",
+    re.IGNORECASE,
+)
+_CAUSE_QUERY_RE = re.compile(
+    r"\b(causa|causas|causa-raiz|causa raiz|motivo|motivos|"
+    r"principal|principais|mais frequente|mais comum)\b",
+    re.IGNORECASE,
+)
+_SUBJECT_QUERY_RE = re.compile(
+    r"\b(assunto|assuntos|tipo de reclama|tipos de reclama|categoria|categorias)\b",
+    re.IGNORECASE,
+)
 _DRILLDOWN_CANONICAL_ANCHORS = {
     "sp-causas-por-tipo-medidor",
     "sp-tipos-medidor",
@@ -424,8 +437,14 @@ _SP_BOOSTS: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
     ),
     (
         re.compile(
-            r"\b(assunto|assuntos|causa|causas|motivo|motivos|principal|principais|"
-            r"tipo de reclama|reclama)\b",
+            r"\b(causa|causas|motivo|motivos|principal|principais)\b",
+            re.IGNORECASE,
+        ),
+        ("sp-n1-causas", "sp-n1-assuntos"),
+    ),
+    (
+        re.compile(
+            r"\b(assunto|assuntos|tipo de reclama|reclama)\b",
             re.IGNORECASE,
         ),
         ("sp-n1-assuntos", "sp-n1-causas"),
@@ -624,6 +643,24 @@ SP_PROFILE_SCOPE_MESSAGE = (
 def is_profile_detail_query(question: str) -> bool:
     """Detecta perguntas de perfil detalhado cliente/fatura/medidor."""
     return bool(_PROFILE_DETAIL_RE.search(question))
+
+
+def _extract_installation_id(question: str) -> str | None:
+    match = _INSTALLATION_ID_RE.search(question)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _extract_meter_type(question: str) -> str | None:
+    low = question.casefold()
+    if "digital" in low:
+        return "digital"
+    if "analóg" in low or "analog" in low:
+        return "anal"
+    if "ciclom" in low:
+        return "ciclom"
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -842,6 +879,16 @@ class RagOrchestrator:
             )
         return " ".join(parts).strip()
 
+    @staticmethod
+    def _should_use_positive_cache(
+        *,
+        intent: str,
+        region: Literal["CE", "SP", "CE+SP"] | None,
+    ) -> bool:
+        if intent in ANALYTICAL_INTENTS and region in {"CE", "SP", "CE+SP"}:
+            return False
+        return True
+
     def answer(
         self,
         question: str,
@@ -930,7 +977,11 @@ class RagOrchestrator:
             region = "CE+SP"
 
         # 1. Positive Cache Lookup (Sprint 26)
-        cached_positive = self.positive_cache.lookup(check.sanitized)
+        cached_positive = (
+            self.positive_cache.lookup(check.sanitized)
+            if self._should_use_positive_cache(intent=intent, region=region)
+            else None
+        )
         if cached_positive:
             total_ms = timer.total_ms()
             return RagResponse(
@@ -1058,13 +1109,35 @@ class RagOrchestrator:
                 question_hash=q_hash,
             )
 
-        history_summary = self._build_history_summary(history)
-        passages = self._enforce_budget(
-            passages,
-            question=check.sanitized,
-            history=history,
-            history_summary=history_summary,
+        structured_text = self._structured_answer_from_data(
+            check.sanitized,
+            passages=passages,
+            intent=intent,
+            region=region,
         )
+        if structured_text is not None:
+            self._record(
+                question=check.sanitized,
+                intent=intent,
+                passages=passages,
+                prompt_tokens=0,
+                completion_tokens=len(structured_text) // 4,
+                first_token_ms=timer.first_token_ms or timer.total_ms(),
+                total_ms=timer.total_ms(),
+                region_detected=region,
+                out_of_regional_scope=False,
+                golden_case_id=golden_case_id,
+            )
+            return RagResponse(
+                text=structured_text,
+                passages=passages,
+                intent=intent,
+                prompt_tokens=0,
+                completion_tokens=len(structured_text) // 4,
+                latency_ms=timer.total_ms(),
+                region_detected=region,
+                question_hash=q_hash,
+            )
         direct_text = self._direct_answer_from_data(
             check.sanitized,
             passages=passages,
@@ -1093,6 +1166,13 @@ class RagOrchestrator:
                 region_detected=region,
                 question_hash=q_hash,
             )
+        history_summary = self._build_history_summary(history)
+        passages = self._enforce_budget(
+            passages,
+            question=check.sanitized,
+            history=history,
+            history_summary=history_summary,
+        )
         messages = build_messages(
             question=check.sanitized,
             passages=passages,
@@ -1233,7 +1313,11 @@ class RagOrchestrator:
             region = "CE+SP"
 
         # 1. Positive Cache Lookup (Sprint 26)
-        cached_positive = self.positive_cache.lookup(check.sanitized)
+        cached_positive = (
+            self.positive_cache.lookup(check.sanitized)
+            if self._should_use_positive_cache(intent=intent, region=region)
+            else None
+        )
         if cached_positive:
             yield RagStreamEvent(
                 "stage",
@@ -1403,15 +1487,30 @@ class RagOrchestrator:
             yield OUT_OF_SCOPE_MESSAGE
             return
 
-        history_summary = self._build_history_summary(history)
-        passages = self._enforce_budget(
-            passages,
-            question=check.sanitized,
-            history=history,
-            history_summary=history_summary,
-        )
         if on_passages is not None:
             on_passages(passages, intent)
+        structured_text = self._structured_answer_from_data(
+            check.sanitized,
+            passages=passages,
+            intent=intent,
+            region=region,
+        )
+        if structured_text is not None:
+            timer.mark_first_token()
+            yield structured_text
+            self._record(
+                question=check.sanitized,
+                intent=intent,
+                passages=passages,
+                prompt_tokens=0,
+                completion_tokens=len(structured_text) // 4,
+                first_token_ms=timer.first_token_ms,
+                total_ms=timer.total_ms(),
+                region_detected=region,
+                out_of_regional_scope=False,
+                golden_case_id=None,
+            )
+            return
         direct_text = self._direct_answer_from_data(
             check.sanitized,
             passages=passages,
@@ -1433,6 +1532,13 @@ class RagOrchestrator:
                 golden_case_id=None,
             )
             return
+        history_summary = self._build_history_summary(history)
+        passages = self._enforce_budget(
+            passages,
+            question=check.sanitized,
+            history=history,
+            history_summary=history_summary,
+        )
         messages = build_messages(
             question=check.sanitized,
             passages=passages,
@@ -1597,6 +1703,7 @@ class RagOrchestrator:
         kwargs: dict[str, Any] = {
             "top_n": top_n * 2,
             "doc_types": doc_types,
+            "dataset_version": dataset_version,
             "region": region,
         }
         semantic = self.retriever.top_passages(query, **kwargs)
@@ -1868,20 +1975,212 @@ class RagOrchestrator:
         ]
         if not live_data:
             return None
-        source = self._best_drilldown_passage(live_data)
-        if source is None:
+        selected = self._select_direct_answer_passages(query, live_data)
+        if not selected:
             return None
-        summary = self._short_answer_from_passage(source)
-        citation = source.citation()
-        if citation.lower() not in summary.lower():
-            summary = f"{summary}\n\n{citation}"
-        if "data-quality-notes" not in source.anchor and source.region == "SP":
+        blocks = [self._short_answer_from_passage(source) for source in selected]
+        blocks = [block.strip() for block in blocks if block.strip()]
+        if not blocks:
+            return None
+        summary = "\n\n".join(dict.fromkeys(blocks))
+        citations = format_citations(selected)
+        if citations.strip() not in summary:
+            summary = f"{summary}\n{citations}".strip()
+        if any("data-quality-notes" not in source.anchor and source.region == "SP" for source in selected):
             caveat = (
                 "Nota de qualidade: SP está no universo N1 de erro de leitura; "
                 "refaturamento resolvido pode estar subnotificado."
             )
             summary = f"{summary}\n\n{caveat}"
         return summary.strip()
+
+    def _select_direct_answer_passages(
+        self,
+        query: str,
+        passages: list[Passage],
+    ) -> list[Passage]:
+        if not passages:
+            return []
+        low = query.casefold()
+        by_anchor = {passage.anchor: passage for passage in passages}
+        preferred: list[str] = []
+
+        if _METER_REASON_QUERY_RE.search(query):
+            preferred.extend(
+                [
+                    "sp-causas-por-tipo-medidor",
+                    "sp-tipos-medidor",
+                    "sp-medidores-problema-reclamacao",
+                ]
+            )
+        elif _CAUSE_QUERY_RE.search(query):
+            preferred.extend(
+                [
+                    "sp-n1-causas",
+                    "ce-reclamacoes-totais-causas",
+                    "top-causas-raiz",
+                    "sp-causa-observacoes",
+                ]
+            )
+            if "reclama" in low:
+                preferred.extend(
+                    [
+                        "sp-n1-assuntos",
+                        "ce-reclamacoes-totais-assuntos",
+                    ]
+                )
+        elif _SUBJECT_QUERY_RE.search(query):
+            preferred.extend(
+                [
+                    "sp-n1-assuntos",
+                    "ce-reclamacoes-totais-assuntos",
+                    "top-assuntos",
+                ]
+            )
+        elif any(term in low for term in ("fatura", "medidor", "perfil")):
+            preferred.extend(
+                [
+                    "sp-fatura-medidor",
+                    "sp-faturas-altas",
+                    "sp-tipos-medidor",
+                    "sp-perfil-assunto-lider",
+                ]
+            )
+        elif any(term in low for term in ("mensal", "mês", "meses", "evolu", "série", "serie")):
+            preferred.extend(
+                [
+                    "sp-n1-mensal",
+                    "ce-reclamacoes-totais-evolucao",
+                ]
+            )
+
+        selected: list[Passage] = []
+        seen: set[str] = set()
+        for anchor in preferred:
+            passage = by_anchor.get(anchor)
+            if passage is None:
+                continue
+            selected.append(passage)
+            seen.add(passage.chunk_id)
+            if len(selected) >= 3:
+                break
+        if selected:
+            return selected
+
+        source = self._best_drilldown_passage(passages)
+        return [source] if source is not None else []
+
+    def _structured_answer_from_data(
+        self,
+        query: str,
+        *,
+        passages: list[Passage],
+        intent: str,
+        region: Literal["CE", "SP", "CE+SP"] | None,
+    ) -> str | None:
+        if intent not in ANALYTICAL_INTENTS or region != "SP":
+            return None
+        try:
+            from src.data_plane import DataStore
+        except Exception:
+            return None
+        store = DataStore()
+        installation_id = _extract_installation_id(query)
+        if installation_id:
+            details = store.sp_installation_details(installation_id)
+            if details:
+                return self._format_installation_details_answer(details)
+
+        low = query.casefold()
+        if any(term in low for term in ("procedent", "improcedent")):
+            metrics = store.sp_overview_metrics()
+            total = int(metrics.get("total_ordens", 0))
+            if total > 0:
+                return (
+                    f"Em SP, o universo N1 atual tem **{total} ordens**: "
+                    f"**{int(metrics.get('procedentes', 0))} procedentes** e "
+                    f"**{int(metrics.get('improcedentes', 0))} improcedentes**.\n\n"
+                    "[fonte: data/silver/erro_leitura_normalizado.csv#sp-n1-overview]"
+                )
+
+        meter_type = _extract_meter_type(query)
+        if meter_type and "instala" in low:
+            rows = store.sp_installations_by_meter_type(meter_type)
+            if rows:
+                return self._format_meter_installations_answer(meter_type, rows)
+        return None
+
+    @staticmethod
+    def _format_installation_details_answer(details: dict[str, Any]) -> str:
+        lines = [
+            f"Instalação **{details['instalacao']}** em SP: "
+            f"**{details['total_ordens']} ordens**, "
+            f"**{details['procedentes']} procedentes** e "
+            f"**{details['improcedentes']} improcedentes**.",
+        ]
+        meter_types = details.get("tipos_medidor") or []
+        if meter_types:
+            lines.append(f"Tipos de medidor associados: **{', '.join(meter_types[:5])}**.")
+        assuntos = details.get("assuntos_top") or []
+        if assuntos:
+            top = assuntos[0]
+            lines.append(
+                "Assunto líder: "
+                f"**{top.get('assunto', 'n/d')}** ({int(top.get('qtd_ordens', 0))} ordens)."
+            )
+        causas = details.get("causas_top") or []
+        if causas:
+            top = causas[0]
+            lines.append(
+                "Causa líder: "
+                f"**{top.get('causa_canonica', 'n/d')}** "
+                f"({int(top.get('qtd_ordens', 0))} ordens)."
+            )
+        faturas = details.get("faturas") or []
+        if faturas:
+            lines.append("")
+            lines.append("Faturas/mês disponíveis:")
+            for row in faturas[:12]:
+                month = str(row.get("fat_reclamada_top") or "n/d")
+                avg_value = float(row.get("valor_medio") or 0.0)
+                max_value = float(row.get("valor_max") or 0.0)
+                meter = str(row.get("tipo_medidor") or "n/d")
+                lines.append(
+                    f"- **{month}**: {int(row.get('qtd_ordens', 0))} ordens, "
+                    f"média R$ {avg_value:.2f}, máx R$ {max_value:.2f}, medidor {meter}"
+                )
+        lines.extend(
+            [
+                "",
+                "[fonte: data/silver/erro_leitura_normalizado.csv#instalacao-lookup-sp]",
+                "[fonte: DESCRICOES_ENEL/DADOS_FATURA_SP_ORDENS001.XLSX]",
+                "[fonte: DESCRICOES_ENEL/medidor_20260417_20260416T090000.csv]",
+            ]
+        )
+        return "\n".join(lines).strip()
+
+    @staticmethod
+    def _format_meter_installations_answer(
+        meter_type: str,
+        rows: list[dict[str, Any]],
+    ) -> str:
+        lines = [
+            f"Instalações SP associadas ao medidor **{meter_type}** no dataset atual:",
+            "",
+        ]
+        for row in rows[:10]:
+            lines.append(
+                f"- **{row.get('instalacao', 'n/d')}**: {int(row.get('qtd_ordens', 0))} ordens, "
+                f"assunto {row.get('assunto_top', 'n/d')}, causa {row.get('causa_top', 'n/d')}"
+            )
+        lines.extend(
+            [
+                "",
+                "[fonte: data/silver/erro_leitura_normalizado.csv#sp-tipos-medidor]",
+                "[fonte: DESCRICOES_ENEL/medidor_20260417_20260416T090000.csv]",
+            ]
+        )
+        return "\n".join(lines).strip()
 
     def _answer_budget(
         self,

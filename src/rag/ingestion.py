@@ -17,11 +17,13 @@ import hashlib
 import math
 import os
 import re
+import zipfile
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
+from xml.etree import ElementTree as ET
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -41,6 +43,7 @@ _DOC_TYPE_MAP: dict[str, str] = {
     "viz": "viz",
     "implementation": "implementation",
 }
+_CLUSTER_DICTIONARY_NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +191,157 @@ def chunk_markdown(
     return chunks
 
 
+def _env_enabled(key: str, default: bool) -> bool:
+    raw = os.getenv(key)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def build_cluster_dictionary_chunks(path: Path) -> list[Chunk]:
+    rows = _read_cluster_dictionary_rows(path)
+    chunks: list[Chunk] = []
+    source_path = str(path).replace("\\", "/")
+    for cluster, terms in rows:
+        if not cluster or not terms:
+            continue
+        anchor = f"cluster-dictionary-{_slug(cluster)}"
+        text = (
+            f"# Dicionário de cluster: {cluster}\n\n"
+            f"- **Cluster**: {cluster}\n"
+            f"- **Termos e expressões-chave**: {terms}\n\n"
+            "Use este dicionário para expandir consultas de SP e conectar "
+            "variações narrativas ao cluster operacional correspondente."
+        )
+        chunk_key = f"{source_path}::{anchor}::{terms[:120]}"
+        chunks.append(
+            Chunk(
+                chunk_id=hashlib.sha256(chunk_key.encode()).hexdigest()[:16],
+                text=text,
+                source_path=source_path,
+                section=f"Dicionário de cluster · {cluster}",
+                doc_type="cluster_dictionary",
+                sprint_id="27",
+                token_count=_approx_tokens(text),
+                anchor=anchor,
+                region="SP",
+                scope="regional",
+                data_source="xlsx.descricoes_enel.cluster_dictionary",
+            )
+        )
+    return chunks
+
+
+def _read_cluster_dictionary_rows(path: Path) -> list[tuple[str, str]]:
+    if not path.exists():
+        return []
+    with zipfile.ZipFile(path) as archive:
+        workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+        rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+        rel_map = {rel.attrib["Id"]: rel.attrib["Target"] for rel in rels}
+        sheets = workbook.find(f"{_CLUSTER_DICTIONARY_NS}sheets")
+        if sheets is None or not list(sheets):
+            return []
+        first_sheet = list(sheets)[0]
+        rel_id = first_sheet.attrib[
+            "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
+        ]
+        target = rel_map.get(rel_id)
+        if not target:
+            return []
+        shared_strings = _read_shared_strings(archive)
+        root = ET.fromstring(archive.read(f"xl/{target}"))
+        sheet_data = root.find(f"{_CLUSTER_DICTIONARY_NS}sheetData")
+        if sheet_data is None:
+            return []
+        rows: list[tuple[str, str]] = []
+        for row in list(sheet_data)[1:]:
+            values = [_sheet_cell_value(cell, shared_strings) for cell in list(row)]
+            if len(values) < 2:
+                continue
+            cluster = values[0].strip()
+            terms = values[1].strip()
+            if cluster and terms:
+                rows.append((cluster, terms))
+        return rows
+
+
+def _read_shared_strings(archive: zipfile.ZipFile) -> list[str]:
+    name = "xl/sharedStrings.xml"
+    if name not in archive.namelist():
+        return []
+    root = ET.fromstring(archive.read(name))
+    return [
+        "".join(text_node.text or "" for text_node in item.iter(f"{_CLUSTER_DICTIONARY_NS}t"))
+        for item in root
+    ]
+
+
+def _sheet_cell_value(cell: ET.Element, shared_strings: list[str]) -> str:
+    cell_type = cell.attrib.get("t", "")
+    raw = cell.find(f"{_CLUSTER_DICTIONARY_NS}v")
+    if raw is None or raw.text is None:
+        return ""
+    if cell_type == "s":
+        try:
+            return shared_strings[int(raw.text)]
+        except (IndexError, ValueError):
+            return ""
+    return raw.text
+
+
+def _external_rag_chunks(config: RagConfig) -> list[Chunk]:
+    chunks: list[Chunk] = []
+    if getattr(config, "corpus_include_descricoes_clusters", True) and _env_enabled(
+        "RAG_CORPUS_INCLUDE_DESCRICOES_CLUSTERS",
+        True,
+    ):
+        csv_path = Path("DESCRICOES_ENEL/erro_leitura_clusterizado.csv")
+        if csv_path.exists():
+            try:
+                from scripts.build_descricoes_corpus import _read_csv, build_chunks
+
+                rows = _read_csv(csv_path)
+                for spec in build_chunks(rows):
+                    metadata = spec.metadata
+                    chunks.append(
+                        Chunk(
+                            chunk_id=spec.chunk_id,
+                            text=spec.text,
+                            source_path=str(metadata.get("source_path", csv_path)).replace(
+                                "\\", "/"
+                            ),
+                            section=spec.section,
+                            doc_type=str(metadata.get("doc_type", "descricoes_clusterizadas")),
+                            sprint_id=str(metadata.get("sprint_id", "27")),
+                            token_count=_approx_tokens(spec.text),
+                            anchor=spec.anchor,
+                            dataset_version=str(metadata.get("dataset_version", "")),
+                            region=str(metadata.get("region", "SP")),
+                            scope=str(metadata.get("scope", "regional")),
+                            data_source=str(
+                                metadata.get(
+                                    "data_source",
+                                    "csv.descricoes_enel.erro_leitura_clusterizado",
+                                )
+                            ),
+                        )
+                    )
+            except Exception:
+                pass
+    if getattr(config, "corpus_include_cluster_dictionary", True) and _env_enabled(
+        "RAG_CORPUS_INCLUDE_CLUSTER_DICTIONARY",
+        True,
+    ):
+        try:
+            chunks.extend(
+                build_cluster_dictionary_chunks(Path("DESCRICOES_ENEL/Dicionário_clusters.xlsx"))
+            )
+        except Exception:
+            pass
+    return chunks
+
+
 def build_corpus(config: RagConfig, *, rebuild: bool = False) -> IngestionStats:
     """Ingestão idempotente. Com `rebuild=True` recria a coleção do zero."""
     try:
@@ -242,6 +396,8 @@ def build_corpus(config: RagConfig, *, rebuild: bool = False) -> IngestionStats:
         all_chunks.extend(data_chunks)
     except Exception as exc:  # pragma: no cover - não-crítico
         stats.skipped.append(f"data_cards: {exc}")
+
+    all_chunks.extend(_external_rag_chunks(config))
 
     if not all_chunks:
         return stats
