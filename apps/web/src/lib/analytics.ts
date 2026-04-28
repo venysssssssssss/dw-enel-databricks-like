@@ -5,6 +5,32 @@
 
 export type Severity = "critical" | "high" | "medium" | "low";
 
+/**
+ * Display labels for canonical causes. The internal ID stays stable across
+ * the data plane and tests; UIs render the friendly label, falling back to a
+ * humanized version of the ID for unmapped causes.
+ */
+export const CAUSA_DISPLAY_LABEL: Record<string, string> = {
+  autoleitura_cliente: "Erro leitura - com foto",
+  consumo_elevado_revisao: "Erro leitura - sem foto"
+};
+
+export function formatCausa(id: string | null | undefined): string {
+  if (!id) return "—";
+  const trimmed = String(id).trim();
+  if (!trimmed) return "—";
+  if (CAUSA_DISPLAY_LABEL[trimmed]) return CAUSA_DISPLAY_LABEL[trimmed];
+  if (trimmed.toLowerCase() === "indefinido") return "Indefinido";
+  return trimmed.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export function formatCategoria(id: string | null | undefined): string {
+  if (!id) return "—";
+  const trimmed = String(id).trim();
+  if (!trimmed) return "—";
+  return trimmed.replace(/_/g, " ");
+}
+
 export const SEVERITY_ORDER: readonly Severity[] = ["critical", "high", "medium", "low"];
 
 export const SEVERITY_LABEL_PT: Record<Severity, string> = {
@@ -387,9 +413,124 @@ export function weightedFaturaMedia(rows: readonly FaturaMedidorRow[]): {
   };
 }
 
+export type CategoriaSubcausaTreeRow = {
+  categoria_id: string;
+  categoria_label: string;
+  categoria_qtd: number;
+  categoria_pct: number;
+  subcausa_id: string;
+  subcausa_label: string;
+  qtd: number;
+  percentual_na_categoria: number;
+  procedentes: number;
+  improcedentes: number;
+  exemplo_id: string;
+  exemplo_data: string;
+  exemplo_descricao: string;
+  exemplo_status: string;
+  exemplo_valor_fatura: number;
+  recomendacao_operacional: string;
+};
+
+export type CategoriaTreeNode = {
+  categoria_id: string;
+  categoria_label: string;
+  categoria_qtd: number;
+  categoria_pct: number;
+  procedentes: number;
+  improcedentes: number;
+  subcausas: CategoriaSubcausaTreeRow[];
+};
+
+/**
+ * Group flat tree rows by categoria, summing exact procedente/improcedente
+ * counts from the data plane (no proxy). Sorted by categoria volume desc.
+ */
+export function groupCategoriaSubcausaTree(
+  rows: readonly CategoriaSubcausaTreeRow[]
+): CategoriaTreeNode[] {
+  const map = new Map<string, CategoriaTreeNode>();
+  for (const row of rows) {
+    const id = String(row.categoria_id ?? "nao_classificada");
+    const node = map.get(id) ?? {
+      categoria_id: id,
+      categoria_label: row.categoria_label || formatCategoria(id),
+      categoria_qtd: Number(row.categoria_qtd ?? 0),
+      categoria_pct: Number(row.categoria_pct ?? 0),
+      procedentes: 0,
+      improcedentes: 0,
+      subcausas: []
+    };
+    node.procedentes += Number(row.procedentes ?? 0);
+    node.improcedentes += Number(row.improcedentes ?? 0);
+    node.subcausas.push(row);
+    map.set(id, node);
+  }
+  for (const node of map.values()) {
+    node.subcausas.sort((a, b) => Number(b.qtd ?? 0) - Number(a.qtd ?? 0));
+  }
+  return Array.from(map.values()).sort((a, b) => b.categoria_qtd - a.categoria_qtd);
+}
+
+export type CauseRankingRow = {
+  id: string;
+  label: string;
+  vol: number;
+  proc: number;
+  improc: number;
+  pctProcedentes: number;
+  reinc: number;
+  categoria: string;
+};
+
+export type CauseRankingSourceRow = {
+  id?: string;
+  nome?: string;
+  vol?: number;
+  proc?: number;
+  reinc?: number;
+  cat?: string;
+};
+
+/**
+ * Convert the sp_severidade_*_causas scatter payload into a ranked,
+ * UI-friendly model. proc on the wire is `% procedência`. We re-derive
+ * absolute counts (procedentes/improcedentes) from the volume so the
+ * surface stays exact rather than presenting a percentage as a raw number.
+ */
+export function buildCauseRanking(
+  rows: readonly CauseRankingSourceRow[]
+): CauseRankingRow[] {
+  return rows
+    .map((row) => {
+      const vol = Math.max(0, Number(row.vol ?? 0));
+      const pctProc = Math.max(0, Math.min(100, Number(row.proc ?? 0)));
+      const procedentes = Math.round((pctProc / 100) * vol);
+      const improcedentes = Math.max(0, vol - procedentes);
+      const id = String(row.id ?? row.nome ?? "");
+      const nome = String(row.nome ?? row.id ?? "");
+      return {
+        id,
+        label: formatCausa(nome),
+        vol,
+        proc: procedentes,
+        improc: improcedentes,
+        pctProcedentes: pctProc,
+        reinc: Math.max(0, Number(row.reinc ?? 0)),
+        categoria: String(row.cat ?? "nao_classificada")
+      };
+    })
+    .filter((r) => r.vol > 0)
+    .sort((a, b) => b.vol - a.vol);
+}
+
 /**
  * Weighted procedência share for the focused severities in SP using
  * severity_heatmap rows. taxa_refaturamento ≈ procedência operacional.
+ *
+ * @deprecated Substituído por contagens exatas das views
+ *   sp_severidade_demais_overview / sp_severidade_demais_causas. Mantido
+ *   somente para compatibilidade com chamadores antigos — não usar em UI.
  */
 export function buildProcedenciaSplit(
   rows: readonly SeverityHeatmapRow[],

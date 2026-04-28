@@ -510,19 +510,29 @@ def _attach_severidade(frame: pd.DataFrame) -> pd.DataFrame:
     return merged
 
 
+def _resolve_severidades(severidade: str | tuple[str, ...] | list[str]) -> list[str]:
+    if isinstance(severidade, (tuple, list)):
+        sevs = [str(s).lower() for s in severidade]
+    else:
+        sevs = [str(severidade or "").lower()]
+    if any(s in {"demais", "outras", "media_baixa"} for s in sevs):
+        return ["medium", "low"]
+    return [_SEVERIDADE_ALIAS.get(s, s) for s in sevs]
+
+
 def _filter_sp_severidade(
     frame: pd.DataFrame,
-    severidade: str,
+    severidade: str | tuple[str, ...] | list[str],
     *,
     min_confidence: str = "high",
 ) -> pd.DataFrame:
-    sev_key = _SEVERIDADE_ALIAS.get((severidade or "").lower(), severidade)
+    sev_keys = _resolve_severidades(severidade)
     df = _attach_severidade(frame)
     if df.empty:
         return df
     if "regiao" in df.columns:
         df = df.loc[df["regiao"].astype(str).str.upper().eq("SP")]
-    df = df.loc[df["severidade"].eq(sev_key)]
+    df = df.loc[df["severidade"].isin(sev_keys)]
     df = _filter_min_confidence(df, min_confidence=min_confidence)
     return df
 
@@ -1061,6 +1071,128 @@ def sp_severidade_descricoes(
             break
 
     return pd.DataFrame(records, columns=cols)
+
+
+def sp_categoria_subcausa_tree(
+    frame: pd.DataFrame,
+    *,
+    severidade: str | tuple[str, ...] | list[str] = ("high", "critical", "medium", "low"),
+    top_categorias: int = 8,
+    top_subcausas: int = 6,
+) -> pd.DataFrame:
+    """Árvore categoria → causa canônica (subcausa) → exemplo real do silver.
+
+    Saída longa: cada linha é uma subcausa dentro de uma categoria, com
+    contagens exatas (procedentes/improcedentes), percentual sobre a categoria
+    e um exemplo real (texto cleaned). Não inventa exemplo: se não houver,
+    o campo `exemplo_descricao` fica vazio.
+    """
+    cols = [
+        "categoria_id",
+        "categoria_label",
+        "categoria_qtd",
+        "categoria_pct",
+        "subcausa_id",
+        "subcausa_label",
+        "qtd",
+        "percentual_na_categoria",
+        "procedentes",
+        "improcedentes",
+        "exemplo_id",
+        "exemplo_data",
+        "exemplo_descricao",
+        "exemplo_status",
+        "exemplo_valor_fatura",
+        "recomendacao_operacional",
+    ]
+    df = _filter_sp_severidade(frame, severidade)
+    if df.empty:
+        return pd.DataFrame(columns=cols)
+
+    work = df.copy()
+    work["categoria"] = work.get("categoria", pd.Series("nao_classificada", index=work.index)).fillna("nao_classificada").astype(str)
+    work["causa_canonica"] = work.get("causa_canonica", pd.Series("indefinido", index=work.index)).fillna("indefinido").astype(str)
+    work["proc"] = work.get("flag_resolvido_com_refaturamento", pd.Series(False, index=work.index)).fillna(False).astype(bool)
+
+    text_candidates = [c for c in ("texto_completo", "observacao_ordem", "assunto") if c in work.columns]
+    text_col = text_candidates[0] if text_candidates else None
+    valor_col = "valor_fatura_reclamada_medio" if "valor_fatura_reclamada_medio" in work.columns else None
+    work["__valor"] = work[valor_col] if valor_col else 0.0
+    work["data_ingresso"] = pd.to_datetime(work.get("data_ingresso"), errors="coerce")
+
+    cat_totals = work.groupby("categoria")["ordem"].nunique().sort_values(ascending=False)
+    overall_total = max(int(cat_totals.sum()), 1)
+    top_cat_index = cat_totals.head(top_categorias).index.tolist()
+    work = work.loc[work["categoria"].isin(top_cat_index)]
+    if work.empty:
+        return pd.DataFrame(columns=cols)
+
+    rows: list[dict] = []
+    for categoria, cat_df in work.groupby("categoria", sort=False):
+        cat_qtd = int(cat_df["ordem"].nunique())
+        cat_pct = round(cat_qtd / overall_total * 100, 2)
+        causa_groups = (
+            cat_df.groupby("causa_canonica", as_index=False)
+            .agg(
+                qtd=("ordem", "nunique"),
+                proc_sum=("proc", "sum"),
+            )
+            .sort_values("qtd", ascending=False)
+            .head(top_subcausas)
+        )
+        for _, sub in causa_groups.iterrows():
+            causa = str(sub["causa_canonica"])
+            qtd = int(sub["qtd"])
+            proc = int(sub["proc_sum"])
+            improc = qtd - proc
+            pct_cat = round(qtd / max(cat_qtd, 1) * 100, 2)
+
+            sub_df = cat_df.loc[cat_df["causa_canonica"].eq(causa)].copy()
+            example: dict[str, object] = {
+                "exemplo_id": "",
+                "exemplo_data": "",
+                "exemplo_descricao": "",
+                "exemplo_status": "",
+                "exemplo_valor_fatura": 0.0,
+            }
+            if text_col is not None:
+                texts = sub_df[text_col].fillna("").astype(str).str.strip()
+                sub_df = sub_df.assign(__text=texts)
+                sub_df = sub_df.loc[sub_df["__text"].str.len() > 0]
+            if not sub_df.empty:
+                sub_df = sub_df.sort_values(["__valor"], ascending=False)
+                pick = sub_df.iloc[0]
+                example["exemplo_id"] = (
+                    f"ORD-{pick.get('ordem')}" if pd.notna(pick.get("ordem")) else ""
+                )
+                example["exemplo_data"] = (
+                    pick["data_ingresso"].strftime("%Y-%m-%d")
+                    if pd.notna(pick.get("data_ingresso"))
+                    else ""
+                )
+                example["exemplo_descricao"] = _resumo_text(str(pick.get("__text", "")))
+                example["exemplo_status"] = "procedente" if bool(pick["proc"]) else "improcedente"
+                example["exemplo_valor_fatura"] = (
+                    float(pick["__valor"]) if pd.notna(pick.get("__valor")) else 0.0
+                )
+
+            rows.append(
+                {
+                    "categoria_id": str(categoria),
+                    "categoria_label": str(categoria).replace("_", " ").title(),
+                    "categoria_qtd": cat_qtd,
+                    "categoria_pct": cat_pct,
+                    "subcausa_id": causa,
+                    "subcausa_label": causa,
+                    "qtd": qtd,
+                    "percentual_na_categoria": pct_cat,
+                    "procedentes": proc,
+                    "improcedentes": improc,
+                    "recomendacao_operacional": _suggest_action(causa, str(categoria), proc > improc),
+                    **example,
+                }
+            )
+    return pd.DataFrame(rows, columns=cols)
 
 
 def taxonomy_reference() -> pd.DataFrame:

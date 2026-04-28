@@ -3,33 +3,37 @@ import { Hero } from "../../components/bi/Hero";
 import { KpiStrip } from "../../components/bi/KpiStrip";
 import { VolumeBars } from "../../components/bi/Charts";
 import {
-  ExecutiveScatter,
   MiniBarList,
   MonthlySparkline,
   SEVERITY_COLORS,
   SeverityDonut
 } from "../../components/bi/ExecutiveCharts";
+import { CanonicalCauseRanking } from "../../components/bi/CanonicalCauseRanking";
+import { ExpandableCategoryTree } from "../../components/bi/ExpandableCategoryTree";
 import { AssistantCta } from "../../components/shared/AssistantCta";
 import { FilterChips } from "../../components/shared/FilterChips";
 import { StoryBlock } from "../../components/bi/StoryBlock";
 import { useAggregation } from "../../hooks/useAggregation";
 import { useRegionScope } from "../../components/shared/RegionScope";
 import {
-  buildCauseScatter,
+  buildCauseRanking,
   buildMonthlyEvaluatedSeries,
   buildSeverityDistribution,
   buildSubjectModelSummary,
+  formatCategoria,
+  formatCausa,
   formatMoney,
   formatNumber,
   formatPercent,
   pickAssuntoLiderValor,
   SEVERITY_LABEL_PT,
   type AssuntoLiderRow,
+  type CategoriaSubcausaTreeRow,
   type CategoryBreakdownRow,
+  type CauseRankingSourceRow,
   type ClassifierCoverageRow,
   type MisRegionRow,
   type MisMonthlyRow,
-  type RootCauseRow,
   type Severity,
   type SeverityHeatmapRow,
   type SubjectModelSummary,
@@ -38,14 +42,14 @@ import {
 
 export function MisRoute() {
   const scope = useRegionScope();
-  // Subject coverage: SP é o foco do BI/MIS; CE é apresentação rasa.
-  // Quando o usuário escolhe CE no filtro do topo, o card de cobertura
-  // espelha CE; em "Todas" ou "SP", mantém SP como narrativa primária.
   const subjectScopeRegion = scope === "CE" ? "CE" : "SP";
 
   const mis = useAggregation<MisRegionRow>("mis");
   const severity = useAggregation<SeverityHeatmapRow>("severity_heatmap");
-  const causes = useAggregation<RootCauseRow>("root_cause_distribution");
+  const causes = useAggregation<CauseRankingSourceRow>("sp_severidade_alta_causas", { regiao: ["SP"] });
+  const causesCrit = useAggregation<CauseRankingSourceRow>("sp_severidade_critica_causas", { regiao: ["SP"] });
+  const causesDemais = useAggregation<CauseRankingSourceRow>("sp_severidade_demais_causas", { regiao: ["SP"] });
+  const tree = useAggregation<CategoriaSubcausaTreeRow>("sp_categoria_subcausa_tree", { regiao: ["SP"] });
   const categories = useAggregation<CategoryBreakdownRow>("category_breakdown");
   const coverage = useAggregation<ClassifierCoverageRow>("classifier_coverage");
   const monthly = useAggregation<MisMonthlyRow>("mis_monthly_mis");
@@ -55,10 +59,6 @@ export function MisRoute() {
   const rows = mis.data?.data ?? [];
   const total = rows.reduce((sum, row) => sum + Number(row.volume_total ?? 0), 0);
   const top = [...rows].sort((a, b) => b.volume_total - a.volume_total)[0];
-  const avgRefat =
-    rows.length > 0
-      ? rows.reduce((s, r) => s + Number(r.taxa_refaturamento ?? 0), 0) / rows.length
-      : 0;
   const avgCobertura =
     rows.length > 0
       ? rows.reduce((s, r) => s + Number(r.cobertura_rotulo ?? 0), 0) / rows.length
@@ -70,10 +70,45 @@ export function MisRoute() {
     [severityRows]
   );
 
-  const scatterPoints = useMemo(
-    () => buildCauseScatter(causes.data?.data ?? []),
-    [causes.data]
+  const ranking = useMemo(() => {
+    const merged = new Map<string, CauseRankingSourceRow>();
+    const push = (row: CauseRankingSourceRow) => {
+      const key = String(row.nome ?? row.id ?? "");
+      if (!key) return;
+      const cur = merged.get(key);
+      if (!cur) {
+        merged.set(key, { ...row });
+        return;
+      }
+      const curVol = Number(cur.vol ?? 0);
+      const newVol = Number(row.vol ?? 0);
+      const curProc = Number(cur.proc ?? 0);
+      const newProc = Number(row.proc ?? 0);
+      const totalVol = curVol + newVol;
+      const blendedProc = totalVol > 0 ? (curProc * curVol + newProc * newVol) / totalVol : 0;
+      merged.set(key, {
+        ...cur,
+        vol: totalVol,
+        proc: blendedProc,
+        reinc: Number(cur.reinc ?? 0) + Number(row.reinc ?? 0),
+        cat: cur.cat || row.cat
+      });
+    };
+    for (const r of causes.data?.data ?? []) push(r);
+    for (const r of causesCrit.data?.data ?? []) push(r);
+    for (const r of causesDemais.data?.data ?? []) push(r);
+    return buildCauseRanking(Array.from(merged.values())).slice(0, 10);
+  }, [causes.data, causesCrit.data, causesDemais.data]);
+
+  const treeRows = tree.data?.data ?? [];
+
+  const causasIdentificadas = useMemo(
+    () => Array.from(new Set(ranking.map((r) => r.id))).filter(Boolean).length,
+    [ranking]
   );
+
+  const dominantCausa = top?.causa_dominante ?? "";
+  const dominantCausaLabel = dominantCausa ? formatCausa(dominantCausa) : "…";
 
   const subjectSummary = useMemo(
     () =>
@@ -102,8 +137,6 @@ export function MisRoute() {
     [assuntoLider.data]
   );
 
-  // Valor médio fatura é SP-only no contrato Web. Mantemos visível no MIS Executivo
-  // como proxy do impacto financeiro (SP é o foco do MIS/BI).
   const valorKpi = valorLider.hasValue
     ? {
         value: formatMoney(valorLider.valor),
@@ -112,8 +145,6 @@ export function MisRoute() {
       }
     : {
         value: "—",
-        // TODO: contrato Web atual não expõe valor médio global. sp_perfil_assunto_lider só
-        // retorna valor do assunto líder de SP; média global precisaria de view dedicada.
         sub: "Indisponível no contrato Web atual",
         tag: "R$"
       };
@@ -137,11 +168,19 @@ export function MisRoute() {
         items={[
           { label: "Volume total", value: formatNumber(total), tag: "filtrado", dominant: true },
           { label: "Região líder", value: top?.regiao ?? "…", tag: "pico" },
-          { label: "Causa dominante", value: top?.causa_dominante ?? "…", tag: "top-1" },
           {
-            label: "Taxa refaturamento",
-            value: formatPercent(avgRefat * 100),
-            tag: "média"
+            label: "Causa dominante",
+            value: dominantCausaLabel,
+            tag: "top-1",
+            title: dominantCausa
+              ? `Causa dominante: ${dominantCausaLabel} (id: ${dominantCausa})`
+              : undefined
+          },
+          {
+            label: "Causas identificadas",
+            value: formatNumber(causasIdentificadas),
+            tag: "ranking SP",
+            sub: "via classificador v3"
           },
           { label: "Cobertura rótulo", value: formatPercent(avgCobertura * 100), tag: "ml" },
           { label: "Valor médio fatura", value: valorKpi.value, sub: valorKpi.sub, tag: valorKpi.tag }
@@ -149,8 +188,8 @@ export function MisRoute() {
       />
       <StoryBlock lead="Onde está o volume e onde ele pesa?">
         Regiões com maior <b>volume absoluto</b> não são sempre as mais críticas. Cruze com{" "}
-        <b>taxa de refaturamento</b>, <b>severidade</b> e <b>cobertura do modelo</b> antes de
-        priorizar revisão.
+        <b>severidade</b>, <b>cobertura do modelo</b> e <b>procedência exata</b> antes de priorizar
+        revisão.
       </StoryBlock>
       <section className="card">
         <div className="card-head">
@@ -181,23 +220,39 @@ export function MisRoute() {
         <article className="card exec-card">
           <header className="card-head">
             <div>
-              <h2 className="card-title">Causas canônicas · dispersão</h2>
+              <h2 className="card-title">Causas canônicas · ranking</h2>
               <p className="card-sub">
-                Cada ponto = causa canônica. <b>X</b> volume · <b>Y</b> taxa de refaturamento ·{" "}
-                <b>tamanho</b> proporcional ao volume.
+                Top causas em SP combinando Alta + Crítica + Demais. Procedente/Improcedente
+                derivados de contagem real (vol × % procedência) — sem proxy.
               </p>
             </div>
           </header>
-          {causes.isLoading ? (
+          {causes.isLoading || causesCrit.isLoading || causesDemais.isLoading ? (
             <div className="exec-empty exec-loading">Carregando…</div>
           ) : (
-            <ExecutiveScatter
-              points={scatterPoints}
-              height={320}
-              emptyHint="Sem causas rotuladas suficientes para dispersar — ajuste o filtro."
+            <CanonicalCauseRanking
+              rows={ranking}
+              emptyHint="Sem causas rotuladas suficientes — ajuste o filtro ou aguarde nova carga."
             />
           )}
         </article>
+      </section>
+      <section className="card exec-card">
+        <header className="card-head">
+          <div>
+            <h2 className="card-title">Categoria → subcausa · explorador</h2>
+            <p className="card-sub">
+              Clique numa categoria para abrir as subcausas; clique numa subcausa para ler um{" "}
+              <b>exemplo real do dataset</b>. Procedente/Improcedente são contagens reais por
+              subcausa. Nada é inventado.
+            </p>
+          </div>
+        </header>
+        <ExpandableCategoryTree
+          rows={treeRows}
+          loading={tree.isLoading}
+          emptyHint="View sp_categoria_subcausa_tree sem dados para o recorte atual."
+        />
       </section>
       <SubjectCoverageCard
         summary={subjectSummary}
@@ -220,7 +275,6 @@ export function MisRoute() {
             <tr>
               <th>Região</th>
               <th>Ordens</th>
-              <th>Refat.</th>
               <th>Cobertura</th>
               <th>Crítico</th>
               <th>Causa dominante</th>
@@ -233,10 +287,9 @@ export function MisRoute() {
                   <b>{row.regiao}</b>
                 </td>
                 <td>{formatNumber(row.volume_total)}</td>
-                <td>{formatPercent(Number(row.taxa_refaturamento ?? 0) * 100)}</td>
                 <td>{formatPercent(Number(row.cobertura_rotulo ?? 0) * 100)}</td>
                 <td>{formatPercent(Number(row.share_critico ?? 0) * 100)}</td>
-                <td>{row.causa_dominante}</td>
+                <td title={row.causa_dominante}>{formatCausa(row.causa_dominante)}</td>
               </tr>
             ))}
           </tbody>
@@ -268,7 +321,7 @@ function SubjectCoverageCard({
       ? "buckets high + low"
       : "apenas alta confiança";
   const categoryRows = summary.categoryDistribution.slice(0, 6).map((row, idx) => ({
-    label: row.categoria.replaceAll("_", " "),
+    label: formatCategoria(row.categoria),
     value: row.value,
     pct: row.pct,
     color: PALETTE[idx % PALETTE.length]

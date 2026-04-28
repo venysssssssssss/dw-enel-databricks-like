@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { formatCausa } from "../../lib/analytics";
 
 type TTState = { html: string; x: number; y: number; on: boolean };
 const initialTT: TTState = { html: "", x: 0, y: 0, on: false };
@@ -289,7 +290,8 @@ export function CausasScatter({
           const r = 6 + (c.reinc / rMax) * 22;
           const active = activeId === c.id;
           const color = CAT_COLORS[c.cat] || "var(--sev-primary)";
-          const label = c.nome.length > 22 ? c.nome.slice(0, 22) + "…" : c.nome;
+          const friendly = formatCausa(c.nome);
+          const label = friendly.length > 22 ? friendly.slice(0, 22) + "…" : friendly;
           return (
             <g key={c.id}>
               <circle
@@ -305,7 +307,7 @@ export function CausasScatter({
                     on: true,
                     x: e.clientX,
                     y: e.clientY,
-                    html: `<div class="tt-label">causa canônica</div><div class="tt-val">${c.nome}</div><div class="tt-row"><span>volume</span><b>${fmtN(c.vol)}</b></div><div class="tt-row"><span>procedência</span><b>${c.proc.toFixed(1)}%</b></div><div class="tt-row"><span>reincidências</span><b>${fmtN(c.reinc)}</b></div><div class="tt-row"><span>categoria</span><b>${c.cat}</b></div>`
+                    html: `<div class="tt-label">causa canônica</div><div class="tt-val">${friendly}</div><div class="tt-row"><span>id</span><b>${c.nome}</b></div><div class="tt-row"><span>volume</span><b>${fmtN(c.vol)}</b></div><div class="tt-row"><span>procedência</span><b>${c.proc.toFixed(1)}%</b></div><div class="tt-row"><span>reincidências</span><b>${fmtN(c.reinc)}</b></div><div class="tt-row"><span>categoria</span><b>${c.cat}</b></div>`
                   })
                 }
                 onMouseLeave={() => setTt((t) => ({ ...t, on: false }))}

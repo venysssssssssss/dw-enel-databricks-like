@@ -3,7 +3,6 @@ import { useAggregation } from "../../hooks/useAggregation";
 import { useDescricoes } from "../../hooks/useDescricoes";
 import {
   CategoriasHBars,
-  CausasScatter,
   Sparkline,
   VolumeBarsChart,
   fmtMoney,
@@ -12,8 +11,15 @@ import {
   type Categoria,
   type Causa
 } from "../../components/bi/SeverityCharts";
+import { CanonicalCauseRanking } from "../../components/bi/CanonicalCauseRanking";
+import { ExpandableCategoryTree } from "../../components/bi/ExpandableCategoryTree";
 import { DescricoesTable, type DescricaoRow } from "../../components/bi/DescricoesTable";
-import { weightedFaturaMedia, type FaturaMedidorRow } from "../../lib/analytics";
+import {
+  buildCauseRanking,
+  weightedFaturaMedia,
+  type CategoriaSubcausaTreeRow,
+  type FaturaMedidorRow
+} from "../../lib/analytics";
 
 // Severidade Alta/Crítica são SP-locked. Mantemos a override mesmo que a view
 // já filtre internamente, para evitar interação com filtro global de região.
@@ -90,6 +96,10 @@ function SeveridadeScreen({ severity }: { severity: Severity }) {
   const causas = useAggregation<Causa>(`sp_severidade_${viewSuffix}_causas`, SP_OVERRIDE);
   const ranking = useAggregation<RankingRow>(`sp_severidade_${viewSuffix}_ranking`, SP_OVERRIDE);
   const fatura = useAggregation<FaturaMedidorRow>("sp_fatura_medidor", SP_OVERRIDE);
+  const tree = useAggregation<CategoriaSubcausaTreeRow>(
+    `sp_categoria_subcausa_tree_${viewSuffix === "alta" ? "alta" : "critica"}`,
+    SP_OVERRIDE
+  );
   const descricoes = useDescricoes<DescricaoRow>(severity === "alta" ? "alta" : "critica", 10);
 
   const [activeCat, setActiveCat] = useState<string | null>(null);
@@ -101,6 +111,7 @@ function SeveridadeScreen({ severity }: { severity: Severity }) {
   const values = useMemo(() => (monthly.data?.data ?? []).map((r) => Number(r.qtd_erros || 0)), [monthly.data]);
   const catsRows = cats.data?.data ?? [];
   const causasRows = causas.data?.data ?? [];
+  const causeRanking = useMemo(() => buildCauseRanking(causasRows).slice(0, 12), [causasRows]);
   const rankRows = ranking.data?.data ?? [];
 
   const total = ov?.total ?? 0;
@@ -283,22 +294,40 @@ function SeveridadeScreen({ severity }: { severity: Severity }) {
       <article className="sev-card">
         <header className="sev-c-head">
           <div>
-            <h2 className="sev-c-title">Causas canônicas · dispersão</h2>
+            <h2 className="sev-c-title">Causas canônicas · ranking</h2>
             <p className="sev-c-sub">
-              X: volume de ordens · Y: % de procedência · tamanho: reincidências · cor: categoria técnica · clique para
-              filtrar
+              Ordenado por volume · procedência e improcedência são contagens reais derivadas
+              do volume × % de procedência da causa. Clique para cross-filtrar descrições e ranking.
             </p>
           </div>
         </header>
         {causas.isLoading ? (
           <Skeleton h={320} />
         ) : (
-          <CausasScatter
-            rows={causasRows}
+          <CanonicalCauseRanking
+            rows={causeRanking}
             activeId={activeCausa}
-            onToggle={(id) => setActiveCausa((c) => (c === id ? null : id))}
+            onSelect={(id) => setActiveCausa(id)}
+            emptyHint="Sem causas canônicas suficientes para compor o ranking neste recorte."
           />
         )}
+      </article>
+
+      <article className="sev-card" style={{ marginTop: 18 }}>
+        <header className="sev-c-head">
+          <div>
+            <h2 className="sev-c-title">Categoria → subcausa · explorador</h2>
+            <p className="sev-c-sub">
+              Clique numa subcausa para ver um exemplo real (texto cleaned do silver). Procedente
+              e Improcedente são contagens diretas — não há proxy.
+            </p>
+          </div>
+        </header>
+        <ExpandableCategoryTree
+          rows={tree.data?.data ?? []}
+          loading={tree.isLoading}
+          emptyHint="Sem árvore categoria/subcausa para esta severidade."
+        />
       </article>
 
       <article className="sev-card" style={{ marginTop: 18 }}>

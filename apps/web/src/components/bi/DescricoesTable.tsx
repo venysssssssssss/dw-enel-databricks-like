@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { fmtMoney, fmtN } from "./SeverityCharts";
+import { formatCausa, formatCategoria } from "../../lib/analytics";
 
 export type DescricaoRow = {
   id: string;
@@ -134,8 +135,10 @@ function DescriptionRow({
           <span className="desc-id">{row.id}</span>
         </td>
         <td>
-          <div className="desc-cat">{row.cat}</div>
-          <div className="desc-causa">{row.causa}</div>
+          <div className="desc-cat">{formatCategoria(row.cat)}</div>
+          <div className="desc-causa" title={row.causa}>
+            {formatCausa(row.causa)}
+          </div>
         </td>
         <td className="desc-date">{row.data || "—"}</td>
         <td>
@@ -165,7 +168,11 @@ function DescriptionRow({
                 <div className="desc-block">
                   <div className="desc-label">Causa · categoria</div>
                   <div className="desc-value">
-                    <code>{row.causa}</code> · <span className="dim">{row.cat}</span>
+                    <span title={row.causa}>{formatCausa(row.causa)}</span>{" "}
+                    <span className="dim">· {formatCategoria(row.cat)}</span>
+                    <div className="desc-causa-id">
+                      <code className="dim">{row.causa}</code>
+                    </div>
                   </div>
                 </div>
               </div>

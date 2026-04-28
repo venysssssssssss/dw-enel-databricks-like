@@ -1,10 +1,9 @@
-import { useFiltersStore, type FilterPreset } from "../../state/filters-store";
+import { useFiltersStore, PERIOD_PRESETS, type FilterPreset } from "../../state/filters-store";
 
-const PRESETS: { id: FilterPreset; label: string; cmd: string }[] = [
-  { id: "manual", label: "Manual", cmd: "1" },
-  { id: "last30", label: "Últimos 30 dias", cmd: "2" },
-  { id: "ce_group", label: "CE · Grupo operacional", cmd: "3" },
-  { id: "refat", label: "Ordens com refaturamento", cmd: "4" }
+const QUICK_PRESETS: { id: FilterPreset; label: string; cmd: string }[] = [
+  { id: "manual", label: "Manual", cmd: "M" },
+  { id: "ce_group", label: "CE · Grupo operacional", cmd: "C" },
+  { id: "refat", label: "Ordens com refaturamento", cmd: "R" }
 ];
 
 export function FilterPanel() {
@@ -14,28 +13,23 @@ export function FilterPanel() {
     <>
       <div>
         <div className="sb-section">
-          <span className="sb-section-title">Presets</span>
-          <span className="sb-section-badge">{PRESETS.length}</span>
+          <span className="sb-section-title">Período</span>
+          <span className="sb-section-badge">{PERIOD_PRESETS.length}</span>
         </div>
-        <div className="preset-stack">
-          {PRESETS.map((p) => (
+        <div className="period-pills" role="group" aria-label="Atalhos de período">
+          {PERIOD_PRESETS.map((p) => (
             <button
               key={p.id}
               type="button"
-              className={p.id === preset ? "preset-item is-active" : "preset-item"}
+              className={"period-pill" + (preset === p.id ? " is-active" : "")}
               onClick={() => setPreset(p.id)}
+              aria-pressed={preset === p.id}
+              title={p.label}
             >
-              <span className="dot" aria-hidden />
-              <span>{p.label}</span>
+              <span className="lbl">{p.label}</span>
               <span className="cmd">{p.cmd}</span>
             </button>
           ))}
-        </div>
-      </div>
-
-      <div>
-        <div className="sb-section">
-          <span className="sb-section-title">Período</span>
         </div>
         <div className="filter-group">
           <label className="filter-label">
@@ -56,6 +50,36 @@ export function FilterPanel() {
               style={inputStyle}
             />
           </label>
+          {start || end ? (
+            <button
+              type="button"
+              className="ghost-button period-clear"
+              onClick={() => setPartial({ start: null, end: null })}
+            >
+              Limpar período
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div>
+        <div className="sb-section">
+          <span className="sb-section-title">Presets</span>
+          <span className="sb-section-badge">{QUICK_PRESETS.length}</span>
+        </div>
+        <div className="preset-stack">
+          {QUICK_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className={p.id === preset ? "preset-item is-active" : "preset-item"}
+              onClick={() => setPreset(p.id)}
+            >
+              <span className="dot" aria-hidden />
+              <span>{p.label}</span>
+              <span className="cmd">{p.cmd}</span>
+            </button>
+          ))}
         </div>
       </div>
 

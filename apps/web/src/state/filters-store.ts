@@ -1,12 +1,26 @@
 import { create } from "zustand";
 
-export type FilterPreset = "manual" | "last30" | "ce_group" | "refat";
+export type FilterPreset =
+  | "manual"
+  | "last_1m"
+  | "last_3m"
+  | "last_6m"
+  | "last_12m"
+  | "ce_group"
+  | "refat";
+
+export const PERIOD_PRESETS: { id: FilterPreset; label: string; days: number; cmd: string }[] = [
+  { id: "last_1m", label: "Último mês", days: 30, cmd: "1" },
+  { id: "last_3m", label: "Últimos 3 meses", days: 90, cmd: "3" },
+  { id: "last_6m", label: "Últimos 6 meses", days: 180, cmd: "6" },
+  { id: "last_12m", label: "Últimos 12 meses", days: 365, cmd: "Y" }
+];
 
 export type DashboardFilters = {
   regions: string[];
   causes: string[];
   topics: string[];
-  start: string | null; // ISO date
+  start: string | null; // ISO date YYYY-MM-DD
   end: string | null;
   refat: boolean;
   total: boolean;
@@ -39,19 +53,23 @@ export const useFiltersStore = create<FilterState>((set) => ({
   hydrate: (filters) => set((state) => ({ ...state, ...filters }))
 }));
 
+function isoMinusDays(days: number): string {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - days);
+  return start.toISOString().slice(0, 10);
+}
+
 function applyPreset(state: FilterState, preset: FilterPreset): Partial<FilterState> {
   if (preset === "manual") {
     return { ...DEFAULT_FILTERS, preset };
   }
-  if (preset === "last30") {
-    const end = new Date();
-    const start = new Date();
-    start.setDate(end.getDate() - 30);
+  const period = PERIOD_PRESETS.find((p) => p.id === preset);
+  if (period) {
     return {
       ...state,
-      start: start.toISOString().slice(0, 10),
-      end: end.toISOString().slice(0, 10),
-      refat: false,
+      start: isoMinusDays(period.days),
+      end: new Date().toISOString().slice(0, 10),
       preset
     };
   }
@@ -64,7 +82,17 @@ function applyPreset(state: FilterState, preset: FilterPreset): Partial<FilterSt
   return state;
 }
 
-/** Serialize non-default fields to URL params. */
+const ALL_PRESETS: FilterPreset[] = [
+  "manual",
+  "last_1m",
+  "last_3m",
+  "last_6m",
+  "last_12m",
+  "ce_group",
+  "refat"
+];
+
+/** Serialize non-default fields to URL params (user-facing keys). */
 export function filtersToQueryParams(filters: DashboardFilters): Record<string, string> {
   const out: Record<string, string> = {};
   if (filters.regions.length) out.regiao = filters.regions.join(",");
@@ -84,7 +112,8 @@ export function filtersFromQueryParams(search: URLSearchParams): Partial<Dashboa
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean);
-  const preset = (search.get("preset") ?? "manual") as FilterPreset;
+  const rawPreset = (search.get("preset") ?? "manual") as FilterPreset;
+  const preset: FilterPreset = ALL_PRESETS.includes(rawPreset) ? rawPreset : "manual";
   return {
     regions: split("regiao"),
     causes: split("causa"),
@@ -93,7 +122,7 @@ export function filtersFromQueryParams(search: URLSearchParams): Partial<Dashboa
     end: search.get("fim") || null,
     refat: search.get("refat") === "1",
     total: search.get("total") === "1",
-    preset: ["manual", "last30", "ce_group", "refat"].includes(preset) ? preset : "manual"
+    preset
   };
 }
 
@@ -103,11 +132,25 @@ export function filtersToApiContract(filters: DashboardFilters): Record<string, 
   if (filters.regions.length) payload.regiao = filters.regions;
   if (filters.causes.length) payload.causa_canonica = filters.causes;
   if (filters.topics.length) payload.topic_name = filters.topics;
-  if (filters.start) payload.inicio = filters.start;
-  if (filters.end) payload.fim = filters.end;
+  if (filters.start) payload.start_date = filters.start;
+  if (filters.end) payload.end_date = filters.end;
   if (filters.refat) payload.flag_resolvido_com_refaturamento = true;
   if (filters.total) payload.include_total = true;
   return payload;
+}
+
+const PRESET_LABELS: Record<FilterPreset, string> = {
+  manual: "Manual",
+  last_1m: "1 mês",
+  last_3m: "3 meses",
+  last_6m: "6 meses",
+  last_12m: "12 meses",
+  ce_group: "CE",
+  refat: "Refaturamento"
+};
+
+export function presetLabel(preset: FilterPreset): string {
+  return PRESET_LABELS[preset] ?? "Manual";
 }
 
 export function activeFilterChips(filters: DashboardFilters): string[] {
@@ -115,7 +158,9 @@ export function activeFilterChips(filters: DashboardFilters): string[] {
   if (filters.regions.length) chips.push(`Região: ${filters.regions.join(", ")}`);
   if (filters.causes.length) chips.push(`Causas: ${filters.causes.length} selecionadas`);
   if (filters.topics.length) chips.push(`Tópicos: ${filters.topics.length} selecionados`);
-  if (filters.start || filters.end) {
+  if (filters.preset !== "manual" && PERIOD_PRESETS.some((p) => p.id === filters.preset)) {
+    chips.push(`Período: ${presetLabel(filters.preset)}`);
+  } else if (filters.start || filters.end) {
     chips.push(`Período: ${filters.start ?? "início"} → ${filters.end ?? "fim"}`);
   }
   if (filters.refat) chips.push("Somente refaturamento");

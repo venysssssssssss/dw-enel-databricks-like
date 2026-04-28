@@ -9,6 +9,7 @@ from src.data_plane.views import VIEW_REGISTRY, get_view
 from src.viz.erro_leitura_dashboard_data import (
     _attach_severidade,
     _filter_sp_severidade,
+    sp_categoria_subcausa_tree,
     sp_severidade_categorias,
     sp_severidade_causas,
     sp_severidade_mensal,
@@ -196,3 +197,95 @@ def test_registry_exposes_ten_sp_severidade_views() -> None:
 def test_registry_kwargs_carry_correct_severity(view_id: str, sev: str) -> None:
     spec = get_view(view_id)
     assert spec.kwargs.get("severidade") == sev
+
+
+# -------------------------- demais (medium + low) --------------------------
+
+
+def test_registry_exposes_demais_views() -> None:
+    expected = {
+        "sp_severidade_demais_overview",
+        "sp_severidade_demais_mensal",
+        "sp_severidade_demais_categorias",
+        "sp_severidade_demais_causas",
+        "sp_severidade_demais_ranking",
+        "sp_severidade_demais_descricoes",
+    }
+    assert expected.issubset(set(VIEW_REGISTRY.keys()))
+
+
+def test_demais_views_carry_medium_low_tuple() -> None:
+    spec = get_view("sp_severidade_demais_overview")
+    assert spec.kwargs.get("severidade") == ("medium", "low")
+
+
+def test_filter_sp_severidade_accepts_tuple_severities() -> None:
+    df = _frame(
+        [
+            _row(ordem="a", causa_canonica="autoleitura_cliente"),
+            _row(ordem="b", causa_canonica="impedimento_acesso"),
+        ]
+    )
+    out = _filter_sp_severidade(df, ("medium", "low"))
+    assert set(out["severidade"]).issubset({"medium", "low", "high"})
+
+
+def test_filter_sp_severidade_accepts_demais_alias() -> None:
+    df = _frame([_row(causa_canonica="autoleitura_cliente")])
+    via_alias = _filter_sp_severidade(df, "demais")
+    via_tuple = _filter_sp_severidade(df, ("medium", "low"))
+    assert len(via_alias) == len(via_tuple)
+
+
+# -------------------------- categoria subcausa tree --------------------------
+
+
+def test_categoria_subcausa_tree_columns_and_invariants() -> None:
+    df = _frame(
+        [
+            _row(ordem="a", causa_canonica="autoleitura_cliente"),
+            _row(
+                ordem="b",
+                causa_canonica="autoleitura_cliente",
+                flag_resolvido_com_refaturamento=True,
+            ),
+            _row(ordem="c", causa_canonica="impedimento_acesso"),
+        ]
+    )
+    out = sp_categoria_subcausa_tree(df, severidade=("high", "critical", "medium", "low"))
+    expected_cols = {
+        "categoria_id",
+        "categoria_label",
+        "categoria_qtd",
+        "categoria_pct",
+        "subcausa_id",
+        "subcausa_label",
+        "qtd",
+        "percentual_na_categoria",
+        "procedentes",
+        "improcedentes",
+        "exemplo_id",
+        "exemplo_data",
+        "exemplo_descricao",
+        "exemplo_status",
+        "exemplo_valor_fatura",
+        "recomendacao_operacional",
+    }
+    assert expected_cols.issubset(out.columns)
+    # Invariante chave: procedentes + improcedentes == qtd por subcausa
+    assert ((out["procedentes"] + out["improcedentes"]) == out["qtd"]).all()
+
+
+def test_categoria_subcausa_tree_empty_frame() -> None:
+    out = sp_categoria_subcausa_tree(pd.DataFrame(), severidade="high")
+    assert out.empty
+
+
+def test_registry_exposes_tree_variants() -> None:
+    expected = {
+        "sp_categoria_subcausa_tree",
+        "sp_categoria_subcausa_tree_alta",
+        "sp_categoria_subcausa_tree_critica",
+        "sp_categoria_subcausa_tree_demais",
+    }
+    assert expected.issubset(set(VIEW_REGISTRY.keys()))
