@@ -7,11 +7,11 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+import pandas as pd
+
 from src.rag.ingestion import Chunk, _approx_tokens
 
 if TYPE_CHECKING:
-    import pandas as pd
-
     from src.data_plane.store import DataStore
 
 
@@ -959,13 +959,18 @@ def _ce_mvp_extra_cards(store: DataStore) -> list[DataCard]:
 def _sp_n1_cards(store: DataStore) -> list[DataCard]:
     """Paridade SP dentro do universo N1 (~12,1k tickets erro_leitura)."""
     overview = store.aggregate("overview", _SP_FILTERS)
+    sp_frame = store.load_silver(include_total=False)
+    if "regiao" in sp_frame.columns:
+        sp_frame = sp_frame.loc[sp_frame["regiao"].astype(str).eq("SP")].copy()
+    else:
+        sp_frame = sp_frame.iloc[0:0].copy()
     assuntos = store.aggregate("top_assuntos", _SP_FILTERS)
     causas = store.aggregate("top_causas", _SP_FILTERS)
     monthly = store.aggregate("monthly_volume", _SP_FILTERS)
     groups = store.aggregate("by_group", _SP_FILTERS)
     top_inst = store.aggregate("top_instalacoes", _SP_FILTERS)
     return [
-        _sp_overview_card(overview),
+        _sp_overview_card(overview, sp_frame=sp_frame),
         _sp_assuntos_card(assuntos),
         _sp_causas_card(causas),
         _sp_mensal_card(monthly),
@@ -980,7 +985,7 @@ def _sp_n1_cards(store: DataStore) -> list[DataCard]:
     ]
 
 
-def _sp_overview_card(overview: pd.DataFrame) -> DataCard:
+def _sp_overview_card(overview: pd.DataFrame, *, sp_frame: pd.DataFrame) -> DataCard:
     if overview.empty:
         return DataCard(
             "sp-n1-overview",
@@ -989,9 +994,18 @@ def _sp_overview_card(overview: pd.DataFrame) -> DataCard:
             region="SP",
         )
     row = overview.iloc[0]
+    procedencia = (
+        sp_frame.get("procedencia_real", pd.Series("NAO_INFORMADA", index=sp_frame.index))
+        .fillna("NAO_INFORMADA")
+        .astype(str)
+    )
+    procedentes = int(procedencia.eq("PROCEDENTE").sum())
+    improcedentes = int(procedencia.eq("IMPROCEDENTE").sum())
     body = (
         f"Em **SP**, o dataset N1 contém **{_fmt_n(row['total_registros'])} tickets** "
         f"(100% ERRO_LEITURA, cobertura 2025-07 → 2026-03). "
+        f"Procedência observada: **{_fmt_n(procedentes)} procedentes** e "
+        f"**{_fmt_n(improcedentes)} improcedentes**. "
         f"Taxa de refaturamento resolvido é **{_fmt_pct(float(row['taxa_refaturamento']))}** "
         f"— viés conhecido (a origem não registra refaturamento em SP).\n\n"
         "Para análises comparativas, consulte também `data-quality-notes`."

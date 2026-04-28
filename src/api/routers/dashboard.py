@@ -71,7 +71,7 @@ def aggregation(
     store = DataStore()
     parsed_filters = _parse_filters(filters)
     version = store.version()
-    etag = f"\"{DATA_PLANE_VIEW_VERSION}:{version.hash}:{cache_key(parsed_filters)}\""
+    etag = f"\"{version.hash}:{DATA_PLANE_VIEW_VERSION}:{cache_key(parsed_filters)}\""
     cache_id = cache_key("aggregation", DATA_PLANE_VIEW_VERSION, view_id, version.hash, parsed_filters)
     response.headers["ETag"] = etag
     response.headers["Cache-Control"] = "max-age=60, stale-while-revalidate=300"
@@ -163,7 +163,9 @@ def severidade_descricoes(
     store = DataStore()
     version = store.version()
     period_tag = f"{start_date or '-'}:{end_date or '-'}"
-    etag = f"\"{DATA_PLANE_VIEW_VERSION}:descricoes:{level}:{capped}:{period_tag}:{version.hash}\""
+    etag = (
+        f"\"{version.hash}:{DATA_PLANE_VIEW_VERSION}:descricoes:{level}:{capped}:{period_tag}\""
+    )
     response.headers["ETag"] = etag
     response.headers["Cache-Control"] = "max-age=30, stale-while-revalidate=120"
     if if_none_match == etag:

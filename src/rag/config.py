@@ -46,12 +46,17 @@ class RagConfig:
     chunk_overlap_tokens: int
     n_threads: int
     n_ctx: int
+    max_concurrent_generations: int
+    generation_queue_size: int
+    generation_wait_timeout_sec: float
     temperature: float
     top_p: float
     api_key: str | None
     telemetry_path: Path
     feedback_path: Path
     llm_judge_enabled: bool
+    corpus_include_descricoes_clusters: bool
+    corpus_include_cluster_dictionary: bool
 
 
 def _env_path(key: str, default: str) -> Path:
@@ -126,12 +131,21 @@ def load_rag_config() -> RagConfig:
         corpus_roots=corpus_roots,
         chunk_size_tokens=_env_int("RAG_CHUNK_SIZE", 480),
         chunk_overlap_tokens=_env_int("RAG_CHUNK_OVERLAP", 64),
-        n_threads=_env_int("RAG_N_THREADS", max(1, (os.cpu_count() or 4) - 1)),
+        n_threads=_env_int("RAG_N_THREADS", max(1, (os.cpu_count() or 4) - 2)),
         n_ctx=_env_int("RAG_N_CTX", 4096),
+        max_concurrent_generations=_env_int("RAG_MAX_CONCURRENT_GENERATIONS", 1),
+        generation_queue_size=_env_int("RAG_GENERATION_QUEUE_SIZE", 3),
+        generation_wait_timeout_sec=_env_float("RAG_GENERATION_WAIT_TIMEOUT_SEC", 15.0),
         temperature=_env_float("RAG_TEMPERATURE", 0.2),
         top_p=_env_float("RAG_TOP_P", 0.9),
         api_key=os.getenv("RAG_API_KEY") or None,
         telemetry_path=_env_path("RAG_TELEMETRY_PATH", "data/rag/telemetry.jsonl"),
         feedback_path=_env_path("RAG_FEEDBACK_PATH", "data/rag/feedback.csv"),
         llm_judge_enabled=_env_bool("RAG_LLM_JUDGE", False),
+        corpus_include_descricoes_clusters=_env_bool(
+            "RAG_CORPUS_INCLUDE_DESCRICOES_CLUSTERS", True
+        ),
+        corpus_include_cluster_dictionary=_env_bool(
+            "RAG_CORPUS_INCLUDE_CLUSTER_DICTIONARY", True
+        ),
     )

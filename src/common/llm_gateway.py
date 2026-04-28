@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+import time
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
@@ -114,6 +117,51 @@ class StubProvider:
         yield resp.text
 
 
+class _GenerationGate:
+    """Serializes llama.cpp generations to avoid native concurrency crashes."""
+
+    def __init__(
+        self,
+        *,
+        max_active: int,
+        queue_size: int,
+        wait_timeout_sec: float,
+    ) -> None:
+        self._max_active = max(1, int(max_active))
+        self._queue_size = max(0, int(queue_size))
+        self._wait_timeout_sec = max(0.1, float(wait_timeout_sec))
+        self._active = 0
+        self._queued = 0
+        self._condition = threading.Condition()
+
+    @contextmanager
+    def acquire(self):
+        with self._condition:
+            if self._active >= self._max_active and self._queued >= self._queue_size:
+                raise RuntimeError(
+                    "RAG generation queue is full. Retry in a few seconds."
+                )
+            self._queued += 1
+            try:
+                deadline = time.monotonic() + self._wait_timeout_sec
+                while self._active >= self._max_active:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise RuntimeError(
+                            "RAG generation wait timeout exceeded. Retry in a few seconds."
+                        )
+                    self._condition.wait(timeout=remaining)
+                self._active += 1
+            finally:
+                self._queued -= 1
+        try:
+            yield
+        finally:
+            with self._condition:
+                self._active = max(0, self._active - 1)
+                self._condition.notify()
+
+
 def _stub_answer(messages: list[Message]) -> str:
     user_q = next(
         (m["content"] for m in reversed(messages) if m.get("role") == "user"),
@@ -151,6 +199,9 @@ class LlamaCppProvider:
         n_ctx: int = 4096,
         n_threads: int = 4,
         chat_format: str | None = None,
+        max_concurrent_generations: int = 1,
+        generation_queue_size: int = 3,
+        generation_wait_timeout_sec: float = 15.0,
     ) -> None:
         try:
             from llama_cpp import Llama
@@ -175,6 +226,18 @@ class LlamaCppProvider:
             verbose=False,
             logits_all=False,
         )
+        self._gate = _GenerationGate(
+            max_active=max_concurrent_generations,
+            queue_size=generation_queue_size,
+            wait_timeout_sec=generation_wait_timeout_sec,
+        )
+
+    def _generation_guard(self):
+        gate = getattr(self, "_gate", None)
+        if gate is None:
+            return nullcontext()
+        return gate.acquire()
+
     def complete(
         self,
         messages: list[Message],
@@ -185,15 +248,16 @@ class LlamaCppProvider:
         stop: list[str] | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> LLMResponse:
-        out = self._chat_completion_with_retry(
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            stop=stop,
-            stream=False,
-            tools=tools,
-        )
+        with self._generation_guard():
+            out = self._chat_completion_with_retry(
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                stop=stop,
+                stream=False,
+                tools=tools,
+            )
         msg = out["choices"][0]["message"]
         text = msg.get("content") or ""
         tool_calls = msg.get("tool_calls")
@@ -217,19 +281,20 @@ class LlamaCppProvider:
         stop: list[str] | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> Iterator[str]:
-        it = self._chat_completion_with_retry(
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            stop=stop,
-            stream=True,
-            tools=tools,
-        )
-        for chunk in it:
-            delta = chunk["choices"][0]["delta"].get("content", "")
-            if delta:
-                yield delta
+        with self._generation_guard():
+            it = self._chat_completion_with_retry(
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                stop=stop,
+                stream=True,
+                tools=tools,
+            )
+            for chunk in it:
+                delta = chunk["choices"][0]["delta"].get("content", "")
+                if delta:
+                    yield delta
 
     def _chat_completion_with_retry(
         self,
@@ -399,6 +464,11 @@ def build_provider(config: Any) -> LLMProvider:
                 model_path=model_path,
                 n_ctx=config.n_ctx,
                 n_threads=config.n_threads,
+                max_concurrent_generations=getattr(config, "max_concurrent_generations", 1),
+                generation_queue_size=getattr(config, "generation_queue_size", 3),
+                generation_wait_timeout_sec=getattr(
+                    config, "generation_wait_timeout_sec", 15.0
+                ),
             )
         except (RuntimeError, FileNotFoundError):
             return StubProvider()
