@@ -36,12 +36,17 @@ def _config(tmp_path: Path) -> RagConfig:
         chunk_overlap_tokens=20,
         n_threads=2,
         n_ctx=2048,
+        max_concurrent_generations=1,
+        generation_queue_size=1,
+        generation_wait_timeout_sec=1.0,
         temperature=0.2,
         top_p=0.9,
         api_key=None,
         telemetry_path=tmp_path / "telemetry.jsonl",
         feedback_path=tmp_path / "feedback.csv",
         llm_judge_enabled=False,
+        corpus_include_descricoes_clusters=False,
+        corpus_include_cluster_dictionary=False,
     )
 
 

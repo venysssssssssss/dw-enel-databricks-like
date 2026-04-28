@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import sys
 import types
+import zipfile
 from typing import TYPE_CHECKING
 
 import pytest
 
-from src.rag.ingestion import _load_embedder, chunk_markdown, discover_files
+from src.rag.ingestion import (
+    _load_embedder,
+    build_cluster_dictionary_chunks,
+    chunk_markdown,
+    discover_files,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -137,3 +143,57 @@ def test_load_embedder_requires_onnx_when_strict_mode_is_enabled(monkeypatch) ->
 
     with pytest.raises(RuntimeError, match="RAG_REQUIRE_ONNX_EMBEDDING=1"):
         _load_embedder("/models/enel-minilm-onnx")
+
+
+def test_build_cluster_dictionary_chunks_reads_xlsx_without_openpyxl(tmp_path: Path) -> None:
+    xlsx = tmp_path / "Dicionário_clusters.xlsx"
+    with zipfile.ZipFile(xlsx, "w") as archive:
+        archive.writestr(
+            "xl/workbook.xml",
+            (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                '<sheets><sheet name="Planilha1" sheetId="1" r:id="rId1"/></sheets></workbook>'
+            ),
+        )
+        archive.writestr(
+            "xl/_rels/workbook.xml.rels",
+            (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" '
+                'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+                'Target="worksheets/sheet1.xml"/></Relationships>'
+            ),
+        )
+        archive.writestr(
+            "xl/sharedStrings.xml",
+            (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                "<si><t>Cluster</t></si>"
+                "<si><t>Dicionário (Termos/Expressões-Chave)</t></si>"
+                "<si><t>Problemas no Medidor (Físico)</t></si>"
+                "<si><t>medidor, visor, quebrado</t></si>"
+                "</sst>"
+            ),
+        )
+        archive.writestr(
+            "xl/worksheets/sheet1.xml",
+            (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                "<sheetData>"
+                '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>'
+                '<row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2" t="s"><v>3</v></c></row>'
+                "</sheetData></worksheet>"
+            ),
+        )
+
+    chunks = build_cluster_dictionary_chunks(xlsx)
+
+    assert len(chunks) == 1
+    assert chunks[0].doc_type == "cluster_dictionary"
+    assert chunks[0].region == "SP"
+    assert "Problemas no Medidor" in chunks[0].text

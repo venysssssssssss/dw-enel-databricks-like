@@ -21,6 +21,8 @@ def test_load_rag_config_defaults(monkeypatch, tmp_path: Path) -> None:
     assert cfg.similarity_threshold >= 0.0
     assert cfg.regional_scope == "CE+SP"
     assert cfg.prompt_version == "2.0.0"
+    assert cfg.max_concurrent_generations >= 1
+    assert cfg.generation_queue_size >= 0
 
 
 def test_load_rag_config_env_overrides(monkeypatch, tmp_path: Path) -> None:
@@ -31,6 +33,9 @@ def test_load_rag_config_env_overrides(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("RAG_SIMILARITY_THRESHOLD", "0.4")
     monkeypatch.setenv("RAG_REGIONAL_SCOPE", "SP")
     monkeypatch.setenv("RAG_PROMPT_VERSION", "1.0.0")
+    monkeypatch.setenv("RAG_MAX_CONCURRENT_GENERATIONS", "2")
+    monkeypatch.setenv("RAG_GENERATION_QUEUE_SIZE", "5")
+    monkeypatch.setenv("RAG_CORPUS_INCLUDE_CLUSTER_DICTIONARY", "0")
     cfg = load_rag_config()
     assert cfg.provider == "stub"
     assert cfg.max_turn_tokens == 4096
@@ -38,6 +43,9 @@ def test_load_rag_config_env_overrides(monkeypatch, tmp_path: Path) -> None:
     assert cfg.similarity_threshold == 0.4
     assert cfg.regional_scope == "SP"
     assert cfg.prompt_version == "1.0.0"
+    assert cfg.max_concurrent_generations == 2
+    assert cfg.generation_queue_size == 5
+    assert cfg.corpus_include_cluster_dictionary is False
 
 
 def test_hash_question_stable() -> None:

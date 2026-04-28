@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+import src.data_plane as data_plane
 from src.common.llm_gateway import LLMResponse, StubProvider
 from src.rag.config import RagConfig
 from src.rag.orchestrator import (
@@ -45,12 +46,17 @@ def _make_config(tmp_path: Path) -> RagConfig:
         chunk_overlap_tokens=20,
         n_threads=2,
         n_ctx=2048,
+        max_concurrent_generations=1,
+        generation_queue_size=1,
+        generation_wait_timeout_sec=1.0,
         temperature=0.2,
         top_p=0.9,
         api_key=None,
         telemetry_path=tmp_path / "telemetry.jsonl",
         feedback_path=tmp_path / "feedback.csv",
         llm_judge_enabled=False,
+        corpus_include_descricoes_clusters=False,
+        corpus_include_cluster_dictionary=False,
     )
 
 
@@ -293,6 +299,67 @@ def test_orchestrator_profile_detail_without_region_defaults_to_sp(tmp_path: Pat
     assert retriever.last_region == "SP"
 
 
+def test_orchestrator_returns_structured_sp_installation_answer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cfg = _make_config(tmp_path)
+    passages = [
+        Passage(
+            "c1",
+            "card",
+            "data/silver/erro_leitura_normalizado.csv",
+            "SP",
+            "data",
+            "",
+            "sp-fatura-medidor",
+            0.9,
+            region="SP",
+            data_source="silver.erro_leitura_normalizado",
+        ),
+    ]
+    retriever = FakeRetriever(passages)
+    provider = RecordingProvider()
+    orch = RagOrchestrator(cfg, retriever=retriever, provider=provider)
+
+    class _FakeStore:
+        def sp_installation_details(self, instalacao_id: str):
+            assert instalacao_id == "123456"
+            return {
+                "instalacao": "123456",
+                "total_ordens": 3,
+                "procedentes": 2,
+                "improcedentes": 1,
+                "tipos_medidor": ["digital"],
+                "assuntos_top": [{"assunto": "ERRO DE LEITURA", "qtd_ordens": 3}],
+                "causas_top": [{"causa_canonica": "digitacao", "qtd_ordens": 2}],
+                "faturas": [
+                    {
+                        "fat_reclamada_top": "2026-01",
+                        "qtd_ordens": 2,
+                        "valor_medio": 120.0,
+                        "valor_max": 180.0,
+                        "tipo_medidor": "digital",
+                    }
+                ],
+            }
+
+        def sp_overview_metrics(self):
+            return {"total_ordens": 0, "procedentes": 0, "improcedentes": 0}
+
+        def sp_installations_by_meter_type(self, meter_type: str, *, limit: int = 10):
+            del meter_type, limit
+            return []
+
+    monkeypatch.setattr(data_plane, "DataStore", _FakeStore)
+
+    resp = orch.answer("Em SP, me dê os detalhes da instalação 123456")
+
+    assert "Instalação **123456** em SP" in resp.text
+    assert "Faturas/mês disponíveis:" in resp.text
+    assert provider.calls == []
+
+
 def test_format_citations_dedups_and_links() -> None:
     passages = [
         Passage("c1", "t", "docs/a.md", "s", "business", "", "sec-a", 0.9),
@@ -386,6 +453,48 @@ def test_orchestrator_guardrail_rewrites_generic_not_found_when_drilldown_exists
         "[fonte: data/silver/erro_leitura_normalizado.csv#sp-causas-por-tipo-medidor]"
         in resp.text
     )
+
+
+def test_orchestrator_direct_answer_for_sp_causes_uses_causa_card_first(
+    tmp_path: Path,
+) -> None:
+    cfg = _make_config(tmp_path)
+    passages = [
+        Passage(
+            "live::assuntos",
+            "# SP — principais assuntos (N1)\n\nO principal assunto em SP é **ERRO DE LEITURA**.\n\n**Top assuntos em SP (N1)**:\n\n- **ERRO DE LEITURA**: 11.530 (95,1%)",
+            "data/silver/erro_leitura_normalizado.csv",
+            "SP assuntos",
+            "data",
+            "",
+            "sp-n1-assuntos",
+            0.95,
+            region="SP",
+            data_source="silver.erro_leitura_normalizado",
+        ),
+        Passage(
+            "live::causas",
+            "# SP — principais causas-raiz (N1)\n\nA principal causa-raiz em SP é **digitacao** com **4.210** tickets (34,7%).\n\n**Top causas em SP (N1)**:\n\n- **digitacao**: 4.210 (34,7%)\n- **leitura_estimada**: 2.100 (17,3%)",
+            "data/silver/erro_leitura_normalizado.csv",
+            "SP causas",
+            "data",
+            "",
+            "sp-n1-causas",
+            0.94,
+            region="SP",
+            data_source="silver.erro_leitura_normalizado",
+        ),
+    ]
+    retriever = FakeRetriever(passages)
+    provider = RecordingProvider()
+    orch = RagOrchestrator(cfg, retriever=retriever, provider=provider)
+
+    resp = orch.answer("Quais as principais causas de reclamação em SP?")
+
+    assert "A principal causa-raiz em SP é **digitacao**" in resp.text
+    assert "**Top causas em SP (N1)**" in resp.text
+    assert "[fonte: data/silver/erro_leitura_normalizado.csv#sp-n1-causas]" in resp.text
+    assert provider.calls == []
 
 
 def test_orchestrator_known_question_cache_skips_provider(tmp_path: Path) -> None:
