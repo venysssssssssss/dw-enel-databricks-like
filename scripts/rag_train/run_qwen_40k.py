@@ -43,8 +43,12 @@ def evaluate_qwen_response(agent_payload: Dict[str, Any]) -> Dict[str, Any]:
             verdict = "parcial"
             factual = 0.6
             # Força boosts maciços para cards regionais quando a descrição crua engana o retriever
-            boosts.append({"card_id": f"{region_target}-top-assuntos", "delta": 0.15})
-            boosts.append({"card_id": f"{region_target}-n1-causas", "delta": 0.10})
+            if region_target == "sp":
+                boosts.append({"card_id": "sp-n1-assuntos", "delta": 0.15})
+                boosts.append({"card_id": "sp-n1-causas", "delta": 0.10})
+            else:
+                boosts.append({"card_id": "ce-reclamacoes-totais-assuntos", "delta": 0.15})
+                boosts.append({"card_id": "ce-reclamacoes-totais-causas", "delta": 0.10})
             
     return {
         "verdict": verdict,
