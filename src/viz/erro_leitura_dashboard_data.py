@@ -24,6 +24,7 @@ DEFAULT_TOPIC_TAXONOMY_PATH = Path("data/model_registry/erro_leitura/topic_taxon
 DEFAULT_TOPIC_TO_CANONICAL_PATH = Path("data/model_registry/erro_leitura/topic_to_canonical.csv")
 DEFAULT_MEDIDOR_SP_PATH = Path("DESCRICOES_ENEL/medidor_20260417_20260416T090000.csv")
 DEFAULT_FATURA_SP_PATH = Path("DESCRICOES_ENEL/DADOS_FATURA_SP_ORDENS001.XLSX")
+DEFAULT_DESCRICOES_CLUSTER_PATH = Path("DESCRICOES_ENEL/erro_leitura_clusterizado.csv")
 TRAINING_DATA_TYPES = {"erro_leitura", "base_n1_sp"}
 KEYWORD_LABEL_CACHE_VERSION = "keyword-v3"
 MAX_TAXONOMY_EXAMPLE_CHARS = 420
@@ -169,6 +170,7 @@ def prepare_dashboard_frame(
     frame["has_causa_raiz_label"] = _to_bool(
         frame.get("has_causa_raiz_label", pd.Series(False, index=frame.index))
     )
+    frame = _attach_procedencia_real(frame)
     frame["instalacao"] = frame.get(
         "instalacao",
         pd.Series("", index=frame.index),
@@ -1402,6 +1404,46 @@ def _to_bool(series: pd.Series) -> pd.Series:
     if series.dtype == bool:
         return series.fillna(False)
     return series.fillna(False).astype(str).str.casefold().isin({"true", "1", "sim", "yes"})
+
+
+def _attach_procedencia_real(frame: pd.DataFrame) -> pd.DataFrame:
+    """Reconcile procedência from status text and legacy refaturamento flag.
+
+    Older SP/CE analytical views use `flag_resolvido_com_refaturamento` as the
+    closest available proxy for procedência. When explicit `status` text is
+    present, prefer it and keep a normalized `procedencia_real` column so
+    downstream views can count procedentes/improcedentes consistently.
+    """
+    if frame.empty:
+        out = frame.copy()
+        out["procedencia_real"] = pd.Series(dtype=str)
+        return out
+
+    out = frame.copy()
+    existing = _to_bool(
+        out.get("flag_resolvido_com_refaturamento", pd.Series(False, index=out.index))
+    )
+    status = (
+        out.get("status", pd.Series("", index=out.index))
+        .fillna("")
+        .astype(str)
+        .str.casefold()
+    )
+    explicit_improc = status.str.contains("improced", regex=False)
+    explicit_proc = status.str.contains("proced", regex=False) & ~explicit_improc
+
+    procedencia = pd.Series("NAO_INFORMADA", index=out.index, dtype=str)
+    procedencia = procedencia.mask(existing, "PROCEDENTE")
+    procedencia = procedencia.mask(~existing, "IMPROCEDENTE")
+    procedencia = procedencia.mask(explicit_proc, "PROCEDENTE")
+    procedencia = procedencia.mask(explicit_improc, "IMPROCEDENTE")
+
+    out["procedencia_real"] = procedencia
+    out["flag_resolvido_com_refaturamento"] = explicit_proc.where(
+        explicit_proc | explicit_improc,
+        existing,
+    )
+    return out
 
 
 def _safe_topic_taxonomy(topic_taxonomy: pd.DataFrame) -> pd.DataFrame:
